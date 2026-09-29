@@ -1,0 +1,17 @@
+[package]
+name = "kadr-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kadr-core = { path = "../kadr-core" }
+rusqlite = { version = "0.32.1", features = ["bundled", "chrono"] }
+rusqlite_migration = "1.3"
+deadpool-sqlite = "0.9"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1.43", features = ["full", "macros"] }
