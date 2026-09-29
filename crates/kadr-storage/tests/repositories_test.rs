@@ -166,6 +166,9 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
         })
         .collect::<Vec<_>>();
 
+    let empty_count = media_repo.upsert_batch(&[]).await.unwrap();
+    assert_eq!(empty_count, 0);
+
     let count = media_repo.upsert_batch(&items).await.unwrap();
     assert_eq!(count, 5);
 

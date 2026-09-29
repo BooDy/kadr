@@ -28,7 +28,7 @@ impl LibraryRepository {
                 params![
                     lib.id,
                     lib.name,
-                    lib.path.to_str().unwrap_or_default(),
+                    lib.path.to_string_lossy().into_owned(),
                     serde_json::to_string(&lib.media_type).unwrap_or_default().trim_matches('"'),
                     lib.created_at,
                 ],

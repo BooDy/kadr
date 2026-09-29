@@ -15,6 +15,9 @@ impl MediaItemRepository {
     }
 
     pub async fn upsert_batch(&self, items: &[MediaItem]) -> Result<usize> {
+        if items.is_empty() {
+            return Ok(0);
+        }
         let items = items.to_vec();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
@@ -60,7 +63,7 @@ impl MediaItemRepository {
                         item.release_year,
                         item.technical.duration_seconds,
                         item.added_at,
-                        item.file_path.to_str().unwrap_or_default(),
+                        item.file_path.to_string_lossy().into_owned(),
                         item.file_name,
                         item.file_size as i64,
                         item.technical.resolution,
@@ -79,7 +82,7 @@ impl MediaItemRepository {
     }
 
     pub async fn delete_by_path<P: AsRef<Path>>(&self, path: P) -> Result<bool> {
-        let path_str = path.as_ref().to_str().unwrap_or_default().to_string();
+        let path_str = path.as_ref().to_string_lossy().into_owned();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
             let rows = c.execute("DELETE FROM media_items WHERE file_path = ?1", params![path_str])?;
