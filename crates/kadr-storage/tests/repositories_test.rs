@@ -1,0 +1,209 @@
+use std::path::PathBuf;
+use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
+use kadr_storage::pool::{create_in_memory_pool, initialize_database};
+use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
+
+#[tokio::test]
+async fn test_library_and_media_item_repositories() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    // 1. Create Library
+    let lib = Library {
+        id: "movies".to_string(),
+        name: "Feature Films".to_string(),
+        path: PathBuf::from("/media/movies"),
+        media_type: MediaType::Movie,
+        created_at: 1700000000,
+    };
+    lib_repo.create(&lib).await.unwrap();
+
+    let retrieved_lib = lib_repo.get_by_id("movies").await.unwrap().expect("library not found");
+    assert_eq!(retrieved_lib.name, "Feature Films");
+
+    // 2. Insert Batch of Media Items
+    let item1 = MediaItem {
+        id: None,
+        library_id: "movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "The Nightingale's Prayer".to_string(),
+        original_title: Some("Doaa al-Karawan".to_string()),
+        release_year: Some(1959),
+        added_at: 1700000100,
+        file_path: PathBuf::from("/media/movies/The.Nightingales.Prayer.1959.1080p.mkv"),
+        file_name: "The.Nightingales.Prayer.1959.1080p.mkv".to_string(),
+        file_size: 3_200_000_000,
+        technical: TechnicalInfo {
+            duration_seconds: 6540,
+            resolution: Some("1080p".to_string()),
+            video_codec: Some("h264".to_string()),
+            audio_codec: Some("aac".to_string()),
+            audio_channels: Some(2),
+            container: Some("mkv".to_string()),
+        },
+        metadata: MediaMetadata {
+            director: Some("Henry Barakat".to_string()),
+            writers: vec!["Taha Hussein".to_string()],
+            actors: vec!["Faten Hamama".to_string(), "Ahmed Mazhar".to_string()],
+            overview: Some("A young woman seeks revenge for her sister's honor killing.".to_string()),
+            country: Some("Egypt".to_string()),
+            language: Some("ara".to_string()),
+            tags: vec!["drama".to_string()],
+            studio: None,
+            poster_path: None,
+            backdrop_path: None,
+            release_group: None,
+        },
+    };
+
+    let count = media_repo.upsert_batch(std::slice::from_ref(&item1)).await.unwrap();
+    assert_eq!(count, 1);
+
+    // 3. Query items
+    let items = media_repo.list_by_library("movies", 10, 0).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "The Nightingale's Prayer");
+    assert_eq!(items[0].technical.resolution.as_deref(), Some("1080p"));
+
+    // 4. Delete item
+    let deleted = media_repo.delete_by_path(&item1.file_path).await.unwrap();
+    assert!(deleted);
+    let after_delete = media_repo.list_by_library("movies", 10, 0).await.unwrap();
+    assert_eq!(after_delete.len(), 0);
+}
+
+#[tokio::test]
+async fn test_library_repository_crud() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool);
+
+    let lib_b = Library {
+        id: "series".to_string(),
+        name: "TV Shows".to_string(),
+        path: PathBuf::from("/media/series"),
+        media_type: MediaType::Show,
+        created_at: 1700000010,
+    };
+    let lib_a = Library {
+        id: "anime".to_string(),
+        name: "Anime Series".to_string(),
+        path: PathBuf::from("/media/anime"),
+        media_type: MediaType::Show,
+        created_at: 1700000020,
+    };
+
+    lib_repo.create(&lib_b).await.unwrap();
+    lib_repo.create(&lib_a).await.unwrap();
+
+    // get_all ordered by name ASC
+    let all = lib_repo.get_all().await.unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].name, "Anime Series");
+    assert_eq!(all[1].name, "TV Shows");
+
+    // Upsert update
+    let mut updated_b = lib_b.clone();
+    updated_b.name = "Television Series".to_string();
+    lib_repo.create(&updated_b).await.unwrap();
+
+    let fetched_b = lib_repo.get_by_id("series").await.unwrap().expect("found");
+    assert_eq!(fetched_b.name, "Television Series");
+
+    // Delete
+    let deleted = lib_repo.delete("series").await.unwrap();
+    assert!(deleted);
+    let deleted_again = lib_repo.delete("series").await.unwrap();
+    assert!(!deleted_again);
+
+    let remaining = lib_repo.get_all().await.unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, "anime");
+}
+
+#[tokio::test]
+async fn test_media_item_batch_upsert_pagination_and_cascade() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    let lib = Library {
+        id: "classic-movies".to_string(),
+        name: "Classics".to_string(),
+        path: PathBuf::from("/media/classics"),
+        media_type: MediaType::Movie,
+        created_at: 1700000000,
+    };
+    lib_repo.create(&lib).await.unwrap();
+
+    let items = (1..=5)
+        .map(|i| MediaItem {
+            id: None,
+            library_id: "classic-movies".to_string(),
+            item_type: MediaType::Movie,
+            title: format!("Movie {i:02}"),
+            original_title: None,
+            release_year: Some(1950 + i),
+            added_at: 1700000000 + i as i64,
+            file_path: PathBuf::from(format!("/media/classics/movie_{i:02}.mkv")),
+            file_name: format!("movie_{i:02}.mkv"),
+            file_size: 1_000_000_000 * i as u64,
+            technical: TechnicalInfo {
+                duration_seconds: 5000 + i as i64,
+                resolution: Some("1080p".to_string()),
+                video_codec: Some("h264".to_string()),
+                audio_codec: Some("aac".to_string()),
+                audio_channels: Some(2),
+                container: Some("mkv".to_string()),
+            },
+            metadata: MediaMetadata::default(),
+        })
+        .collect::<Vec<_>>();
+
+    let count = media_repo.upsert_batch(&items).await.unwrap();
+    assert_eq!(count, 5);
+
+    let total = media_repo.count_by_library("classic-movies").await.unwrap();
+    assert_eq!(total, 5);
+
+    // Test pagination (ORDER BY title ASC)
+    let page1 = media_repo.list_by_library("classic-movies", 2, 0).await.unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1[0].title, "Movie 01");
+    assert_eq!(page1[1].title, "Movie 02");
+
+    let page2 = media_repo.list_by_library("classic-movies", 2, 2).await.unwrap();
+    assert_eq!(page2.len(), 2);
+    assert_eq!(page2[0].title, "Movie 03");
+    assert_eq!(page2[1].title, "Movie 04");
+
+    let page3 = media_repo.list_by_library("classic-movies", 2, 4).await.unwrap();
+    assert_eq!(page3.len(), 1);
+    assert_eq!(page3[0].title, "Movie 05");
+
+    // Upsert update on conflict
+    let mut updated_item1 = items[0].clone();
+    updated_item1.title = "Movie 01 (Remastered)".to_string();
+    let upsert_count = media_repo
+        .upsert_batch(std::slice::from_ref(&updated_item1))
+        .await
+        .unwrap();
+    assert_eq!(upsert_count, 1);
+
+    let total_after_upsert = media_repo.count_by_library("classic-movies").await.unwrap();
+    assert_eq!(total_after_upsert, 5);
+
+    let page1_after_update = media_repo.list_by_library("classic-movies", 1, 0).await.unwrap();
+    assert_eq!(page1_after_update[0].title, "Movie 01 (Remastered)");
+
+    // Cascade delete on library deletion
+    lib_repo.delete("classic-movies").await.unwrap();
+    let total_after_lib_delete = media_repo.count_by_library("classic-movies").await.unwrap();
+    assert_eq!(total_after_lib_delete, 0);
+}
