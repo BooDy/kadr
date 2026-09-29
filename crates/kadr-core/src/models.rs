@@ -4,10 +4,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaType {
+    #[serde(alias = "Movie", alias = "MOVIE")]
     Movie,
+    #[serde(alias = "Show", alias = "SHOW")]
     Show,
+    #[serde(alias = "Season", alias = "SEASON")]
     Season,
+    #[serde(alias = "Episode", alias = "EPISODE")]
     Episode,
+    #[serde(alias = "Unknown", alias = "UNKNOWN")]
     Unknown,
 }
 
