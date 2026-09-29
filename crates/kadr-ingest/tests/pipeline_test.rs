@@ -183,3 +183,84 @@ async fn test_start_library_watcher_initial_scan() {
         _ => panic!("Expected Upsert message"),
     }
 }
+
+#[tokio::test]
+async fn test_pipeline_malformed_nfo_falls_back_to_filename_metadata() {
+    let dir = tempdir().unwrap();
+    let video_path = dir.path().join("The.Nightingale.Prayer.1959.1080p.BluRay.x264.mkv");
+    let nfo_path = dir.path().join("The.Nightingale.Prayer.1959.1080p.BluRay.x264.nfo");
+
+    // Write dummy video file with MKV magic
+    let mut vfile = File::create(&video_path).unwrap();
+    vfile.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00]).unwrap();
+
+    // Write malformed/corrupted nfo
+    let mut nfile = File::create(&nfo_path).unwrap();
+    nfile.write_all(b"<movie><title>Unclosed Tag<broken").unwrap();
+
+    let library = Library {
+        id: "classics".to_string(),
+        name: "Classics".to_string(),
+        path: dir.path().to_path_buf(),
+        media_type: MediaType::Movie,
+        created_at: 1700000000,
+    };
+
+    let pipeline = IngestPipeline::new(false);
+    let item = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process despite bad nfo");
+
+    assert_eq!(item.title, "The Nightingale Prayer");
+    assert_eq!(item.release_year, Some(1959));
+    assert_eq!(item.technical.resolution.as_deref(), Some("1080p"));
+}
+
+#[tokio::test]
+async fn test_ingest_worker_delete_purges_inflight_batch() {
+    let pool = kadr_storage::create_in_memory_pool().unwrap();
+    kadr_storage::initialize_database(&pool).await.unwrap();
+
+    let lib_repo = kadr_storage::LibraryRepository::new(pool.clone());
+    let library = Library {
+        id: "movies".to_string(),
+        name: "Movies".to_string(),
+        path: std::path::PathBuf::from("/media"),
+        media_type: MediaType::Movie,
+        created_at: 1700000000,
+    };
+    lib_repo.create(&library).await.unwrap();
+
+    let repo = MediaItemRepository::new(pool.clone());
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
+    let worker = IngestWorker::new(rx, repo.clone());
+
+    let worker_handle = tokio::spawn(worker.run());
+
+    let item = MediaItem {
+        id: None,
+        library_id: "movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "Inflight Movie".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 1700000000,
+        file_path: std::path::PathBuf::from("/media/Inflight.Movie.2023.1080p.mkv"),
+        file_name: "Inflight.Movie.2023.1080p.mkv".to_string(),
+        file_size: 2048,
+        technical: Default::default(),
+        metadata: Default::default(),
+    };
+
+    // Send Upsert followed immediately by Delete before 100ms batch flush
+    tx.send(IngestMessage::Upsert(item.clone())).await.unwrap();
+    tx.send(IngestMessage::Delete(item.file_path.clone())).await.unwrap();
+
+    // Give worker time to process messages and potential flush timeout
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    // Verify it was purged from the in-flight batch and never inserted
+    let items = repo.list_by_library("movies", 10, 0).await.unwrap();
+    assert_eq!(items.len(), 0);
+
+    drop(tx);
+    worker_handle.await.unwrap();
+}

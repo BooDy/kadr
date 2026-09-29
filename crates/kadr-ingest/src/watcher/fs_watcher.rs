@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -71,17 +72,56 @@ pub async fn start_library_watcher(
                 maybe_event = notify_rx.recv() => {
                     match maybe_event {
                         Some(event) => {
-                            for path in event.paths {
-                                match event.kind {
-                                    EventKind::Create(_) | EventKind::Modify(_) => {
+                            match event.kind {
+                                EventKind::Create(_) => {
+                                    for path in event.paths {
                                         debouncer.record_event(path);
                                     }
-                                    EventKind::Remove(_) => {
+                                }
+                                EventKind::Modify(ModifyKind::Name(mode)) => {
+                                    match mode {
+                                        RenameMode::From => {
+                                            for path in event.paths {
+                                                debouncer.remove(&path);
+                                                let _ = tx.send(IngestMessage::Delete(path)).await;
+                                            }
+                                        }
+                                        RenameMode::To => {
+                                            for path in event.paths {
+                                                debouncer.record_event(path);
+                                            }
+                                        }
+                                        RenameMode::Both if event.paths.len() >= 2 => {
+                                            let from = event.paths[0].clone();
+                                            let to = event.paths[1].clone();
+                                            debouncer.remove(&from);
+                                            let _ = tx.send(IngestMessage::Delete(from)).await;
+                                            debouncer.record_event(to);
+                                        }
+                                        _ => {
+                                            for path in event.paths {
+                                                if !path.exists() {
+                                                    debouncer.remove(&path);
+                                                    let _ = tx.send(IngestMessage::Delete(path)).await;
+                                                } else {
+                                                    debouncer.record_event(path);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                EventKind::Modify(_) => {
+                                    for path in event.paths {
+                                        debouncer.record_event(path);
+                                    }
+                                }
+                                EventKind::Remove(_) => {
+                                    for path in event.paths {
                                         debouncer.remove(&path);
                                         let _ = tx.send(IngestMessage::Delete(path)).await;
                                     }
-                                    _ => {}
                                 }
+                                _ => {}
                             }
                         }
                         None => break,

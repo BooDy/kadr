@@ -6,6 +6,7 @@ use crate::error::Result;
 use crate::parser::FilenameParser;
 use crate::probe::TechnicalProber;
 use crate::sidecars::SidecarScanner;
+use tracing::warn;
 
 pub struct IngestPipeline {
     filename_parser: FilenameParser,
@@ -64,7 +65,13 @@ impl IngestPipeline {
         }
 
         let artwork = self.sidecar_scanner.find_artwork(path);
-        let nfo = self.sidecar_scanner.find_nfo_for_media(path)?;
+        let nfo = match self.sidecar_scanner.find_nfo_for_media(path) {
+            Ok(opt) => opt,
+            Err(e) => {
+                warn!(path = ?path, error = ?e, "Failed to parse .nfo sidecar; falling back to filename metadata");
+                None
+            }
+        };
 
         let mut final_title = parsed.title;
         let mut final_year = parsed.year;

@@ -37,6 +37,7 @@ impl IngestWorker {
                             }
                         }
                         Some(IngestMessage::Delete(path)) => {
+                            batch.retain(|item| item.file_path != path);
                             if let Err(e) = self.repo.delete_by_path(&path).await {
                                 error!(path = ?path, error = ?e, "Failed to delete removed media file");
                             }
