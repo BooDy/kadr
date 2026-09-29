@@ -2,6 +2,11 @@
 name = "kadr-ingest"
 version = "0.1.0"
 edition = "2021"
+autotests = true
+
+[[test]]
+name = "e2e_ingest_test"
+path = "../../tests/e2e_ingest_test.rs"
 
 [dependencies]
 kadr-core = { path = "../kadr-core" }
