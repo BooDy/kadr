@@ -14,8 +14,9 @@ pub async fn run_ffprobe<P: AsRef<Path>>(path: P) -> Result<Option<TechnicalInfo
             "json",
             "-show_format",
             "-show_streams",
-            path.as_ref().to_str().unwrap_or_default(),
         ])
+        .arg(path.as_ref())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -44,6 +45,12 @@ pub async fn run_ffprobe<P: AsRef<Path>>(path: P) -> Result<Option<TechnicalInfo
             let codec_name = stream["codec_name"].as_str().map(|s| s.to_string());
 
             if codec_type == "video" && info.video_codec.is_none() {
+                let is_attached_pic = stream["disposition"]["attached_pic"].as_i64() == Some(1)
+                    || stream["disposition"]["attached_pic"].as_str() == Some("1");
+                if is_attached_pic {
+                    continue;
+                }
+
                 info.video_codec = codec_name;
                 let width = stream["width"].as_i64().unwrap_or(0);
                 let height = stream["height"].as_i64().unwrap_or(0);

@@ -87,6 +87,14 @@ async fn test_pure_rust_nonexistent_file() {
 }
 
 #[tokio::test]
+async fn test_technical_prober_debug_and_clone() {
+    let prober = TechnicalProber::new(true);
+    let cloned = prober.clone();
+    let debug_str = format!("{:?}", cloned);
+    assert!(debug_str.contains("TechnicalProber"));
+}
+
+#[tokio::test]
 async fn test_ffprobe_failure_fallback_to_pure_rust() {
     let dir = tempdir().unwrap();
     let mkv_path = dir.path().join("invalid.mkv");
@@ -161,5 +169,66 @@ async fn test_ffprobe_real_media_file_inspection() {
     assert_eq!(info.video_codec.as_deref(), Some("ffv1"));
     assert_eq!(info.audio_codec.as_deref(), Some("flac"));
     assert_eq!(info.audio_channels, Some(1));
+    assert!(info.duration_seconds >= 1);
+}
+
+#[tokio::test]
+async fn test_ffprobe_attached_pic_ignored() {
+    let ffmpeg_available = Command::new("ffmpeg").arg("-version").output().is_ok();
+    let ffprobe_available = Command::new("ffprobe").arg("-version").output().is_ok();
+
+    if !ffmpeg_available || !ffprobe_available {
+        eprintln!("Skipping test_ffprobe_attached_pic_ignored: ffmpeg or ffprobe not available");
+        return;
+    }
+
+    let dir = tempdir().unwrap();
+    let test_audio = dir.path().join("test_with_cover.flac");
+
+    // Generate audio with attached picture
+    let gen_status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=300x300:d=1",
+            "-map",
+            "0:a",
+            "-map",
+            "1:v",
+            "-c:a",
+            "flac",
+            "-c:v",
+            "png",
+            "-disposition:v:0",
+            "attached_pic",
+            test_audio.to_str().unwrap(),
+        ])
+        .output();
+
+    if let Ok(output) = gen_status {
+        if !output.status.success() {
+            eprintln!(
+                "Failed to generate test audio with cover: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+    } else {
+        return;
+    }
+
+    let prober = TechnicalProber::new(true);
+    let info = prober.probe(&test_audio).await.unwrap();
+
+    // Attached picture video stream must be ignored
+    assert_eq!(info.video_codec, None);
+    assert_eq!(info.resolution, None);
+    assert_eq!(info.audio_codec.as_deref(), Some("flac"));
     assert!(info.duration_seconds >= 1);
 }

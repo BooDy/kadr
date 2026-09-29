@@ -5,6 +5,7 @@ use crate::error::Result;
 use kadr_core::models::TechnicalInfo;
 use std::path::Path;
 
+#[derive(Debug, Clone)]
 pub struct TechnicalProber {
     enable_ffprobe: bool,
 }
