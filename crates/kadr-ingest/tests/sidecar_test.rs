@@ -126,3 +126,38 @@ fn test_missing_nfo_returns_none() {
     let scanner = SidecarScanner::new();
     assert!(scanner.read_nfo(&nfo_path).unwrap().is_none());
 }
+
+#[test]
+fn test_parse_nfo_multibyte_year_no_panic() {
+    let dir = tempdir().unwrap();
+    let nfo_path = dir.path().join("arabic_dates.nfo");
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8" ?>
+<movie>
+    <title>الكيف</title>
+    <premiered>سنة 1985</premiered>
+</movie>"#;
+
+    let mut file = File::create(&nfo_path).unwrap();
+    file.write_all(xml_content.as_bytes()).unwrap();
+
+    let scanner = SidecarScanner::new();
+    let nfo = scanner.read_nfo(&nfo_path).unwrap().expect("nfo should parse");
+
+    assert_eq!(nfo.title.as_deref(), Some("الكيف"));
+    assert_eq!(nfo.year, Some(1985));
+}
+
+#[test]
+fn test_discover_webp_artwork() {
+    let dir = tempdir().unwrap();
+    let video_path = dir.path().join("movie.mkv");
+    let backdrop_path = dir.path().join("movie-backdrop.webp");
+
+    File::create(&video_path).unwrap();
+    File::create(&backdrop_path).unwrap();
+
+    let scanner = SidecarScanner::new();
+    let artwork = scanner.find_artwork(&video_path);
+
+    assert_eq!(artwork.backdrop, Some(backdrop_path));
+}

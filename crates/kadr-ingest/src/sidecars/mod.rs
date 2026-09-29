@@ -25,9 +25,11 @@ impl SidecarScanner {
             None => return Ok(None),
         };
 
-        let candidate_named = parent.join(format!("{}.nfo", stem));
-        if candidate_named.is_file() {
-            return self.read_nfo(&candidate_named);
+        if !stem.is_empty() {
+            let candidate_named = parent.join(format!("{}.nfo", stem));
+            if candidate_named.is_file() {
+                return self.read_nfo(&candidate_named);
+            }
         }
 
         let candidate_movie = parent.join("movie.nfo");

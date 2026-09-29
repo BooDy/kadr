@@ -34,22 +34,27 @@ pub fn parse_nfo<P: AsRef<Path>>(path: P) -> Result<Option<NfoData>> {
         if let Ok(y) = s.parse::<i32>() {
             return Some(y);
         }
-        if s.len() >= 4 {
-            if let Ok(y) = s[..4].parse::<i32>() {
-                return Some(y);
+        let chars: Vec<char> = s.chars().collect();
+        for window in chars.windows(4) {
+            if window.iter().all(|c| c.is_ascii_digit()) {
+                let digit_str: String = window.iter().collect();
+                if let Ok(y) = digit_str.parse::<i32>() {
+                    return Some(y);
+                }
             }
         }
         None
     };
 
     loop {
-        match reader.read_event()? {
+        let text_content = match reader.read_event()? {
             Event::Start(e) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
                 if name == "actor" {
                     in_actor = true;
                 }
                 current_tag = name;
+                None
             }
             Event::End(e) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
@@ -57,61 +62,49 @@ pub fn parse_nfo<P: AsRef<Path>>(path: P) -> Result<Option<NfoData>> {
                     in_actor = false;
                 }
                 current_tag.clear();
+                None
             }
             Event::Text(e) => {
                 let text = e.unescape()?.trim().to_string();
                 if text.is_empty() {
-                    continue;
-                }
-                match (current_tag.as_str(), in_actor) {
-                    ("title", false) => nfo.title = Some(text),
-                    ("originaltitle", false) | ("original_title", false) => {
-                        nfo.original_title = Some(text);
-                    }
-                    ("year", false) => {
-                        nfo.year = parse_year(&text).or(nfo.year);
-                    }
-                    ("premiered", false) | ("releasedate", false) => {
-                        if nfo.year.is_none() {
-                            nfo.year = parse_year(&text);
-                        }
-                    }
-                    ("plot", false) | ("overview", false) => nfo.overview = Some(text),
-                    ("director", false) => nfo.director = Some(text),
-                    ("studio", false) => nfo.studio = Some(text),
-                    ("name", true) => nfo.actors.push(text),
-                    ("genre", false) | ("tag", false) => nfo.tags.push(text),
-                    _ => {}
+                    None
+                } else {
+                    Some(text)
                 }
             }
             Event::CData(e) => {
                 let text = String::from_utf8_lossy(&e).trim().to_string();
                 if text.is_empty() {
-                    continue;
-                }
-                match (current_tag.as_str(), in_actor) {
-                    ("title", false) => nfo.title = Some(text),
-                    ("originaltitle", false) | ("original_title", false) => {
-                        nfo.original_title = Some(text);
-                    }
-                    ("year", false) => {
-                        nfo.year = parse_year(&text).or(nfo.year);
-                    }
-                    ("premiered", false) | ("releasedate", false) => {
-                        if nfo.year.is_none() {
-                            nfo.year = parse_year(&text);
-                        }
-                    }
-                    ("plot", false) | ("overview", false) => nfo.overview = Some(text),
-                    ("director", false) => nfo.director = Some(text),
-                    ("studio", false) => nfo.studio = Some(text),
-                    ("name", true) => nfo.actors.push(text),
-                    ("genre", false) | ("tag", false) => nfo.tags.push(text),
-                    _ => {}
+                    None
+                } else {
+                    Some(text)
                 }
             }
             Event::Eof => break,
-            _ => {}
+            _ => None,
+        };
+
+        if let Some(text) = text_content {
+            match (current_tag.as_str(), in_actor) {
+                ("title", false) => nfo.title = Some(text),
+                ("originaltitle", false) | ("original_title", false) => {
+                    nfo.original_title = Some(text);
+                }
+                ("year", false) => {
+                    nfo.year = parse_year(&text).or(nfo.year);
+                }
+                ("premiered", false) | ("releasedate", false) => {
+                    if nfo.year.is_none() {
+                        nfo.year = parse_year(&text);
+                    }
+                }
+                ("plot", false) | ("overview", false) => nfo.overview = Some(text),
+                ("director", false) => nfo.director = Some(text),
+                ("studio", false) => nfo.studio = Some(text),
+                ("name", true) => nfo.actors.push(text),
+                ("genre", false) | ("tag", false) => nfo.tags.push(text),
+                _ => {}
+            }
         }
     }
 
