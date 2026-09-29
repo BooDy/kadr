@@ -14,8 +14,8 @@ use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 #[derive(Parser, Debug)]
 #[command(name = "kadr", about = "Kadr Media Server")]
 struct Args {
-    #[arg(short, long, default_value = "kadr.toml")]
-    config: PathBuf,
+    #[arg(short, long)]
+    config: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -28,11 +28,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     info!(config = ?args.config, "Starting Kadr media server");
 
-    let config = if args.config.exists() {
-        AppConfig::load_from_file(&args.config)?
-    } else {
-        info!("Config file not found, using defaults");
-        AppConfig::default()
+    let config = match &args.config {
+        Some(path) => {
+            if !path.exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Config file not found: {}", path.display()),
+                )
+                .into());
+            }
+            AppConfig::load_from_file(path)?
+        }
+        None => {
+            let default_path = std::path::Path::new("kadr.toml");
+            if default_path.exists() {
+                AppConfig::load_from_file(default_path)?
+            } else {
+                info!("Config file not found, using defaults");
+                AppConfig::default()
+            }
+        }
     };
 
     if let Some(parent) = config.storage.database_path.parent() {
@@ -91,7 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     drop(watchers);
     drop(ingest_tx);
-    let _ = worker_handle.await;
+    if let Err(e) = worker_handle.await {
+        error!(error = ?e, "Ingest worker task panicked or failed during execution");
+    }
 
     info!("Kadr server terminated cleanly.");
     Ok(())
