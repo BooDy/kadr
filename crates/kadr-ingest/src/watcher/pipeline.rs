@@ -1,0 +1,108 @@
+use std::fs;
+use std::path::Path;
+use std::time::SystemTime;
+use kadr_core::models::{Library, MediaItem, MediaMetadata};
+use crate::error::Result;
+use crate::parser::FilenameParser;
+use crate::probe::TechnicalProber;
+use crate::sidecars::SidecarScanner;
+
+pub struct IngestPipeline {
+    filename_parser: FilenameParser,
+    sidecar_scanner: SidecarScanner,
+    prober: TechnicalProber,
+}
+
+impl Default for IngestPipeline {
+    fn default() -> Self {
+        Self::new(false)
+    }
+}
+
+impl IngestPipeline {
+    pub fn new(enable_ffprobe: bool) -> Self {
+        Self {
+            filename_parser: FilenameParser::new(),
+            sidecar_scanner: SidecarScanner::new(),
+            prober: TechnicalProber::new(enable_ffprobe),
+        }
+    }
+
+    pub async fn process_file<P: AsRef<Path>>(&self, library: &Library, path: P) -> Result<Option<MediaItem>> {
+        let path = path.as_ref();
+        let filename = match path.file_name().and_then(|s| s.to_str()) {
+            Some(name) => name,
+            None => return Ok(None),
+        };
+
+        let parsed = match self.filename_parser.parse(filename) {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+        let metadata_fs = match fs::metadata(path) {
+            Ok(m) => m,
+            Err(_) => return Ok(None),
+        };
+        let file_size = metadata_fs.len();
+        let added_at = metadata_fs
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        let mut technical = self.prober.probe(path).await?;
+        if technical.resolution.is_none() {
+            technical.resolution = parsed.resolution;
+        }
+        if technical.video_codec.is_none() {
+            technical.video_codec = parsed.video_codec;
+        }
+        if technical.container.is_none() {
+            technical.container = Some(parsed.container);
+        }
+
+        let artwork = self.sidecar_scanner.find_artwork(path);
+        let nfo = self.sidecar_scanner.find_nfo_for_media(path)?;
+
+        let mut final_title = parsed.title;
+        let mut final_year = parsed.year;
+        let mut original_title = None;
+        let mut meta = MediaMetadata::default();
+
+        if let Some(nfo_data) = nfo {
+            if let Some(t) = nfo_data.title {
+                final_title = t;
+            }
+            if let Some(y) = nfo_data.year {
+                final_year = Some(y);
+            }
+            original_title = nfo_data.original_title;
+            meta.overview = nfo_data.overview;
+            meta.director = nfo_data.director;
+            meta.studio = nfo_data.studio;
+            meta.actors = nfo_data.actors;
+            meta.tags = nfo_data.tags;
+        }
+
+        meta.release_group = parsed.release_group;
+        meta.poster_path = artwork.poster.and_then(|p| p.to_str().map(String::from));
+        meta.backdrop_path = artwork.backdrop.and_then(|p| p.to_str().map(String::from));
+
+        Ok(Some(MediaItem {
+            id: None,
+            library_id: library.id.clone(),
+            item_type: library.media_type,
+            title: final_title,
+            original_title,
+            release_year: final_year,
+            added_at,
+            file_path: path.to_path_buf(),
+            file_name: filename.to_string(),
+            file_size,
+            technical,
+            metadata: meta,
+        }))
+    }
+}
