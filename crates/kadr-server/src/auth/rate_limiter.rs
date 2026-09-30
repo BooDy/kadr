@@ -82,4 +82,19 @@ impl RateLimiter {
         let mut write = self.attempts.write().await;
         write.remove(ip);
     }
+
+    pub async fn prune_stale(&self) -> usize {
+        let now = Instant::now();
+        let mut write = self.attempts.write().await;
+        let initial_len = write.len();
+        write.retain(|_, record| {
+            let is_locked_out = match record.lockout_until {
+                Some(lockout) => now < lockout,
+                None => false,
+            };
+            is_locked_out
+                || now.saturating_duration_since(record.first_failed_at) <= self.window_duration
+        });
+        initial_len - write.len()
+    }
 }

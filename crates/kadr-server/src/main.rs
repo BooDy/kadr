@@ -201,9 +201,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Duration::from_secs(300),
     );
 
-    // Initialize session registry and spawn periodic stale session pruning task (prunes sessions idle >60s every 30s)
+    // Initialize session registry and spawn periodic stale session and rate limiter pruning task
     let session_registry = Arc::new(SessionRegistry::new());
     let sessions_cleanup = session_registry.clone();
+    let rate_limiter_cleanup = rate_limiter.clone();
     let prune_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
@@ -211,6 +212,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let pruned = sessions_cleanup.prune_stale(Duration::from_secs(60)).await;
             if pruned > 0 {
                 info!(pruned, "Pruned stale playback sessions");
+            }
+            let pruned_ips = rate_limiter_cleanup.prune_stale().await;
+            if pruned_ips > 0 {
+                info!(pruned = pruned_ips, "Pruned stale rate limiter entries");
             }
         }
     });

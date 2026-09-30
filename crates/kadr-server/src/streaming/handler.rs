@@ -11,7 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
 use crate::auth::jwt::AuthUser;
-use crate::streaming::range::parse_range_header;
+use crate::streaming::range::{parse_range_header, RangeResult};
 use kadr_storage::repos::MediaItemRepository;
 
 pub fn resolve_mime(ext: &str) -> &'static str {
@@ -78,8 +78,14 @@ pub async fn stream_media_item(
     });
     let mime = resolve_mime(&container);
 
-    if let Some(range_header) = headers.get(header::RANGE).and_then(|h| h.to_str().ok()) {
-        if let Some((start, end)) = parse_range_header(range_header, total_size) {
+    let range_result = headers
+        .get(header::RANGE)
+        .and_then(|h| h.to_str().ok())
+        .map(|h| parse_range_header(h, total_size))
+        .unwrap_or(RangeResult::Ignore);
+
+    match range_result {
+        RangeResult::Satisfiable { start, end } => {
             let length = end - start + 1;
             let mut file = file;
             if file.seek(SeekFrom::Start(start)).await.is_err() {
@@ -104,24 +110,25 @@ pub async fn stream_media_item(
                 )
                 .body(body)
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        } else {
+        }
+        RangeResult::Unsatisfiable => Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONTENT_RANGE, format!("bytes */{}", total_size))
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+        RangeResult::Ignore => {
+            let stream = ReaderStream::with_capacity(file, 64 * 1024);
+            let body = Body::from_stream(stream);
+
             Response::builder()
-                .status(StatusCode::RANGE_NOT_SATISFIABLE)
-                .header(header::CONTENT_RANGE, format!("bytes */{}", total_size))
-                .body(Body::empty())
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime)
+                .header(header::ACCEPT_RANGES, "bytes")
+                .header(header::CONTENT_LENGTH, total_size.to_string())
+                .body(body)
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
-    } else {
-        let stream = ReaderStream::with_capacity(file, 64 * 1024);
-        let body = Body::from_stream(stream);
-
-        Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, mime)
-            .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_LENGTH, total_size.to_string())
-            .body(body)
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
     }
 }
 

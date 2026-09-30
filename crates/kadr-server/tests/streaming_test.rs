@@ -243,6 +243,41 @@ async fn test_range_edge_cases_and_416() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::RANGE_NOT_SATISFIABLE);
     assert_eq!(res.headers().get("content-range").unwrap(), "bytes */1000");
+    assert_eq!(res.headers().get("accept-ranges").unwrap(), "bytes");
+
+    // Unsatisfiable open-ended range (bytes=9999-) -> 416
+    let req = Request::builder()
+        .uri(format!("/api/v1/stream/{}", item_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("range", "bytes=9999-")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(res.headers().get("content-range").unwrap(), "bytes */1000");
+    assert_eq!(res.headers().get("accept-ranges").unwrap(), "bytes");
+
+    // Unrecognized range unit (chars=0-100) -> RFC 7233 §3.1 Ignore fallback to 200 OK
+    let req = Request::builder()
+        .uri(format!("/api/v1/stream/{}", item_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("range", "chars=0-100")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers().get("content-length").unwrap(), "1000");
+
+    // Malformed range header -> RFC 7233 §3.1 Ignore fallback to 200 OK
+    let req = Request::builder()
+        .uri(format!("/api/v1/stream/{}", item_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("range", "bytes=invalid-syntax")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers().get("content-length").unwrap(), "1000");
 
     // Invalid item_id -> 404
     let req = Request::builder()
