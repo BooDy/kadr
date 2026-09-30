@@ -50,6 +50,14 @@ pub async fn create_user(
     Extension(user_repo): Extension<UserRepository>,
     Json(payload): Json<CreateUserRequest>,
 ) -> impl IntoResponse {
+    let trimmed_username = payload.username.trim();
+    if trimmed_username.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Username cannot be empty or whitespace only" })),
+        ).into_response();
+    }
+
     let pin_hash = match hash_pin(&payload.pin) {
         Ok(h) => h,
         Err(e) => {
@@ -66,7 +74,7 @@ pub async fn create_user(
     };
     let new_user = User {
         id: Uuid::new_v4().to_string(),
-        username: payload.username,
+        username: trimmed_username.to_string(),
         pin_hash,
         role: payload.role,
         created_at: now,

@@ -22,26 +22,39 @@ where
     type Rejection = Infallible;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        if let Some(forwarded) = parts.headers.get("x-forwarded-for") {
-            if let Ok(s) = forwarded.to_str() {
-                if let Some(first) = s.split(',').next() {
-                    if let Ok(ip) = first.trim().parse::<IpAddr>() {
+        let peer_ip = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ci| ci.0.ip());
+
+        // Only trust forwarded headers if the immediate peer is loopback (e.g. reverse proxy on localhost)
+        // or if ConnectInfo is not available (e.g. during test setups without socket peer info).
+        let is_trusted_proxy = match peer_ip {
+            Some(ip) => ip.is_loopback(),
+            None => true,
+        };
+
+        if is_trusted_proxy {
+            if let Some(forwarded) = parts.headers.get("x-forwarded-for") {
+                if let Ok(s) = forwarded.to_str() {
+                    if let Some(first) = s.split(',').next() {
+                        if let Ok(ip) = first.trim().parse::<IpAddr>() {
+                            return Ok(ClientIp(ip));
+                        }
+                    }
+                }
+            }
+            if let Some(real_ip) = parts.headers.get("x-real-ip") {
+                if let Ok(s) = real_ip.to_str() {
+                    if let Ok(ip) = s.trim().parse::<IpAddr>() {
                         return Ok(ClientIp(ip));
                     }
                 }
             }
         }
-        if let Some(real_ip) = parts.headers.get("x-real-ip") {
-            if let Ok(s) = real_ip.to_str() {
-                if let Ok(ip) = s.trim().parse::<IpAddr>() {
-                    return Ok(ClientIp(ip));
-                }
-            }
-        }
-        if let Some(connect_info) = parts.extensions.get::<ConnectInfo<SocketAddr>>() {
-            return Ok(ClientIp(connect_info.0.ip()));
-        }
-        Ok(ClientIp("127.0.0.1".parse().unwrap()))
+
+        let final_ip = peer_ip.unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+        Ok(ClientIp(final_ip))
     }
 }
 
@@ -79,11 +92,18 @@ pub async fn profile_pin_auth(
 
     let user = match user_repo.get_by_id(&payload.user_id).await {
         Ok(Some(u)) => u,
-        _ => {
+        Ok(None) => {
             limiter.record_failure(&client_ip).await;
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({ "error": "Invalid user or PIN" })),
+            ).into_response();
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Database error retrieving user during auth");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Internal server error" })),
             ).into_response();
         }
     };

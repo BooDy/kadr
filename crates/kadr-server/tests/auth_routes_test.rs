@@ -1,5 +1,6 @@
 use axum::{
     body::Body,
+    extract::ConnectInfo,
     http::{Request, StatusCode},
 };
 use serde_json::Value;
@@ -11,6 +12,7 @@ use kadr_server::auth::jwt::JwtService;
 use kadr_server::api::create_router;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{UserRepository, PlaybackRepository, MediaItemRepository, LibraryRepository};
+use std::net::SocketAddr;
 use std::time::Duration;
 
 #[tokio::test]
@@ -230,7 +232,18 @@ async fn test_user_creation_admin_and_forbidden() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 
-    // 4. Admin creation success -> 201 Created
+    // 4. Admin creation with empty or whitespace username -> 400 Bad Request
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/users")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"username":"   ","pin":"1111","role":"standard"}"#))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 5. Admin creation success -> 201 Created
     let req = Request::builder()
         .method("POST")
         .uri("/api/v1/users")
@@ -246,13 +259,157 @@ async fn test_user_creation_admin_and_forbidden() {
     assert_eq!(created["role"], "standard");
     let new_user_id = created["id"].as_str().unwrap();
 
-    // 5. Verify newly created user can log in with their PIN
+    // 6. Verify newly created user can log in with their PIN
     let req = Request::builder()
         .method("POST")
         .uri("/api/v1/auth/profile-pin")
         .header("content-type", "application/json")
         .body(Body::from(format!(r#"{{"user_id":"{}","pin":"4321"}}"#, new_user_id)))
         .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_ip_spoofing_protection_ignores_forwarded_headers_from_external_peer() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+
+    let admin = User {
+        id: "admin-1".to_string(),
+        username: "admin".to_string(),
+        pin_hash: hash_pin("1234").unwrap(),
+        role: UserRole::Admin,
+        created_at: 1700000000,
+    };
+    user_repo.create(&admin).await.unwrap();
+
+    let jwt = JwtService::new("super-secret-key-that-is-at-least-32-bytes-long", 3600);
+    let rate_limiter = RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300));
+
+    let app = create_router(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo,
+        jwt.clone(),
+        rate_limiter,
+    );
+
+    let external_peer: SocketAddr = "203.0.113.195:4321".parse().unwrap();
+
+    // Attacker sends 5 bad attempts from external_peer, rotating X-Forwarded-For headers
+    for i in 1..=5 {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/auth/profile-pin")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", format!("198.51.100.{}", i))
+            .body(Body::from(r#"{"user_id":"admin-1","pin":"0000"}"#))
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(external_peer));
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // 6th attempt from the same external peer (even with a new spoofed X-Forwarded-For) -> 429 Locked Out!
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/profile-pin")
+        .header("content-type", "application/json")
+        .header("x-forwarded-for", "10.0.0.1")
+        .body(Body::from(r#"{"user_id":"admin-1","pin":"1234"}"#))
+        .unwrap();
+    req.extensions_mut().insert(ConnectInfo(external_peer));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    // A different external peer is NOT locked out
+    let another_peer: SocketAddr = "198.51.100.222:5678".parse().unwrap();
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/profile-pin")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"user_id":"admin-1","pin":"1234"}"#))
+        .unwrap();
+    req.extensions_mut().insert(ConnectInfo(another_peer));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_trusted_proxy_forwarded_headers_honored() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+
+    let admin = User {
+        id: "admin-1".to_string(),
+        username: "admin".to_string(),
+        pin_hash: hash_pin("1234").unwrap(),
+        role: UserRole::Admin,
+        created_at: 1700000000,
+    };
+    user_repo.create(&admin).await.unwrap();
+
+    let jwt = JwtService::new("super-secret-key-that-is-at-least-32-bytes-long", 3600);
+    let rate_limiter = RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300));
+
+    let app = create_router(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo,
+        jwt.clone(),
+        rate_limiter,
+    );
+
+    let loopback_proxy: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+    // 5 failed attempts forwarded from client A
+    for _ in 0..5 {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/auth/profile-pin")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", "192.0.2.1")
+            .body(Body::from(r#"{"user_id":"admin-1","pin":"0000"}"#))
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(loopback_proxy));
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // Client A is locked out through loopback proxy
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/profile-pin")
+        .header("content-type", "application/json")
+        .header("x-forwarded-for", "192.0.2.1")
+        .body(Body::from(r#"{"user_id":"admin-1","pin":"1234"}"#))
+        .unwrap();
+    req.extensions_mut().insert(ConnectInfo(loopback_proxy));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    // Client B forwarded through the same loopback proxy is NOT locked out
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/profile-pin")
+        .header("content-type", "application/json")
+        .header("x-forwarded-for", "192.0.2.2")
+        .body(Body::from(r#"{"user_id":"admin-1","pin":"1234"}"#))
+        .unwrap();
+    req.extensions_mut().insert(ConnectInfo(loopback_proxy));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
