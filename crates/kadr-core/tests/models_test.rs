@@ -59,3 +59,87 @@ fn test_library_serialization_roundtrip() {
 
     assert_eq!(lib, deserialized);
 }
+
+#[test]
+fn test_auth_and_user_models_serialization_roundtrip() {
+    use kadr_core::models::{AuthClaims, User, UserRole};
+
+    let user = User {
+        id: "usr_abc123".to_string(),
+        username: "ghareeb".to_string(),
+        pin_hash: "$argon2id$...".to_string(),
+        role: UserRole::Admin,
+        created_at: 1700000000,
+    };
+
+    let serialized = serde_json::to_string(&user).expect("serialization failed");
+    let deserialized: User = serde_json::from_str(&serialized).expect("deserialization failed");
+    assert_eq!(user, deserialized);
+
+    // Test alias deserialization for UserRole
+    let role_admin: UserRole = serde_json::from_str("\"Admin\"").unwrap();
+    assert_eq!(role_admin, UserRole::Admin);
+    let role_admin_upper: UserRole = serde_json::from_str("\"ADMIN\"").unwrap();
+    assert_eq!(role_admin_upper, UserRole::Admin);
+    let role_admin_snake: UserRole = serde_json::from_str("\"admin\"").unwrap();
+    assert_eq!(role_admin_snake, UserRole::Admin);
+
+    let role_std: UserRole = serde_json::from_str("\"Standard\"").unwrap();
+    assert_eq!(role_std, UserRole::Standard);
+    let role_std_snake: UserRole = serde_json::from_str("\"standard\"").unwrap();
+    assert_eq!(role_std_snake, UserRole::Standard);
+
+    let claims = AuthClaims {
+        sub: user.id.clone(),
+        username: user.username.clone(),
+        role: user.role,
+        exp: 1700086400,
+        iat: 1700000000,
+    };
+    let claims_json = serde_json::to_string(&claims).expect("serialization failed");
+    let deserialized_claims: AuthClaims =
+        serde_json::from_str(&claims_json).expect("deserialization failed");
+    assert_eq!(claims, deserialized_claims);
+}
+
+#[test]
+fn test_playback_models_serialization_roundtrip() {
+    use kadr_core::models::{PlaybackSession, PlaybackState, WatchState};
+
+    let state = PlaybackState {
+        user_id: "usr_1".to_string(),
+        media_item_id: 42,
+        playback_position_seconds: 3500,
+        watch_state: WatchState::InProgress,
+        last_watched_at: 1700003500,
+        play_count: 2,
+    };
+
+    let serialized = serde_json::to_string(&state).expect("serialization failed");
+    let deserialized: PlaybackState =
+        serde_json::from_str(&serialized).expect("deserialization failed");
+    assert_eq!(state, deserialized);
+
+    // Test WatchState enum values
+    let ws_unwatched: WatchState = serde_json::from_str("\"unwatched\"").unwrap();
+    assert_eq!(ws_unwatched, WatchState::Unwatched);
+    let ws_in_progress: WatchState = serde_json::from_str("\"in_progress\"").unwrap();
+    assert_eq!(ws_in_progress, WatchState::InProgress);
+    let ws_completed: WatchState = serde_json::from_str("\"completed\"").unwrap();
+    assert_eq!(ws_completed, WatchState::Completed);
+
+    let session = PlaybackSession {
+        session_id: "sess_xyz".to_string(),
+        user_id: "usr_1".to_string(),
+        media_item_id: 42,
+        duration_seconds: 7200,
+        current_position_seconds: 3500,
+        started_at: 1700000000,
+        last_heartbeat_at: 1700003500,
+    };
+
+    let session_json = serde_json::to_string(&session).expect("serialization failed");
+    let deserialized_session: PlaybackSession =
+        serde_json::from_str(&session_json).expect("deserialization failed");
+    assert_eq!(session, deserialized_session);
+}

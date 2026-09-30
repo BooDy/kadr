@@ -65,3 +65,59 @@ pub struct MediaItem {
     pub technical: TechnicalInfo,
     pub metadata: MediaMetadata,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UserRole {
+    #[serde(alias = "Admin", alias = "ADMIN")]
+    Admin,
+    #[serde(alias = "Standard", alias = "STANDARD")]
+    Standard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub pin_hash: String,
+    pub role: UserRole,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchState {
+    Unwatched,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaybackState {
+    pub user_id: String,
+    pub media_item_id: i64,
+    pub playback_position_seconds: i64,
+    pub watch_state: WatchState,
+    pub last_watched_at: i64,
+    pub play_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaybackSession {
+    pub session_id: String,
+    pub user_id: String,
+    pub media_item_id: i64,
+    pub duration_seconds: i64,
+    pub current_position_seconds: i64,
+    pub started_at: i64,
+    pub last_heartbeat_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthClaims {
+    pub sub: String,
+    pub username: String,
+    pub role: UserRole,
+    pub exp: usize,
+    pub iat: usize,
+}
