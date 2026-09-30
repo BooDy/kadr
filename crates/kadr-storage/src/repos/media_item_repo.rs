@@ -90,6 +90,25 @@ impl MediaItemRepository {
         }).await?
     }
 
+    pub async fn get_by_id(&self, id: i64) -> Result<Option<MediaItem>> {
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, library_id, item_type, title, original_title, release_year,
+                        duration_seconds, added_at, file_path, file_name, file_size,
+                        resolution, video_codec, audio_codec, audio_channels, container, metadata
+                 FROM media_items
+                 WHERE id = ?1",
+            )?;
+            let mut rows = stmt.query(params![id])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(map_media_item_row(row)?))
+            } else {
+                Ok(None)
+            }
+        }).await?
+    }
+
     pub async fn list_by_library(&self, library_id: &str, limit: usize, offset: usize) -> Result<Vec<MediaItem>> {
         let lib_id = library_id.to_string();
         let conn = self.pool.get().await?;
@@ -104,52 +123,7 @@ impl MediaItemRepository {
                  LIMIT ?2 OFFSET ?3"
             )?;
 
-            let rows = stmt.query_map(params![lib_id, limit as i64, offset as i64], |row| {
-                let id: i64 = row.get(0)?;
-                let library_id: String = row.get(1)?;
-                let item_type_str: String = row.get(2)?;
-                let title: String = row.get(3)?;
-                let original_title: Option<String> = row.get(4)?;
-                let release_year: Option<i32> = row.get(5)?;
-                let duration_seconds: i64 = row.get(6)?;
-                let added_at: i64 = row.get(7)?;
-                let file_path: String = row.get(8)?;
-                let file_name: String = row.get(9)?;
-                let file_size: i64 = row.get(10)?;
-                let resolution: Option<String> = row.get(11)?;
-                let video_codec: Option<String> = row.get(12)?;
-                let audio_codec: Option<String> = row.get(13)?;
-                let audio_channels: Option<u8> = row.get(14)?;
-                let container: Option<String> = row.get(15)?;
-                let metadata_str: String = row.get(16)?;
-
-                let item_type: MediaType = serde_json::from_str(&format!("\"{}\"", item_type_str))
-                    .unwrap_or(MediaType::Unknown);
-                let metadata: MediaMetadata = serde_json::from_str(&metadata_str)
-                    .unwrap_or_default();
-
-                Ok(MediaItem {
-                    id: Some(id),
-                    library_id,
-                    item_type,
-                    title,
-                    original_title,
-                    release_year,
-                    added_at,
-                    file_path: PathBuf::from(file_path),
-                    file_name,
-                    file_size: file_size as u64,
-                    technical: TechnicalInfo {
-                        duration_seconds,
-                        resolution,
-                        video_codec,
-                        audio_codec,
-                        audio_channels,
-                        container,
-                    },
-                    metadata,
-                })
-            })?;
+            let rows = stmt.query_map(params![lib_id, limit as i64, offset as i64], map_media_item_row)?;
 
             let mut result = Vec::new();
             for row in rows {
@@ -172,3 +146,51 @@ impl MediaItemRepository {
         }).await?
     }
 }
+
+fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
+    let id: i64 = row.get(0)?;
+    let library_id: String = row.get(1)?;
+    let item_type_str: String = row.get(2)?;
+    let title: String = row.get(3)?;
+    let original_title: Option<String> = row.get(4)?;
+    let release_year: Option<i32> = row.get(5)?;
+    let duration_seconds: i64 = row.get(6)?;
+    let added_at: i64 = row.get(7)?;
+    let file_path: String = row.get(8)?;
+    let file_name: String = row.get(9)?;
+    let file_size: i64 = row.get(10)?;
+    let resolution: Option<String> = row.get(11)?;
+    let video_codec: Option<String> = row.get(12)?;
+    let audio_codec: Option<String> = row.get(13)?;
+    let audio_channels: Option<u8> = row.get(14)?;
+    let container: Option<String> = row.get(15)?;
+    let metadata_str: String = row.get(16)?;
+
+    let item_type: MediaType = serde_json::from_str(&format!("\"{}\"", item_type_str))
+        .unwrap_or(MediaType::Unknown);
+    let metadata: MediaMetadata = serde_json::from_str(&metadata_str)
+        .unwrap_or_default();
+
+    Ok(MediaItem {
+        id: Some(id),
+        library_id,
+        item_type,
+        title,
+        original_title,
+        release_year,
+        added_at,
+        file_path: PathBuf::from(file_path),
+        file_name,
+        file_size: file_size as u64,
+        technical: TechnicalInfo {
+            duration_seconds,
+            resolution,
+            video_codec,
+            audio_codec,
+            audio_channels,
+            container,
+        },
+        metadata,
+    })
+}
+

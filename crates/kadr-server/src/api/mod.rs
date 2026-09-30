@@ -23,6 +23,8 @@ pub fn create_router(
         .route("/api/v1/auth/profile-pin", post(auth_routes::profile_pin_auth))
         .route("/api/v1/auth/me", get(auth_routes::get_current_user))
         .route("/api/v1/users", post(user_routes::create_user))
+        // Media streaming direct-play route
+        .route("/api/v1/stream/{item_id}", get(crate::streaming::stream_media_item))
         .layer(Extension(user_repo))
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
