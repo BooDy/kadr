@@ -9,10 +9,12 @@ use kadr_core::models::{User, UserRole};
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
 use kadr_server::auth::jwt::JwtService;
+use kadr_server::playback::SessionRegistry;
 use kadr_server::api::create_router;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{UserRepository, PlaybackRepository, MediaItemRepository, LibraryRepository};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::test]
@@ -44,6 +46,7 @@ async fn test_auth_profile_flow_and_rate_limiting() {
         lib_repo,
         jwt.clone(),
         rate_limiter,
+        Arc::new(SessionRegistry::new()),
     );
 
     // 1. GET /api/v1/users/profiles
@@ -129,6 +132,7 @@ async fn test_rate_limiting_lockout_and_headers() {
         lib_repo,
         jwt.clone(),
         rate_limiter,
+        Arc::new(SessionRegistry::new()),
     );
 
     // 5 failed PIN attempts
@@ -195,6 +199,7 @@ async fn test_user_creation_admin_and_forbidden() {
         lib_repo,
         jwt.clone(),
         rate_limiter,
+        Arc::new(SessionRegistry::new()),
     );
 
     let admin_token = jwt.generate_token(&admin).unwrap();
@@ -299,6 +304,7 @@ async fn test_ip_spoofing_protection_ignores_forwarded_headers_from_external_pee
         lib_repo,
         jwt.clone(),
         rate_limiter,
+        Arc::new(SessionRegistry::new()),
     );
 
     let external_peer: SocketAddr = "203.0.113.195:4321".parse().unwrap();
@@ -371,6 +377,7 @@ async fn test_trusted_proxy_forwarded_headers_honored() {
         lib_repo,
         jwt.clone(),
         rate_limiter,
+        Arc::new(SessionRegistry::new()),
     );
 
     let loopback_proxy: SocketAddr = "127.0.0.1:8080".parse().unwrap();

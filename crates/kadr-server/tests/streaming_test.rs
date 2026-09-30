@@ -8,6 +8,7 @@ use kadr_core::models::{
 use kadr_server::api::create_router;
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::rate_limiter::RateLimiter;
+use kadr_server::playback::SessionRegistry;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
@@ -15,6 +16,7 @@ use kadr_storage::repos::{
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tempfile::tempdir;
 use tower::ServiceExt;
@@ -90,6 +92,7 @@ async fn test_http_206_range_streaming() {
         lib_repo,
         jwt,
         RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300)),
+        Arc::new(SessionRegistry::new()),
     );
 
     // 1. Full Stream (no Range) -> 200 OK
@@ -198,6 +201,7 @@ async fn test_range_edge_cases_and_416() {
         lib_repo,
         jwt,
         RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300)),
+        Arc::new(SessionRegistry::new()),
     );
 
     // Open-ended range (bytes=900-)
