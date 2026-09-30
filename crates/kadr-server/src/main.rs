@@ -158,27 +158,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize JWT service with persisted secret or auto-generate
     let jwt_secret_path = config.server.data_dir.join("jwt.secret");
-    let jwt_secret = if jwt_secret_path.exists() {
-        std::fs::read_to_string(&jwt_secret_path)?.trim().to_string()
-    } else {
-        use rand::distributions::Alphanumeric;
-        use rand::Rng;
-        let generated: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(64)
-            .map(char::from)
-            .collect();
-        if let Some(parent) = jwt_secret_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-        }
-        if let Err(e) = std::fs::write(&jwt_secret_path, &generated) {
-            warn!(error = %e, "Could not persist JWT secret to disk; using in-memory secret");
+    let existing_secret = if jwt_secret_path.exists() {
+        let content = std::fs::read_to_string(&jwt_secret_path)?.trim().to_string();
+        if content.is_empty() {
+            None
         } else {
-            info!(path = ?jwt_secret_path, "Generated and saved new JWT secret");
+            Some(content)
         }
-        generated
+    } else {
+        None
+    };
+
+    let jwt_secret = match existing_secret {
+        Some(secret) => secret,
+        None => {
+            use rand::distributions::Alphanumeric;
+            use rand::Rng;
+            let generated: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(64)
+                .map(char::from)
+                .collect();
+            if let Some(parent) = jwt_secret_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+            }
+            if let Err(e) = std::fs::write(&jwt_secret_path, &generated) {
+                warn!(error = %e, "Could not persist JWT secret to disk; using in-memory secret");
+            } else {
+                info!(path = ?jwt_secret_path, "Generated and saved new JWT secret");
+            }
+            generated
+        }
     };
     let jwt_svc = JwtService::new(&jwt_secret, 86400 * 7);
 
@@ -220,8 +232,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!("Kadr Milestone 2 HTTP server running at http://{}", addr);
 
-    let server = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal());
+    let server = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal());
 
     if let Err(e) = server.await {
         error!(error = ?e, "Axum server terminated with error");
