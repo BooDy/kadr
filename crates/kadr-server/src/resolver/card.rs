@@ -20,13 +20,18 @@ pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) ->
                 (None, None) => None,
             };
 
-            match (&item.metadata.series_title, ep_code) {
-                (Some(series), Some(code)) if !series.trim().is_empty() => {
-                    Some(format!("{code} - {series}"))
-                }
+            let series_opt = item
+                .metadata
+                .series_title
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+
+            match (series_opt, ep_code) {
+                (Some(series), Some(code)) => Some(format!("{code} - {series}")),
                 (None, Some(code)) => Some(code),
-                (Some(series), None) if !series.trim().is_empty() => Some(series.clone()),
-                _ => None,
+                (Some(series), None) => Some(series.to_string()),
+                (None, None) => None,
             }
         }
         _ => {
