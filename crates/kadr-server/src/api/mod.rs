@@ -1,5 +1,6 @@
 pub mod artwork_routes;
 pub mod auth_routes;
+pub mod events_routes;
 pub mod item_routes;
 pub mod screen_routes;
 pub mod subtitle_routes;
@@ -13,16 +14,18 @@ use axum::{
 use std::sync::Arc;
 use crate::auth::jwt::JwtService;
 use crate::auth::rate_limiter::RateLimiter;
+use crate::events::EventBus;
 use crate::layout::LayoutRegistry;
 use crate::playback::{self, SessionRegistry};
 use crate::resolver::WidgetResolver;
 use crate::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
+use crate::telemetry::TelemetryCollector;
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn create_router_with_subtitles(
+pub fn create_router_with_events(
     user_repo: UserRepository,
     playback_repo: PlaybackRepository,
     media_repo: MediaItemRepository,
@@ -34,6 +37,8 @@ pub fn create_router_with_subtitles(
     widget_resolver: Arc<WidgetResolver>,
     subtitle_service: Arc<SubtitleDeliveryService>,
     opensubtitles_client: Arc<OpenSubtitlesClient>,
+    event_bus: Arc<EventBus>,
+    telemetry_collector: Arc<TelemetryCollector>,
 ) -> Router {
     Router::new()
         // Public profile list & auth
@@ -65,6 +70,9 @@ pub fn create_router_with_subtitles(
         .route("/api/v1/subtitles/{item_id}/search", get(subtitle_routes::search_online_subtitles))
         .route("/api/v1/subtitles/{item_id}/download", post(subtitle_routes::download_subtitle))
         .route("/api/v1/subtitles/{subtitle_id}", delete(subtitle_routes::delete_subtitle))
+        // Real-time Event Streaming & System Telemetry routes
+        .route("/api/v1/events", get(events_routes::stream_events))
+        .route("/api/v1/system/telemetry", get(events_routes::get_telemetry))
         .layer(Extension(user_repo))
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
@@ -76,6 +84,48 @@ pub fn create_router_with_subtitles(
         .layer(Extension(widget_resolver))
         .layer(Extension(subtitle_service))
         .layer(Extension(opensubtitles_client))
+        .layer(Extension(event_bus.clone()))
+        .layer(Extension((*event_bus).clone()))
+        .layer(Extension(telemetry_collector))
+}
+
+pub use create_router_with_events as create_full_router;
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_router_with_subtitles(
+    user_repo: UserRepository,
+    playback_repo: PlaybackRepository,
+    media_repo: MediaItemRepository,
+    lib_repo: LibraryRepository,
+    jwt_svc: JwtService,
+    limiter: RateLimiter,
+    session_registry: Arc<SessionRegistry>,
+    layout_registry: LayoutRegistry,
+    widget_resolver: Arc<WidgetResolver>,
+    subtitle_service: Arc<SubtitleDeliveryService>,
+    opensubtitles_client: Arc<OpenSubtitlesClient>,
+) -> Router {
+    let event_bus = Arc::new(EventBus::default_bus());
+    let telemetry_collector = Arc::new(TelemetryCollector::new(
+        std::path::PathBuf::from(":memory:"),
+        session_registry.clone(),
+        event_bus.clone(),
+    ));
+    create_router_with_events(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo,
+        jwt_svc,
+        limiter,
+        session_registry,
+        layout_registry,
+        widget_resolver,
+        subtitle_service,
+        opensubtitles_client,
+        event_bus,
+        telemetry_collector,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
