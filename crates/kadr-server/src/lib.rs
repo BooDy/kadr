@@ -7,6 +7,8 @@ pub mod playback;
 pub mod resolver;
 pub mod streaming;
 pub mod subtitles;
+pub mod telemetry;
 
 pub use events::EventBus;
+pub use telemetry::TelemetryCollector;
 
