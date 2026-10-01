@@ -174,8 +174,8 @@ fn parse_subtitle_filename(
 pub fn find_subtitles_for_media<P: AsRef<Path>>(media_path: P) -> Vec<DiscoveredSubtitle> {
     let p = media_path.as_ref();
     let parent = match p.parent() {
-        Some(d) => d,
-        None => return Vec::new(),
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
     };
 
     let media_stem = match p.file_stem().and_then(|s| s.to_str()) {
@@ -183,7 +183,7 @@ pub fn find_subtitles_for_media<P: AsRef<Path>>(media_path: P) -> Vec<Discovered
         _ => return Vec::new(),
     };
 
-    // Find other video files in parent to disambiguate subtitles in Subs/ subdirectories
+    // Find other video files in parent to disambiguate subtitles in Subs/ subdirectories and parent dir
     let mut other_video_stems = Vec::new();
     if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
@@ -220,6 +220,16 @@ pub fn find_subtitles_for_media<P: AsRef<Path>>(media_path: P) -> Vec<Discovered
                     };
 
                     if starts_with_stem_dot || equals_stem {
+                        // If another longer video stem also matches this subtitle, let the more specific video own it
+                        let more_specific_match = other_video_stems.iter().any(|other| {
+                            other.len() > media_stem.len()
+                                && (file_name.starts_with(&format!("{other}."))
+                                    || file_name == format!("{other}.{ext}"))
+                        });
+                        if more_specific_match {
+                            continue;
+                        }
+
                         if let Some(sub) = parse_subtitle_filename(&path, media_stem, ext) {
                             discovered.push(sub);
                         }
@@ -262,5 +272,6 @@ pub fn find_subtitles_for_media<P: AsRef<Path>>(media_path: P) -> Vec<Discovered
     }
 
     discovered.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    discovered.dedup_by(|a, b| a.file_path == b.file_path);
     discovered
 }
