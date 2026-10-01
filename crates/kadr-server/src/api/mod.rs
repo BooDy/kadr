@@ -1,3 +1,4 @@
+pub mod artwork_routes;
 pub mod auth_routes;
 pub mod item_routes;
 pub mod screen_routes;
@@ -48,6 +49,9 @@ pub fn create_router_with_layout(
         .route("/api/v1/screens/{screen_id}", get(screen_routes::get_screen))
         .route("/api/v1/widgets/{widget_id}/data", get(widget_routes::get_widget_data))
         .route("/api/v1/items/{item_id}/details", get(item_routes::get_item_details))
+        // Artwork streaming routes
+        .route("/api/v1/artwork/{item_id}/poster", get(artwork_routes::get_poster))
+        .route("/api/v1/artwork/{item_id}/backdrop", get(artwork_routes::get_backdrop))
         .layer(Extension(user_repo))
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
