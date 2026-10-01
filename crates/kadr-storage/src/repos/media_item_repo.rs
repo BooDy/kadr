@@ -15,6 +15,10 @@ impl MediaItemRepository {
         Self { pool }
     }
 
+    pub fn pool(&self) -> &Pool {
+        &self.pool
+    }
+
     pub async fn upsert_batch(&self, items: &[MediaItem]) -> Result<usize> {
         if items.is_empty() {
             return Ok(0);
@@ -104,6 +108,10 @@ impl MediaItemRepository {
                 Ok(None)
             }
         }).await?
+    }
+
+    pub async fn find_by_id(&self, id: i64) -> Result<Option<MediaItem>> {
+        self.get_by_id(id).await
     }
 
     pub async fn get_by_id(&self, id: i64) -> Result<Option<MediaItem>> {

@@ -21,6 +21,7 @@ pub enum SubtitleServiceError {
 #[derive(Clone)]
 pub struct SubtitleDeliveryService {
     cache_dir: PathBuf,
+    data_dir: PathBuf,
     subtitle_repo: SubtitleRepository,
     media_repo: MediaItemRepository,
 }
@@ -32,16 +33,43 @@ impl SubtitleDeliveryService {
         subtitle_repo: SubtitleRepository,
         media_repo: MediaItemRepository,
     ) -> Self {
+        let data_dir = cache_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| cache_dir.clone());
+        Self::with_dirs(cache_dir, data_dir, subtitle_repo, media_repo)
+    }
+
+    /// Creates a new `SubtitleDeliveryService` with explicit cache and data directories.
+    pub fn with_dirs(
+        cache_dir: PathBuf,
+        data_dir: PathBuf,
+        subtitle_repo: SubtitleRepository,
+        media_repo: MediaItemRepository,
+    ) -> Self {
         let _ = std::fs::create_dir_all(&cache_dir);
+        let _ = std::fs::create_dir_all(&data_dir);
         Self {
             cache_dir,
+            data_dir,
             subtitle_repo,
             media_repo,
         }
     }
 
+    /// Sets the data directory for downloaded subtitles.
+    pub fn with_data_dir(mut self, data_dir: PathBuf) -> Self {
+        let _ = std::fs::create_dir_all(&data_dir);
+        self.data_dir = data_dir;
+        self
+    }
+
     pub fn cache_dir(&self) -> &Path {
         &self.cache_dir
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 
     pub fn subtitle_repo(&self) -> &SubtitleRepository {

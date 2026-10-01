@@ -2,6 +2,7 @@ pub mod artwork_routes;
 pub mod auth_routes;
 pub mod item_routes;
 pub mod screen_routes;
+pub mod subtitle_routes;
 pub mod user_routes;
 pub mod widget_routes;
 
@@ -15,10 +16,13 @@ use crate::auth::rate_limiter::RateLimiter;
 use crate::layout::LayoutRegistry;
 use crate::playback::{self, SessionRegistry};
 use crate::resolver::WidgetResolver;
-use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository};
+use crate::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
+use kadr_storage::repos::{
+    LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
+};
 
 #[allow(clippy::too_many_arguments)]
-pub fn create_router_with_layout(
+pub fn create_router_with_subtitles(
     user_repo: UserRepository,
     playback_repo: PlaybackRepository,
     media_repo: MediaItemRepository,
@@ -28,6 +32,8 @@ pub fn create_router_with_layout(
     session_registry: Arc<SessionRegistry>,
     layout_registry: LayoutRegistry,
     widget_resolver: Arc<WidgetResolver>,
+    subtitle_service: Arc<SubtitleDeliveryService>,
+    opensubtitles_client: Arc<OpenSubtitlesClient>,
 ) -> Router {
     Router::new()
         // Public profile list & auth
@@ -52,6 +58,12 @@ pub fn create_router_with_layout(
         // Artwork streaming routes
         .route("/api/v1/artwork/{item_id}/poster", get(artwork_routes::get_poster))
         .route("/api/v1/artwork/{item_id}/backdrop", get(artwork_routes::get_backdrop))
+        // Subtitle routes
+        .route("/api/v1/items/{item_id}/subtitles", get(subtitle_routes::list_subtitles))
+        .route("/api/v1/subtitles/{subtitle_id}/stream.vtt", get(subtitle_routes::stream_webvtt))
+        .route("/api/v1/subtitles/{item_id}/search", get(subtitle_routes::search_online_subtitles))
+        .route("/api/v1/subtitles/{item_id}/download", post(subtitle_routes::download_subtitle))
+        .route("/api/v1/subtitles/{subtitle_id}", delete(subtitle_routes::delete_subtitle))
         .layer(Extension(user_repo))
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
@@ -61,6 +73,43 @@ pub fn create_router_with_layout(
         .layer(Extension(session_registry))
         .layer(Extension(layout_registry))
         .layer(Extension(widget_resolver))
+        .layer(Extension(subtitle_service))
+        .layer(Extension(opensubtitles_client))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_router_with_layout(
+    user_repo: UserRepository,
+    playback_repo: PlaybackRepository,
+    media_repo: MediaItemRepository,
+    lib_repo: LibraryRepository,
+    jwt_svc: JwtService,
+    limiter: RateLimiter,
+    session_registry: Arc<SessionRegistry>,
+    layout_registry: LayoutRegistry,
+    widget_resolver: Arc<WidgetResolver>,
+) -> Router {
+    let subtitle_repo = SubtitleRepository::new(media_repo.pool().clone());
+    let temp_cache = std::env::temp_dir().join(format!("kadr-subtitles-{}", uuid::Uuid::new_v4()));
+    let subtitle_service = Arc::new(SubtitleDeliveryService::new(
+        temp_cache,
+        subtitle_repo,
+        media_repo.clone(),
+    ));
+    let opensubtitles_client = Arc::new(OpenSubtitlesClient::new(None, None));
+    create_router_with_subtitles(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo,
+        jwt_svc,
+        limiter,
+        session_registry,
+        layout_registry,
+        widget_resolver,
+        subtitle_service,
+        opensubtitles_client,
+    )
 }
 
 pub fn create_router(
