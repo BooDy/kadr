@@ -181,19 +181,15 @@ impl WidgetResolver {
 
                 let has_more = page_states.len() == binding.limit as usize;
 
-                let futures = page_states.into_iter().map(|state| {
-                    let media_repo = self.media_repo.clone();
-                    async move {
-                        if let Ok(Some(item)) = media_repo.get_by_id(state.media_item_id).await {
-                            Some(to_card_view_model(&item, Some(&state)))
-                        } else {
-                            None
-                        }
-                    }
-                });
+                let item_ids: Vec<i64> = page_states.iter().map(|s| s.media_item_id).collect();
+                let items_map = self.media_repo.get_by_ids(&item_ids).await.unwrap_or_default();
 
-                let cards: Vec<CardViewModel> =
-                    join_all(futures).await.into_iter().flatten().collect();
+                let mut cards = Vec::with_capacity(page_states.len());
+                for state in &page_states {
+                    if let Some(item) = items_map.get(&state.media_item_id) {
+                        cards.push(to_card_view_model(item, Some(state)));
+                    }
+                }
 
                 let next_cursor = if has_more {
                     Some((offset + cards.len() as u32).to_string())
@@ -307,26 +303,23 @@ impl WidgetResolver {
         }
     }
 
-    /// Hydrates a slice of `MediaItem`s by fetching each item's playback state concurrently.
+    /// Hydrates a slice of `MediaItem`s by batch-fetching playback states.
     async fn hydrate_items_to_cards(
         &self,
         items: Vec<kadr_core::models::MediaItem>,
         user_id: &str,
     ) -> Vec<CardViewModel> {
-        let futures = items.into_iter().map(|item| {
-            let playback_repo = self.playback_repo.clone();
-            let user_id = user_id.to_string();
-            async move {
-                let playback = if let Some(id) = item.id {
-                    playback_repo.get_state(&user_id, id).await.ok().flatten()
-                } else {
-                    None
-                };
-                to_card_view_model(&item, playback.as_ref())
-            }
-        });
+        let item_ids: Vec<i64> = items.iter().filter_map(|i| i.id).collect();
+        let states = self
+            .playback_repo
+            .get_states_for_items(user_id, &item_ids)
+            .await
+            .unwrap_or_default();
 
-        join_all(futures).await
+        items
+            .iter()
+            .map(|item| to_card_view_model(item, item.id.and_then(|id| states.get(&id))))
+            .collect()
     }
 
     /// Resolves comprehensive single item details including playback state and child episodes.

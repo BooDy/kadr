@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use deadpool_sqlite::Pool;
 use rusqlite::params;
 use kadr_core::models::{PlaybackState, WatchState};
@@ -139,4 +141,40 @@ impl PlaybackRepository {
     pub async fn get_continue_watching(&self, user_id: &str) -> Result<Vec<PlaybackState>> {
         self.list_user_states(user_id, Some(WatchState::InProgress), 50).await
     }
+
+    pub async fn get_states_for_items(
+        &self,
+        user_id: &str,
+        item_ids: &[i64],
+    ) -> Result<HashMap<i64, PlaybackState>> {
+        if item_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let user_id = user_id.to_string();
+        let item_ids = item_ids.to_vec();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let sql = format!(
+                "SELECT user_id, media_item_id, playback_position_seconds, watch_state, last_watched_at, play_count \
+                 FROM user_playback_states \
+                 WHERE user_id = ?1 AND media_item_id IN ({placeholders})"
+            );
+            let mut stmt = c.prepare(&sql)?;
+            let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(1 + item_ids.len());
+            params.push(rusqlite::types::Value::Text(user_id));
+            for id in item_ids {
+                params.push(rusqlite::types::Value::Integer(id));
+            }
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), map_playback_row)?;
+            let mut map = HashMap::new();
+            for r in rows {
+                let state = r?;
+                map.insert(state.media_item_id, state);
+            }
+            Ok(map)
+        }).await?
+    }
 }
+

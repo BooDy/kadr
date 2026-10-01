@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use deadpool_sqlite::Pool;
 use rusqlite::params;
@@ -108,6 +109,32 @@ impl MediaItemRepository {
             }
         }).await?
     }
+
+    pub async fn get_by_ids(&self, item_ids: &[i64]) -> Result<HashMap<i64, MediaItem>> {
+        if item_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let item_ids = item_ids.to_vec();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let sql = format!(
+                "SELECT {SELECT_COLUMNS} FROM media_items WHERE id IN ({placeholders})"
+            );
+            let mut stmt = c.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(item_ids), map_media_item_row)?;
+            let mut map = HashMap::new();
+            for row in rows {
+                let item = row?;
+                if let Some(id) = item.id {
+                    map.insert(id, item);
+                }
+            }
+            Ok(map)
+        }).await?
+    }
+
 
     pub async fn list_by_library(&self, library_id: &str, limit: usize, offset: usize) -> Result<Vec<MediaItem>> {
         let lib_id = library_id.to_string();

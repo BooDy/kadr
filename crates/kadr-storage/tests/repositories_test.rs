@@ -211,3 +211,97 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
     let total_after_lib_delete = media_repo.count_by_library("classic-movies").await.unwrap();
     assert_eq!(total_after_lib_delete, 0);
 }
+
+#[tokio::test]
+async fn test_media_item_get_by_ids_batch() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    // 1. Empty IDs returns empty map
+    let empty_res = media_repo.get_by_ids(&[]).await.unwrap();
+    assert!(empty_res.is_empty());
+
+    // 2. Setup library and items
+    let lib = Library {
+        id: "lib1".to_string(),
+        name: "Test Lib".to_string(),
+        path: PathBuf::from("/media/test"),
+        media_type: MediaType::Movie,
+        created_at: 1700000000,
+    };
+    lib_repo.create(&lib).await.unwrap();
+
+    let items = vec![
+        MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Alpha".to_string(),
+            original_title: None,
+            release_year: Some(2001),
+            added_at: 1700000001,
+            file_path: PathBuf::from("/media/test/alpha.mp4"),
+            file_name: "alpha.mp4".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata {
+                overview: Some("Alpha overview".to_string()),
+                ..Default::default()
+            },
+        },
+        MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Beta".to_string(),
+            original_title: None,
+            release_year: Some(2002),
+            added_at: 1700000002,
+            file_path: PathBuf::from("/media/test/beta.mp4"),
+            file_name: "beta.mp4".to_string(),
+            file_size: 2000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata {
+                overview: Some("Beta overview".to_string()),
+                ..Default::default()
+            },
+        },
+        MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Gamma".to_string(),
+            original_title: None,
+            release_year: Some(2003),
+            added_at: 1700000003,
+            file_path: PathBuf::from("/media/test/gamma.mp4"),
+            file_name: "gamma.mp4".to_string(),
+            file_size: 3000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata {
+                overview: Some("Gamma overview".to_string()),
+                ..Default::default()
+            },
+        },
+    ];
+
+    media_repo.upsert_batch(&items).await.unwrap();
+    let fetched_items = media_repo.list_by_library("lib1", 10, 0).await.unwrap();
+    assert_eq!(fetched_items.len(), 3);
+
+    let id_alpha = fetched_items.iter().find(|i| i.title == "Alpha").unwrap().id.unwrap();
+    let id_gamma = fetched_items.iter().find(|i| i.title == "Gamma").unwrap().id.unwrap();
+
+    // Query for Alpha, Gamma, and a nonexistent ID 99999
+    let map = media_repo.get_by_ids(&[id_alpha, id_gamma, 99999]).await.unwrap();
+    assert_eq!(map.len(), 2);
+    assert_eq!(map.get(&id_alpha).unwrap().title, "Alpha");
+    assert_eq!(map.get(&id_alpha).unwrap().metadata.overview.as_deref(), Some("Alpha overview"));
+    assert_eq!(map.get(&id_gamma).unwrap().title, "Gamma");
+    assert_eq!(map.get(&id_gamma).unwrap().metadata.overview.as_deref(), Some("Gamma overview"));
+    assert!(!map.contains_key(&99999));
+}
+
