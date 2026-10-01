@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+use kadr_core::events::SystemEvent;
 use kadr_core::models::{PlaybackSession, WatchState};
 use crate::auth::jwt::AuthUser;
+use crate::events::EventBus;
 use crate::playback::session::SessionRegistry;
 use kadr_storage::repos::{MediaItemRepository, PlaybackRepository};
 
@@ -102,6 +104,7 @@ pub async fn progress_heartbeat(
     Path(session_id): Path<String>,
     Extension(playback_repo): Extension<PlaybackRepository>,
     Extension(sessions): Extension<Arc<SessionRegistry>>,
+    event_bus: Option<Extension<Arc<EventBus>>>,
     Json(payload): Json<ProgressHeartbeatRequest>,
 ) -> impl IntoResponse {
     let session = match sessions.get(&session_id).await {
@@ -115,7 +118,7 @@ pub async fn progress_heartbeat(
     };
 
     let watch_state = evaluate_scrobble(payload.position_seconds, session.duration_seconds);
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
 
     if let Err(e) = playback_repo
         .upsert_progress(&auth_user.id, session.media_item_id, payload.position_seconds, watch_state, now)
@@ -128,6 +131,16 @@ pub async fn progress_heartbeat(
     }
 
     sessions.update_progress(&session_id, payload.position_seconds).await;
+
+    if let Some(Extension(event_bus)) = event_bus {
+        event_bus.publish(SystemEvent::SessionSynced {
+            session_id: session_id.clone(),
+            item_id: session.media_item_id,
+            user_id: auth_user.id.clone(),
+            position_seconds: payload.position_seconds,
+            timestamp: now,
+        });
+    }
 
     StatusCode::OK.into_response()
 }

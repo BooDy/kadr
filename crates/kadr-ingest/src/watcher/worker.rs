@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -19,6 +21,7 @@ pub struct IngestWorker {
     rx: mpsc::Receiver<IngestMessage>,
     repo: MediaItemRepository,
     subtitle_repo: Option<SubtitleRepository>,
+    event_callback: Option<Arc<dyn Fn(kadr_core::events::SystemEvent) + Send + Sync>>,
 }
 
 impl IngestWorker {
@@ -27,11 +30,20 @@ impl IngestWorker {
             rx,
             repo,
             subtitle_repo: None,
+            event_callback: None,
         }
     }
 
     pub fn with_subtitles(mut self, subtitle_repo: SubtitleRepository) -> Self {
         self.subtitle_repo = Some(subtitle_repo);
+        self
+    }
+
+    pub fn with_event_callback<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(kadr_core::events::SystemEvent) + Send + Sync + 'static,
+    {
+        self.event_callback = Some(Arc::new(callback));
         self
     }
 
@@ -44,6 +56,7 @@ impl IngestWorker {
             rx,
             repo,
             subtitle_repo: Some(subtitle_repo),
+            event_callback: None,
         }
     }
 
@@ -90,6 +103,23 @@ impl IngestWorker {
         match self.repo.upsert_batch(&items).await {
             Ok(count) => {
                 info!(count = count, "Successfully ingested media batch");
+                if let Some(ref cb) = self.event_callback {
+                    let now = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    let mut counts_by_lib: HashMap<&str, usize> = HashMap::new();
+                    for item in &items {
+                        *counts_by_lib.entry(&item.library_id).or_insert(0) += 1;
+                    }
+                    for (lib_id, item_count) in counts_by_lib {
+                        cb(kadr_core::events::SystemEvent::LibraryUpdated {
+                            library_id: lib_id.to_string(),
+                            item_count,
+                            timestamp: now,
+                        });
+                    }
+                }
                 if let Some(ref sub_repo) = self.subtitle_repo {
                     let paths_with_subs: Vec<&std::path::Path> = batch
                         .iter()

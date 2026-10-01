@@ -5,11 +5,13 @@ use axum::extract::{Path, Query};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::Response;
 use axum::{Extension, Json};
+use kadr_core::events::SystemEvent;
 use kadr_core::subtitles::{OnlineSubtitleMatch, SubtitleFormat, SubtitleSource, SubtitleTrack};
 use kadr_storage::repos::MediaItemRepository;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::jwt::AuthUser;
+use crate::events::EventBus;
 use crate::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService, SubtitleServiceError};
 
 /// Subtitle track representation returned to API consumers.
@@ -244,6 +246,7 @@ pub async fn download_subtitle(
     Extension(media_repo): Extension<MediaItemRepository>,
     Extension(subtitle_service): Extension<Arc<SubtitleDeliveryService>>,
     Extension(opensubtitles_client): Extension<Arc<OpenSubtitlesClient>>,
+    event_bus: Option<Extension<Arc<EventBus>>>,
     Json(body): Json<DownloadSubtitleRequest>,
 ) -> Result<(StatusCode, Json<SubtitleTrackResponse>), (StatusCode, Json<serde_json::Value>)> {
     // 1. Verify media item exists
@@ -343,6 +346,15 @@ pub async fn download_subtitle(
 
     let mut created_track = track;
     created_track.id = inserted_id;
+
+    if let Some(Extension(event_bus)) = event_bus {
+        event_bus.publish(SystemEvent::SubtitleDownloaded {
+            item_id,
+            subtitle_id: inserted_id,
+            language: created_track.language.clone(),
+            timestamp: now,
+        });
+    }
 
     Ok((
         StatusCode::CREATED,
