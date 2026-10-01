@@ -10,7 +10,7 @@ fn normalize_timestamp(ts: &str) -> String {
             1 => format!("{}00", ms),
             2 => format!("{}0", ms),
             3 => ms.to_string(),
-            _ => ms[..3].to_string(),
+            _ => ms.chars().take(3).collect::<String>(),
         };
 
         let parts: Vec<&str> = main.split(':').collect();
@@ -84,7 +84,7 @@ fn clean_cue_text(text: &str) -> String {
                 }
                 temp.push(next_ch);
             }
-            if !found_close || temp.contains('\n') || temp.contains('{') {
+            if !found_close || temp.contains('\n') || temp.contains('{') || !temp.starts_with('\\') {
                 result.push('{');
                 result.push_str(&temp);
                 if found_close {

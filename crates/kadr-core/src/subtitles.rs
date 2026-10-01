@@ -88,7 +88,7 @@ impl std::str::FromStr for SubtitleFormat {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_ascii_lowercase().as_str() {
             "srt" => Ok(Self::Srt),
             "vtt" => Ok(Self::Vtt),
             "ass" => Ok(Self::Ass),
