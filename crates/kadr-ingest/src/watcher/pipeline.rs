@@ -5,7 +5,7 @@ use kadr_core::models::{Library, MediaItem, MediaMetadata};
 use crate::error::Result;
 use crate::parser::FilenameParser;
 use crate::probe::TechnicalProber;
-use crate::sidecars::SidecarScanner;
+use crate::sidecars::{DiscoveredSubtitle, SidecarScanner};
 use tracing::warn;
 
 pub struct IngestPipeline {
@@ -29,7 +29,11 @@ impl IngestPipeline {
         }
     }
 
-    pub async fn process_file<P: AsRef<Path>>(&self, library: &Library, path: P) -> Result<Option<MediaItem>> {
+    pub async fn process_file<P: AsRef<Path>>(
+        &self,
+        library: &Library,
+        path: P,
+    ) -> Result<Option<(MediaItem, Vec<DiscoveredSubtitle>)>> {
         let path = path.as_ref();
         let filename = match path.file_name().and_then(|s| s.to_str()) {
             Some(name) => name,
@@ -97,19 +101,24 @@ impl IngestPipeline {
         meta.poster_path = artwork.poster.and_then(|p| p.to_str().map(String::from));
         meta.backdrop_path = artwork.backdrop.and_then(|p| p.to_str().map(String::from));
 
-        Ok(Some(MediaItem {
-            id: None,
-            library_id: library.id.clone(),
-            item_type: library.media_type,
-            title: final_title,
-            original_title,
-            release_year: final_year,
-            added_at,
-            file_path: path.to_path_buf(),
-            file_name: filename.to_string(),
-            file_size,
-            technical,
-            metadata: meta,
-        }))
+        let subtitles = self.sidecar_scanner.find_subtitles(path);
+
+        Ok(Some((
+            MediaItem {
+                id: None,
+                library_id: library.id.clone(),
+                item_type: library.media_type,
+                title: final_title,
+                original_title,
+                release_year: final_year,
+                added_at,
+                file_path: path.to_path_buf(),
+                file_name: filename.to_string(),
+                file_size,
+                technical,
+                metadata: meta,
+            },
+            subtitles,
+        )))
     }
 }

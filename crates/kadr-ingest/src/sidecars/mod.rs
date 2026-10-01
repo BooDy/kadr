@@ -1,9 +1,11 @@
 pub mod artwork;
 pub mod nfo;
+pub mod subtitles;
 
 use std::path::Path;
 pub use artwork::ArtworkPaths;
 pub use nfo::NfoData;
+pub use subtitles::{find_subtitles_for_media, DiscoveredSubtitle};
 
 #[derive(Default, Debug, Clone)]
 pub struct SidecarScanner;
@@ -42,5 +44,9 @@ impl SidecarScanner {
 
     pub fn find_artwork<P: AsRef<Path>>(&self, media_path: P) -> ArtworkPaths {
         artwork::find_artwork(media_path)
+    }
+
+    pub fn find_subtitles<P: AsRef<Path>>(&self, media_path: P) -> Vec<DiscoveredSubtitle> {
+        subtitles::find_subtitles_for_media(media_path)
     }
 }

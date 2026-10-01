@@ -5,3 +5,4 @@ pub mod sidecars;
 pub mod watcher;
 
 pub use error::{IngestError, Result};
+pub use sidecars::{find_subtitles_for_media, DiscoveredSubtitle};

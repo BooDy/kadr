@@ -56,8 +56,8 @@ pub async fn start_library_watcher(
         let initial_files = scan_directory_recursive(&lib_clone.path);
         info!(library = %lib_clone.name, count = initial_files.len(), "Running startup library scan");
         for file in initial_files {
-            if let Ok(Some(item)) = pipe_clone.process_file(&lib_clone, &file).await {
-                let _ = tx_clone.send(IngestMessage::Upsert(item)).await;
+            if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
+                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
             }
         }
     });
@@ -132,8 +132,8 @@ pub async fn start_library_watcher(
                     for path in settled {
                         if path.is_file() {
                             match pipeline.process_file(&library, &path).await {
-                                Ok(Some(item)) => {
-                                    let _ = tx.send(IngestMessage::Upsert(item)).await;
+                                Ok(Some((item, subs))) => {
+                                    let _ = tx.send(IngestMessage::Upsert(item, subs)).await;
                                 }
                                 Ok(None) => {}
                                 Err(e) => {

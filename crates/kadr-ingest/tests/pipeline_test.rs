@@ -29,7 +29,7 @@ async fn test_pipeline_processes_file_and_extracts_all_metadata() {
     };
 
     let pipeline = IngestPipeline::new(false);
-    let item = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process");
+    let (item, _) = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process");
 
     assert_eq!(item.title, "Cairo Station");
     assert_eq!(item.release_year, Some(1958));
@@ -124,7 +124,7 @@ async fn test_ingest_worker_upsert_and_delete() {
         metadata: Default::default(),
     };
 
-    tx.send(IngestMessage::Upsert(item.clone())).await.unwrap();
+    tx.send(IngestMessage::Upsert(item.clone(), Vec::new())).await.unwrap();
 
     // Allow worker to flush via 100ms timeout
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -176,7 +176,7 @@ async fn test_start_library_watcher_initial_scan() {
         .expect("channel closed");
 
     match msg {
-        IngestMessage::Upsert(item) => {
+        IngestMessage::Upsert(item, _) => {
             assert_eq!(item.title, "Alexandria Why");
             assert_eq!(item.release_year, Some(1979));
         }
@@ -207,7 +207,7 @@ async fn test_pipeline_malformed_nfo_falls_back_to_filename_metadata() {
     };
 
     let pipeline = IngestPipeline::new(false);
-    let item = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process despite bad nfo");
+    let (item, _) = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process despite bad nfo");
 
     assert_eq!(item.title, "The Nightingale Prayer");
     assert_eq!(item.release_year, Some(1959));
@@ -251,7 +251,7 @@ async fn test_ingest_worker_delete_purges_inflight_batch() {
     };
 
     // Send Upsert followed immediately by Delete before 100ms batch flush
-    tx.send(IngestMessage::Upsert(item.clone())).await.unwrap();
+    tx.send(IngestMessage::Upsert(item.clone(), Vec::new())).await.unwrap();
     tx.send(IngestMessage::Delete(item.file_path.clone())).await.unwrap();
 
     // Give worker time to process messages and potential flush timeout

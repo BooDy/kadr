@@ -91,6 +91,21 @@ impl MediaItemRepository {
         }).await?
     }
 
+    pub async fn find_by_path<P: AsRef<Path>>(&self, path: P) -> Result<Option<MediaItem>> {
+        let path_str = path.as_ref().to_string_lossy().into_owned();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let sql = format!("SELECT {SELECT_COLUMNS} FROM media_items WHERE file_path = ?1");
+            let mut stmt = c.prepare(&sql)?;
+            let mut rows = stmt.query(params![path_str])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(map_media_item_row(row)?))
+            } else {
+                Ok(None)
+            }
+        }).await?
+    }
+
     pub async fn get_by_id(&self, id: i64) -> Result<Option<MediaItem>> {
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
