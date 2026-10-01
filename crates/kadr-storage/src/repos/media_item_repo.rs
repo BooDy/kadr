@@ -316,7 +316,6 @@ impl MediaItemRepository {
                  WHERE ( \
                     (json_extract(metadata, '$.series_title') IS NOT NULL AND LOWER(json_extract(metadata, '$.series_title')) = LOWER(?1)) \
                     OR (item_type = 'episode' AND LOWER(title) LIKE LOWER(?2)) \
-                    OR (LOWER(title) LIKE LOWER(?2)) \
                  ) \
                  ORDER BY \
                     CAST(COALESCE(json_extract(metadata, '$.season'), json_extract(metadata, '$.season_number'), 0) AS INTEGER) ASC, \
