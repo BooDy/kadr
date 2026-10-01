@@ -56,6 +56,7 @@ async fn test_library_and_media_item_repositories() {
             poster_path: None,
             backdrop_path: None,
             release_group: None,
+            ..Default::default()
         },
     };
 

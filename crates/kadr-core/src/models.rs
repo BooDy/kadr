@@ -35,7 +35,7 @@ pub struct TechnicalInfo {
     pub container: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MediaMetadata {
     pub director: Option<String>,
     pub writers: Vec<String>,
@@ -48,9 +48,21 @@ pub struct MediaMetadata {
     pub poster_path: Option<String>,
     pub backdrop_path: Option<String>,
     pub release_group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_title: Option<String>,
+    #[serde(default, alias = "season_number", skip_serializing_if = "Option::is_none")]
+    pub season: Option<u32>,
+    #[serde(default, alias = "episode_number", skip_serializing_if = "Option::is_none")]
+    pub episode: Option<u32>,
+    #[serde(flatten, default)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MediaItem {
     pub id: Option<i64>,
     pub library_id: String,

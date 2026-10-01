@@ -35,6 +35,7 @@ fn test_media_item_serialization_roundtrip() {
             poster_path: Some("/media/movies/poster.jpg".to_string()),
             backdrop_path: None,
             release_group: Some("Ghareeb".to_string()),
+            ..Default::default()
         },
     };
 
