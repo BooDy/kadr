@@ -7,6 +7,7 @@ pub fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/001_initial_schema.sql")),
         M::up(include_str!("migrations/002_playback_and_auth.sql")),
         M::up(include_str!("migrations/003_widget_query_indexes.sql")),
+        M::up(include_str!("migrations/004_subtitles.sql")),
     ])
 }
 
