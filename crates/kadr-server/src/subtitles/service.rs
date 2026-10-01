@@ -105,11 +105,11 @@ impl SubtitleDeliveryService {
         };
 
         // Ensure cache directory exists before writing
-        if !tokio::fs::try_exists(&self.cache_dir).await.unwrap_or(false) {
-            tokio::fs::create_dir_all(&self.cache_dir).await?;
-        }
+        tokio::fs::create_dir_all(&self.cache_dir).await?;
 
-        tokio::fs::write(&cached_path, webvtt_content.as_bytes()).await?;
+        let tmp_path = self.cache_dir.join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
+        tokio::fs::write(&tmp_path, webvtt_content.as_bytes()).await?;
+        tokio::fs::rename(&tmp_path, &cached_path).await?;
 
         Ok(cached_path)
     }
