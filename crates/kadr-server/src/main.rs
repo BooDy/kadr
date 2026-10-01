@@ -7,12 +7,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use kadr_core::models::{Library, User, UserRole};
 use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
-use kadr_server::api::create_router;
+use kadr_server::api::create_router_with_layout;
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
 use kadr_server::config::AppConfig;
+use kadr_server::layout::LayoutRegistry;
 use kadr_server::playback::session::SessionRegistry;
+use kadr_server::resolver::WidgetResolver;
 use kadr_storage::pool::{create_pool, initialize_database};
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
@@ -220,8 +222,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Initialize layout registry and widget resolver
+    let mut layout_registry = LayoutRegistry::new();
+    let screens_dir = config.server.data_dir.join("screens");
+    if screens_dir.exists() {
+        if let Err(e) = layout_registry.load_overrides_from_dir(&screens_dir) {
+            warn!(error = %e, "Failed to load layout overrides from disk");
+        }
+    }
+    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+
     // Assemble Axum HTTP router
-    let app = create_router(
+    let app = create_router_with_layout(
         user_repo,
         playback_repo,
         media_repo,
@@ -229,6 +241,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         jwt_svc,
         rate_limiter,
         session_registry,
+        layout_registry,
+        widget_resolver,
     );
 
     // Bind TCP listener and serve Axum router
