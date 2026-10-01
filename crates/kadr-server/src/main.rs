@@ -224,6 +224,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize layout registry and widget resolver
     let mut layout_registry = LayoutRegistry::new();
+    let config_screens_dir = std::path::Path::new("config/screens");
+    if config_screens_dir.exists() {
+        if let Err(e) = layout_registry.load_overrides_from_dir(config_screens_dir) {
+            warn!(error = %e, "Failed to load layout overrides from config/screens");
+        }
+    }
     let screens_dir = config.server.data_dir.join("screens");
     if screens_dir.exists() {
         if let Err(e) = layout_registry.load_overrides_from_dir(&screens_dir) {
@@ -249,7 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{}:{}", config.server.host, config.server.port);
     info!(listen = %addr, "Binding Axum HTTP listener");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("Kadr Milestone 2 HTTP server running at http://{}", addr);
+    info!("Kadr Milestone 3 HTTP server running at http://{}", addr);
 
     let server = axum::serve(
         listener,
