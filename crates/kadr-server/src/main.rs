@@ -7,15 +7,17 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use kadr_core::models::{Library, User, UserRole};
 use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
-use kadr_server::api::create_router_with_subtitles;
+use kadr_server::api::create_full_router;
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
 use kadr_server::config::AppConfig;
+use kadr_server::events::EventBus;
 use kadr_server::layout::LayoutRegistry;
 use kadr_server::playback::session::SessionRegistry;
 use kadr_server::resolver::WidgetResolver;
 use kadr_server::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
+use kadr_server::telemetry::TelemetryCollector;
 use kadr_storage::pool::{create_pool, initialize_database};
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
@@ -120,8 +122,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_libraries = lib_repo.get_all().await?;
     info!(count = active_libraries.len(), "Loaded registered libraries");
 
+    let event_bus = Arc::new(EventBus::default_bus());
+
     let (ingest_tx, ingest_rx) = tokio::sync::mpsc::channel(200);
-    let worker = IngestWorker::new(ingest_rx, media_repo.clone()).with_subtitles(subtitle_repo.clone());
+    let bus_for_worker = event_bus.clone();
+    let worker = IngestWorker::new(ingest_rx, media_repo.clone())
+        .with_subtitles(subtitle_repo.clone())
+        .with_event_callback(move |ev| {
+            bus_for_worker.publish(ev);
+        });
     let worker_handle = tokio::spawn(worker.run());
 
     let pipeline = Arc::new(IngestPipeline::new(config.scanner.use_ffprobe));
@@ -252,8 +261,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let opensubtitles_client = Arc::new(OpenSubtitlesClient::new(None, None));
 
+    // Initialize telemetry collector and spawn periodic broadcaster
+    let telemetry_collector = Arc::new(TelemetryCollector::new(
+        config.storage.database_path.clone(),
+        session_registry.clone(),
+        event_bus.clone(),
+    ));
+    let telemetry_handle = telemetry_collector.clone().spawn_periodic_broadcaster(Duration::from_secs(5));
+
     // Assemble Axum HTTP router
-    let app = create_router_with_subtitles(
+    let app = create_full_router(
         user_repo,
         playback_repo,
         media_repo,
@@ -265,13 +282,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         widget_resolver,
         subtitle_service,
         opensubtitles_client,
+        event_bus,
+        telemetry_collector,
     );
 
     // Bind TCP listener and serve Axum router
     let addr = format!("{}:{}", config.server.host, config.server.port);
     info!(listen = %addr, "Binding Axum HTTP listener");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("Kadr Milestone 4 HTTP server running at http://{}", addr);
+    info!("Kadr Milestone 5A HTTP server running at http://{}", addr);
 
     let server = axum::serve(
         listener,
@@ -284,6 +303,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!("Shutdown signal received. Stopping maintenance, watchers, and flushing storage...");
+    telemetry_handle.abort();
     prune_handle.abort();
     drop(watchers);
     drop(ingest_tx);
