@@ -20,6 +20,7 @@ path = "../../tests/e2e_streaming_auth_test.rs"
 kadr-core = { path = "../kadr-core" }
 kadr-storage = { path = "../kadr-storage" }
 kadr-ingest = { path = "../kadr-ingest" }
+futures = "0.3"
 clap = { version = "4.5", features = ["derive"] }
 toml = "0.8"
 serde = { workspace = true }

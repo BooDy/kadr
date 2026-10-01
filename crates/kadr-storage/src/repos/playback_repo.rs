@@ -135,4 +135,8 @@ impl PlaybackRepository {
             Ok(list)
         }).await?
     }
+
+    pub async fn get_continue_watching(&self, user_id: &str) -> Result<Vec<PlaybackState>> {
+        self.list_user_states(user_id, Some(WatchState::InProgress), 50).await
+    }
 }
