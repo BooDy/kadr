@@ -305,3 +305,75 @@ async fn test_media_item_get_by_ids_batch() {
     assert!(!map.contains_key(&99999));
 }
 
+#[tokio::test]
+async fn test_media_item_find_by_paths_batch() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    lib_repo
+        .create(&Library {
+            id: "lib1".to_string(),
+            name: "Lib 1".to_string(),
+            path: PathBuf::from("/media/test"),
+            media_type: MediaType::Movie,
+            created_at: 1000,
+        })
+        .await
+        .unwrap();
+
+    let path_a = PathBuf::from("/media/test/alpha.mp4");
+    let path_b = PathBuf::from("/media/test/beta.mp4");
+    let path_nonexistent = PathBuf::from("/media/test/ghost.mp4");
+
+    let items = vec![
+        MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Alpha".to_string(),
+            original_title: None,
+            release_year: Some(2021),
+            added_at: 1001,
+            file_path: path_a.clone(),
+            file_name: "alpha.mp4".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        },
+        MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Beta".to_string(),
+            original_title: None,
+            release_year: Some(2022),
+            added_at: 1002,
+            file_path: path_b.clone(),
+            file_name: "beta.mp4".to_string(),
+            file_size: 2000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        },
+    ];
+
+    media_repo.upsert_batch(&items).await.unwrap();
+
+    // Empty paths slice returns empty map
+    let empty_map = media_repo.find_by_paths(&[]).await.unwrap();
+    assert!(empty_map.is_empty());
+
+    // Batch query with existing paths and one nonexistent path
+    let map = media_repo
+        .find_by_paths(&[path_a.as_path(), path_b.as_path(), path_nonexistent.as_path()])
+        .await
+        .unwrap();
+
+    assert_eq!(map.len(), 2);
+    assert_eq!(map.get(&path_a).unwrap().title, "Alpha");
+    assert_eq!(map.get(&path_b).unwrap().title, "Beta");
+    assert!(!map.contains_key(&path_nonexistent));
+}
+

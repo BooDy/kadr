@@ -137,89 +137,113 @@ fn clean_cue_text(text: &str) -> String {
     result
 }
 
-/// Converts SubRip (SRT) format subtitle content into valid WebVTT format.
+fn write_cue_block<W: std::io::Write>(
+    writer: &mut W,
+    block: &[String],
+    has_written_header: &mut bool,
+) -> std::io::Result<()> {
+    let timing_idx = match block.iter().position(|l| l.contains("-->")) {
+        Some(idx) => idx,
+        None => return Ok(()), // Skip blocks without timing lines
+    };
+
+    let timing_line = match normalize_timing_line(&block[timing_idx]) {
+        Some(line) => line,
+        None => return Ok(()),
+    };
+
+    if !*has_written_header {
+        writer.write_all(b"WEBVTT\n\n")?;
+        *has_written_header = true;
+    } else {
+        writer.write_all(b"\n")?;
+    }
+
+    if timing_idx > 0 {
+        let id_str = block[timing_idx - 1].trim();
+        writer.write_all(id_str.as_bytes())?;
+        writer.write_all(b"\n")?;
+    }
+
+    writer.write_all(timing_line.as_bytes())?;
+    writer.write_all(b"\n")?;
+
+    for line in &block[timing_idx + 1..] {
+        let cleaned = clean_cue_text(line.trim_end());
+        writer.write_all(cleaned.as_bytes())?;
+        writer.write_all(b"\n")?;
+    }
+
+    Ok(())
+}
+
+/// Converts SubRip (SRT) format subtitle stream into valid WebVTT format directly
+/// into a writer without buffering the whole file in memory.
 ///
 /// Features:
-/// - Strips UTF-8 BOM (`\u{FEFF}`).
-/// - Normalizes line endings (`\r\n` -> `\n`).
-/// - Emits `WEBVTT\n` for empty/whitespace input, or `WEBVTT\n\n` followed by cues.
-/// - Converts timestamps from `00:01:23,456` to `00:01:23.456`.
-/// - Preserves cue identifiers / sequence numbers when present.
-/// - Preserves styling tags (`<i>`, `<b>`, `<u>`) and strips unsupported tags (e.g. `<font>`).
-pub fn srt_to_webvtt(srt: &str) -> String {
-    let srt = srt.strip_prefix('\u{FEFF}').unwrap_or(srt);
-    if srt.trim().is_empty() {
-        return "WEBVTT\n".to_string();
-    }
+/// - Handles UTF-8 BOM if present on the first line.
+/// - Reads line by line into a reusable buffer without ever buffering the entire file.
+/// - Groups into cue blocks (separated by empty lines).
+/// - Emits `WEBVTT\n\n` header if cues exist (or `WEBVTT\n` if empty).
+/// - Normalizes timing and cue text for each block and writes directly to `writer`.
+pub fn srt_to_webvtt_stream<R: std::io::BufRead, W: std::io::Write>(
+    mut reader: R,
+    mut writer: W,
+) -> std::io::Result<()> {
+    let mut byte_buf = Vec::new();
+    let mut current_block: Vec<String> = Vec::new();
+    let mut is_first_line = true;
+    let mut has_written_header = false;
 
-    let normalized = srt.replace("\r\n", "\n").replace('\r', "\n");
+    loop {
+        byte_buf.clear();
+        let bytes_read = reader.read_until(b'\n', &mut byte_buf)?;
+        if bytes_read == 0 {
+            break;
+        }
 
-    let mut blocks: Vec<Vec<&str>> = Vec::new();
-    let mut current_block: Vec<&str> = Vec::new();
+        let raw_line = String::from_utf8_lossy(&byte_buf);
+        let mut line = raw_line.as_ref();
+        if is_first_line {
+            is_first_line = false;
+            line = line.strip_prefix('\u{FEFF}').unwrap_or(line);
+        }
 
-    for line in normalized.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            if !current_block.is_empty() {
-                blocks.push(std::mem::take(&mut current_block));
+        let trimmed_end = line.trim_end_matches(['\r', '\n']);
+        for subline in trimmed_end.split('\r') {
+            let trimmed = subline.trim();
+            if trimmed.is_empty() {
+                if !current_block.is_empty() {
+                    write_cue_block(&mut writer, &current_block, &mut has_written_header)?;
+                    current_block.clear();
+                }
+            } else {
+                current_block.push(subline.to_string());
             }
-        } else {
-            current_block.push(line);
         }
     }
+
     if !current_block.is_empty() {
-        blocks.push(current_block);
+        write_cue_block(&mut writer, &current_block, &mut has_written_header)?;
+        current_block.clear();
     }
 
-    if blocks.is_empty() {
-        return "WEBVTT\n".to_string();
+    if !has_written_header {
+        writer.write_all(b"WEBVTT\n")?;
     }
 
-    let mut output = String::from("WEBVTT\n\n");
-    let mut first_cue = true;
+    writer.flush()?;
+    Ok(())
+}
 
-    for block in blocks {
-        let timing_idx = match block.iter().position(|l| l.contains("-->")) {
-            Some(idx) => idx,
-            None => continue, // Skip blocks without timing lines
-        };
-
-        let timing_line = match normalize_timing_line(block[timing_idx]) {
-            Some(line) => line,
-            None => continue,
-        };
-
-        let id = if timing_idx > 0 {
-            Some(block[timing_idx - 1].trim())
-        } else {
-            None
-        };
-
-        let cue_lines: Vec<String> = block[timing_idx + 1..]
-            .iter()
-            .map(|l| clean_cue_text(l.trim_end()))
-            .collect();
-
-        if !first_cue {
-            output.push('\n');
-        }
-        first_cue = false;
-
-        if let Some(id_str) = id {
-            output.push_str(id_str);
-            output.push('\n');
-        }
-
-        output.push_str(&timing_line);
-        output.push('\n');
-
-        for line in cue_lines {
-            output.push_str(&line);
-            output.push('\n');
-        }
-    }
-
-    output
+/// Converts SubRip (SRT) format subtitle content into valid WebVTT format.
+///
+/// Backwards-compatible wrapper around [`srt_to_webvtt_stream`].
+pub fn srt_to_webvtt(srt: &str) -> String {
+    let mut out = Vec::new();
+    let reader = std::io::Cursor::new(srt.as_bytes());
+    let _ = srt_to_webvtt_stream(reader, &mut out);
+    String::from_utf8(out).unwrap_or_else(|_| "WEBVTT\n".to_string())
 }
 
 #[cfg(test)]
@@ -253,5 +277,14 @@ mod tests {
         let srt = "Invalid block without timing\nJust some random text\n\n1\n00:00:01,000 --> 00:00:02,000\nValid cue\n";
         let vtt = srt_to_webvtt(srt);
         assert_eq!(vtt, "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nValid cue\n");
+    }
+
+    #[test]
+    fn test_srt_to_webvtt_stream_direct() {
+        let srt = "\u{FEFF}1\r\n00:00:01,000 --> 00:00:02,000\r\nDirect streaming line\r\n";
+        let mut out = Vec::new();
+        srt_to_webvtt_stream(std::io::BufReader::new(srt.as_bytes()), &mut out).unwrap();
+        let res = String::from_utf8(out).unwrap();
+        assert_eq!(res, "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nDirect streaming line\n");
     }
 }

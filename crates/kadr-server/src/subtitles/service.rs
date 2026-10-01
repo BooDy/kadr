@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use kadr_core::subtitles::{srt_to_webvtt, SubtitleFormat, SubtitleSource};
+use kadr_core::subtitles::{srt_to_webvtt_stream, SubtitleFormat, SubtitleSource};
 use kadr_storage::repos::{MediaItemRepository, SubtitleRepository};
 use thiserror::Error;
 
@@ -84,7 +84,7 @@ impl SubtitleDeliveryService {
     ///
     /// If already converted and cached in `<cache_dir>/<subtitle_id>.vtt`, returns immediately.
     /// Otherwise, fetches the subtitle metadata, reads the source file, converts it to WebVTT
-    /// using `srt_to_webvtt`, writes to cache, and returns the cached path.
+    /// using `srt_to_webvtt_stream`, writes to cache, and returns the cached path.
     pub async fn get_webvtt_path(&self, subtitle_id: i64) -> Result<PathBuf, SubtitleServiceError> {
         let cached_path = self.cache_dir.join(format!("{}.vtt", subtitle_id));
 
@@ -111,35 +111,63 @@ impl SubtitleDeliveryService {
             return Err(SubtitleServiceError::SourceFileNotFound);
         }
 
-        // Step 4: Read raw content with UTF-8 lossy fallback
-        let raw_content = match tokio::fs::read_to_string(source_path).await {
-            Ok(content) => content,
-            Err(_) => {
-                let raw_bytes = tokio::fs::read(source_path).await?;
-                String::from_utf8_lossy(&raw_bytes).into_owned()
-            }
-        };
-
-        let webvtt_content = match track.format {
-            SubtitleFormat::Vtt => {
-                let stripped = raw_content.strip_prefix('\u{FEFF}').unwrap_or(&raw_content);
-                if stripped.trim_start().starts_with("WEBVTT") {
-                    raw_content
-                } else {
-                    srt_to_webvtt(&raw_content)
-                }
-            }
-            _ => srt_to_webvtt(&raw_content),
-        };
-
         // Ensure cache directory exists before writing
         tokio::fs::create_dir_all(&self.cache_dir).await?;
 
         let tmp_path = self.cache_dir.join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
-        tokio::fs::write(&tmp_path, webvtt_content.as_bytes()).await?;
-        tokio::fs::rename(&tmp_path, &cached_path).await?;
+        let source_path_buf = source_path.to_path_buf();
+        let tmp_path_clone = tmp_path.clone();
+        let format = track.format;
 
-        Ok(cached_path)
+        let spawn_res = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            use std::io::Write;
+
+            let src_file = std::fs::File::open(&source_path_buf)?;
+            let mut reader = std::io::BufReader::new(src_file);
+
+            let dst_file = std::fs::File::create(&tmp_path_clone)?;
+            let mut writer = std::io::BufWriter::new(dst_file);
+
+            if format == SubtitleFormat::Vtt {
+                let is_webvtt = {
+                    use std::io::BufRead;
+                    let buf = reader.fill_buf()?;
+                    let trimmed = buf.strip_prefix(b"\xef\xbb\xbf").unwrap_or(buf);
+                    let trimmed_leading = trimmed
+                        .iter()
+                        .position(|&b| !b.is_ascii_whitespace())
+                        .map(|idx| &trimmed[idx..])
+                        .unwrap_or(trimmed);
+                    trimmed_leading.starts_with(b"WEBVTT")
+                };
+
+                if is_webvtt {
+                    std::io::copy(&mut reader, &mut writer)?;
+                    writer.flush()?;
+                    return Ok(());
+                }
+            }
+
+            srt_to_webvtt_stream(&mut reader, &mut writer)?;
+            writer.flush()?;
+            Ok(())
+        })
+        .await;
+
+        match spawn_res {
+            Ok(Ok(())) => {
+                tokio::fs::rename(&tmp_path, &cached_path).await?;
+                Ok(cached_path)
+            }
+            Ok(Err(io_err)) => {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                Err(SubtitleServiceError::Io(io_err))
+            }
+            Err(join_err) => {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                Err(SubtitleServiceError::Io(std::io::Error::other(join_err)))
+            }
+        }
     }
 
     /// Deletes a subtitle track by ID.

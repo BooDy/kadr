@@ -91,41 +91,53 @@ impl IngestWorker {
             Ok(count) => {
                 info!(count = count, "Successfully ingested media batch");
                 if let Some(ref sub_repo) = self.subtitle_repo {
-                    let now = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
+                    let paths_with_subs: Vec<&std::path::Path> = batch
+                        .iter()
+                        .filter(|(_, subs)| !subs.is_empty())
+                        .map(|(item, _)| item.file_path.as_path())
+                        .collect();
 
-                    for (item, subs) in batch.iter() {
-                        if subs.is_empty() {
-                            continue;
-                        }
-                        match self.repo.find_by_path(&item.file_path).await {
-                            Ok(Some(persisted)) => {
-                                if let Some(media_id) = persisted.id {
-                                    let tracks: Vec<SubtitleTrack> = subs
-                                        .iter()
-                                        .map(|s| s.clone().into_subtitle_track(media_id, now))
-                                        .collect();
+                    if !paths_with_subs.is_empty() {
+                        let now = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64;
 
-                                    let existing = sub_repo.find_by_media_item(media_id).await.unwrap_or_default();
-                                    let to_insert: Vec<SubtitleTrack> = tracks
-                                        .into_iter()
-                                        .filter(|t| !existing.iter().any(|e| e.file_path == t.file_path && e.source == t.source))
-                                        .collect();
+                        match self.repo.find_by_paths(&paths_with_subs).await {
+                            Ok(persisted_map) => {
+                                for (item, subs) in batch.iter() {
+                                    if subs.is_empty() {
+                                        continue;
+                                    }
+                                    match persisted_map.get(&item.file_path) {
+                                        Some(persisted) => {
+                                            if let Some(media_id) = persisted.id {
+                                                let tracks: Vec<SubtitleTrack> = subs
+                                                    .iter()
+                                                    .map(|s| s.clone().into_subtitle_track(media_id, now))
+                                                    .collect();
 
-                                    if !to_insert.is_empty() {
-                                        if let Err(e) = sub_repo.batch_insert(&to_insert).await {
-                                            error!(path = ?item.file_path, error = ?e, "Failed to insert subtitle tracks");
+                                                let existing = sub_repo.find_by_media_item(media_id).await.unwrap_or_default();
+                                                let to_insert: Vec<SubtitleTrack> = tracks
+                                                    .into_iter()
+                                                    .filter(|t| !existing.iter().any(|e| e.file_path == t.file_path && e.source == t.source))
+                                                    .collect();
+
+                                                if !to_insert.is_empty() {
+                                                    if let Err(e) = sub_repo.batch_insert(&to_insert).await {
+                                                        error!(path = ?item.file_path, error = ?e, "Failed to insert subtitle tracks");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        None => {
+                                            error!(path = ?item.file_path, "Could not find persisted media item for subtitles");
                                         }
                                     }
                                 }
                             }
-                            Ok(None) => {
-                                error!(path = ?item.file_path, "Could not find persisted media item for subtitles");
-                            }
                             Err(e) => {
-                                error!(path = ?item.file_path, error = ?e, "Error finding media item for subtitles");
+                                error!(error = ?e, "Error finding media items for subtitles batch");
                             }
                         }
                     }

@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod transcoder;
-pub use transcoder::srt_to_webvtt;
+pub use transcoder::{srt_to_webvtt, srt_to_webvtt_stream};
 
 /// Represents where the subtitle originated from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

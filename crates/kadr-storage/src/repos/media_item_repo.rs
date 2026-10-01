@@ -110,6 +110,36 @@ impl MediaItemRepository {
         }).await?
     }
 
+    pub async fn find_by_paths(
+        &self,
+        paths: &[&std::path::Path],
+    ) -> Result<std::collections::HashMap<std::path::PathBuf, MediaItem>> {
+        if paths.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let path_strings: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let placeholders = path_strings.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let sql = format!(
+                "SELECT {SELECT_COLUMNS} FROM media_items WHERE file_path IN ({placeholders})"
+            );
+            let mut stmt = c.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(path_strings), map_media_item_row)?;
+            let mut map = std::collections::HashMap::new();
+            for row in rows {
+                let item = row?;
+                map.insert(item.file_path.clone(), item);
+            }
+            Ok(map)
+        }).await?
+    }
+
     pub async fn find_by_id(&self, id: i64) -> Result<Option<MediaItem>> {
         self.get_by_id(id).await
     }

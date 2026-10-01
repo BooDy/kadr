@@ -141,6 +141,14 @@ impl OpenSubtitlesClient {
             query_params.push(("languages", languages.join(",")));
         }
 
+        tracing::info!(
+            query = %query,
+            year = ?year,
+            languages = ?languages,
+            url = %url,
+            "Searching OpenSubtitles.com subtitles (Api-Key header omitted)"
+        );
+
         let resp = self
             .client
             .get(&url)
@@ -219,6 +227,12 @@ impl OpenSubtitlesClient {
         let request_body = DownloadRequest {
             file_id: numeric_id,
         };
+
+        tracing::info!(
+            file_id = %file_id,
+            url = %url,
+            "Requesting OpenSubtitles.com download link (Api-Key header omitted)"
+        );
 
         let resp = self
             .client
