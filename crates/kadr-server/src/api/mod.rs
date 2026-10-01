@@ -39,6 +39,7 @@ pub fn create_router_with_subtitles(
         // Public profile list & auth
         .route("/api/v1/users/profiles", get(user_routes::list_profiles))
         .route("/api/v1/auth/profile-pin", post(auth_routes::profile_pin_auth))
+        .route("/api/v1/auth/pin", post(auth_routes::profile_pin_auth))
         .route("/api/v1/auth/me", get(auth_routes::get_current_user))
         .route("/api/v1/users", post(user_routes::create_user))
         // Media streaming direct-play route

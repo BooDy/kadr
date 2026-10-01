@@ -7,7 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use kadr_core::models::{Library, User, UserRole};
 use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
-use kadr_server::api::create_router_with_layout;
+use kadr_server::api::create_router_with_subtitles;
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
@@ -15,9 +15,10 @@ use kadr_server::config::AppConfig;
 use kadr_server::layout::LayoutRegistry;
 use kadr_server::playback::session::SessionRegistry;
 use kadr_server::resolver::WidgetResolver;
+use kadr_server::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
 use kadr_storage::pool::{create_pool, initialize_database};
 use kadr_storage::repos::{
-    LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
+    LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
 };
 
 #[derive(Parser, Debug)]
@@ -102,6 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let media_repo = MediaItemRepository::new(pool.clone());
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
+    let subtitle_repo = SubtitleRepository::new(pool.clone());
 
     // Sync bootstrap libraries
     for lib_cfg in &config.libraries {
@@ -119,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(count = active_libraries.len(), "Loaded registered libraries");
 
     let (ingest_tx, ingest_rx) = tokio::sync::mpsc::channel(200);
-    let worker = IngestWorker::new(ingest_rx, media_repo.clone());
+    let worker = IngestWorker::new(ingest_rx, media_repo.clone()).with_subtitles(subtitle_repo.clone());
     let worker_handle = tokio::spawn(worker.run());
 
     let pipeline = Arc::new(IngestPipeline::new(config.scanner.use_ffprobe));
@@ -238,8 +240,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
 
+    // Initialize subtitle delivery service and OpenSubtitles client
+    let subtitle_cache_dir = config.server.data_dir.join("subtitles_cache");
+    if !subtitle_cache_dir.exists() {
+        std::fs::create_dir_all(&subtitle_cache_dir)?;
+    }
+    let subtitle_service = Arc::new(SubtitleDeliveryService::new(
+        subtitle_cache_dir,
+        subtitle_repo.clone(),
+        media_repo.clone(),
+    ));
+    let opensubtitles_client = Arc::new(OpenSubtitlesClient::new(None, None));
+
     // Assemble Axum HTTP router
-    let app = create_router_with_layout(
+    let app = create_router_with_subtitles(
         user_repo,
         playback_repo,
         media_repo,
@@ -249,13 +263,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session_registry,
         layout_registry,
         widget_resolver,
+        subtitle_service,
+        opensubtitles_client,
     );
 
     // Bind TCP listener and serve Axum router
     let addr = format!("{}:{}", config.server.host, config.server.port);
     info!(listen = %addr, "Binding Axum HTTP listener");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("Kadr Milestone 3 HTTP server running at http://{}", addr);
+    info!("Kadr Milestone 4 HTTP server running at http://{}", addr);
 
     let server = axum::serve(
         listener,

@@ -20,6 +20,10 @@ path = "../../tests/e2e_streaming_auth_test.rs"
 name = "e2e_widget_ast_test"
 path = "../../tests/e2e_widget_ast_test.rs"
 
+[[test]]
+name = "e2e_subtitles_test"
+path = "../../tests/e2e_subtitles_test.rs"
+
 [dependencies]
 kadr-core = { path = "../kadr-core" }
 kadr-storage = { path = "../kadr-storage" }
