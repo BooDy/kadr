@@ -1,6 +1,6 @@
 [Unit]
 Description=Kadr Media Server
-Documentation=https://github.com/boody/kadr
+Documentation=https://github.com/BooDy/kadr
 After=network.target local-fs.target
 
 [Service]

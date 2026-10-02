@@ -60,8 +60,8 @@ Section: video
 Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
-Maintainer: Kadr Contributors <https://github.com/boody/kadr>
-Homepage: https://github.com/boody/kadr
+Maintainer: Kadr Contributors <https://github.com/BooDy/kadr>
+Homepage: https://github.com/BooDy/kadr
 Description: Minimalist, ultra-high-performance self-hosted media server
  Kadr is an embedded media server written in pure Rust with SQLite WAL
  storage, zero-copy HTTP 206 streaming, declarative layout hydration,

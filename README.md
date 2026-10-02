@@ -1,8 +1,12 @@
 # Kadr (كادر)
 
-[![CI](https://github.com/boody/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/boody/kadr/actions/workflows/ci.yml)
-[![Rust](https://img.shields.io/badge/rust-edition%202021-orange.svg)](https://www.rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
+[![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
+[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20musl-lightgrey.svg?logo=linux)](#quick-install-for-users-linux)
+[![Architectures](https://img.shields.io/badge/Arch-x86__64%20%7C%20aarch64-blueviolet.svg)](#quick-install-for-users-linux)
 [![Memory Budget](https://img.shields.io/badge/RSS%20Memory-%E2%89%A4%2030%20MB-emerald.svg)](#performance--constraints)
 [![Zero C Dependencies](https://img.shields.io/badge/Dependencies-Zero%20Native%20C%20(musl)-purple.svg)](#portability)
 
@@ -90,57 +94,95 @@ The project is organized as a Cargo workspace with four focused crates and a fro
 
 ---
 
-## Linux Installation & Packaging
+## Quick Install for Users (Linux)
 
-Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi)** on every semantic version release (e.g. `v0.1.0`).
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.1.0-alpha.1`).
 
-### Option A: Debian / Ubuntu / Raspberry Pi OS (`.deb`)
+### Option 1: Debian / Ubuntu / Raspberry Pi OS (`.deb`)
 
-Download the latest `.deb` package from [Releases](https://github.com/boody/kadr/releases):
+Download the appropriate `.deb` package from the [Kadr Releases Page](https://github.com/BooDy/kadr/releases):
 
 ```bash
-# Install the Debian package (creates system user, registers systemd service, mounts web assets)
-sudo dpkg -i kadr_0.1.0_amd64.deb   # Or kadr_0.1.0_arm64.deb
+# Install the Debian package (creates 'kadr' user, registers systemd service, installs web app)
+sudo dpkg -i kadr_0.1.0_amd64.deb    # For 64-bit PC / Server
+# OR
+sudo dpkg -i kadr_0.1.0_arm64.deb    # For Raspberry Pi 4/5 / ARM64
 
-# Start and enable Kadr on boot
+# Start Kadr and enable automatic start on system boot
 sudo systemctl enable --now kadr
 
-# Check status and live logs
+# Verify server status
 sudo systemctl status kadr
-sudo journalctl -u kadr -f
 ```
 
-Web interface is immediately available at `http://localhost:8096`. Configuration files are located in `/etc/kadr/kadr.toml` and `/etc/kadr/kadr.env`.
+---
 
-### Option B: Standalone Linux Tarball (`.tar.gz`)
+### Option 2: Standalone Linux Tarball (`.tar.gz`)
 
-For any Linux distribution (Alpine, Arch, Fedora, openSUSE, etc.):
+For generic Linux distributions (Arch, Alpine, Fedora, openSUSE, etc.):
 
 ```bash
-# Extract the release bundle
-tar -xzf kadr-v0.1.0-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.1.0-x86_64-unknown-linux-musl
+# 1. Download and extract the standalone bundle from Releases
+tar -xzf kadr-v0.1.0-alpha.1-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.1.0-alpha.1-x86_64-unknown-linux-musl
 
-# Run the automated system installer
+# 2. Run the automated installer (installs binary, web assets, and systemd service)
 sudo ./install.sh
+
+# 3. Start the service
+sudo systemctl enable --now kadr
 ```
 
-### Option C: Semantic Versioning & CI Releases
+---
 
-To trigger an automated release build and publish binaries to GitHub Releases:
+### First-Time Access & Usage
+
+1. **Access Web App**: Open your browser and navigate to `http://localhost:8096` (or `http://<server-ip>:8096`).
+2. **Default Login**:
+   - Username: `admin`
+   - Default PIN: `1234`
+3. **Configuration & Media Folders**:
+   - Configuration file: `/etc/kadr/kadr.toml`
+   - Environment variables: `/etc/kadr/kadr.env`
+   - Default data directory: `/var/lib/kadr`
+   - To configure media libraries, edit `/etc/kadr/kadr.toml`:
+     ```toml
+     [[libraries]]
+     id = "movies"
+     name = "Movies"
+     path = "/var/lib/kadr/media/movies"
+     media_type = "Movie"
+
+     [[libraries]]
+     id = "shows"
+     name = "TV Shows"
+     path = "/var/lib/kadr/media/shows"
+     media_type = "Episode"
+     ```
+   - Restart after editing: `sudo systemctl restart kadr`
+4. **Monitoring & Logs**:
+   ```bash
+   sudo journalctl -u kadr -f
+   ```
+
+---
+
+### Automated Releases & Semantic Versioning
+
+For maintainers, pushing any semantic version tag triggers the automated build and release pipeline:
 
 ```bash
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.0-alpha.1 -m "Release v0.1.0-alpha.1"
+git push origin v0.1.0-alpha.1
 ```
 
-The GitHub Actions release pipeline (`.github/workflows/release.yml`) will:
-1. Compile the production web client.
-2. Build musl static binaries for `x86_64` and `aarch64` (Docker cross-compiled).
-3. Generate standalone `.tar.gz` archives with `install.sh` and systemd units.
-4. Generate `.deb` packages with maintainer scripts.
+The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/workflows/release.yml)) will:
+1. Run frontend tests and compile the production React client (`web/dist`).
+2. Build static musl binaries for `x86_64` and `aarch64` (Docker cross-compiled).
+3. Package standalone `.tar.gz` archives with `install.sh` and systemd units.
+4. Package `.deb` installers for `amd64` and `arm64`.
 5. Compute SHA256 checksums (`SHA256SUMS.txt`).
-6. Create the GitHub Release with attached assets and release notes.
+6. Publish the GitHub Release with attached assets and release notes.
 
 ---
 
