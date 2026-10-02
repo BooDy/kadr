@@ -1,0 +1,29 @@
+# Kadr Media Server Configuration
+# Path: /etc/kadr/kadr.toml
+
+[server]
+host = "0.0.0.0"
+port = 8096
+data_dir = "/var/lib/kadr"
+web_dir = "/usr/share/kadr/web"
+
+[storage]
+database_path = "/var/lib/kadr/kadr.db"
+max_readers = 4
+
+[scanner]
+debounce_millis = 500
+use_ffprobe = true
+
+# Define libraries to watch and ingest:
+# [[libraries]]
+# id = "movies"
+# name = "Movies"
+# path = "/var/lib/kadr/media/movies"
+# media_type = "Movie"
+#
+# [[libraries]]
+# id = "shows"
+# name = "TV Shows"
+# path = "/var/lib/kadr/media/shows"
+# media_type = "Episode"

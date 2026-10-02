@@ -1,0 +1,27 @@
+[Unit]
+Description=Kadr Media Server
+Documentation=https://github.com/boody/kadr
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=kadr
+Group=kadr
+WorkingDirectory=/var/lib/kadr
+EnvironmentFile=-/etc/kadr/kadr.env
+ExecStart=/usr/bin/kadr
+Restart=on-failure
+RestartSec=5s
+
+# Process Sandboxing & Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/kadr /etc/kadr
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

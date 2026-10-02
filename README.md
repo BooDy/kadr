@@ -90,7 +90,61 @@ The project is organized as a Cargo workspace with four focused crates and a fro
 
 ---
 
-## Getting Started
+## Linux Installation & Packaging
+
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi)** on every semantic version release (e.g. `v0.1.0`).
+
+### Option A: Debian / Ubuntu / Raspberry Pi OS (`.deb`)
+
+Download the latest `.deb` package from [Releases](https://github.com/boody/kadr/releases):
+
+```bash
+# Install the Debian package (creates system user, registers systemd service, mounts web assets)
+sudo dpkg -i kadr_0.1.0_amd64.deb   # Or kadr_0.1.0_arm64.deb
+
+# Start and enable Kadr on boot
+sudo systemctl enable --now kadr
+
+# Check status and live logs
+sudo systemctl status kadr
+sudo journalctl -u kadr -f
+```
+
+Web interface is immediately available at `http://localhost:8096`. Configuration files are located in `/etc/kadr/kadr.toml` and `/etc/kadr/kadr.env`.
+
+### Option B: Standalone Linux Tarball (`.tar.gz`)
+
+For any Linux distribution (Alpine, Arch, Fedora, openSUSE, etc.):
+
+```bash
+# Extract the release bundle
+tar -xzf kadr-v0.1.0-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.1.0-x86_64-unknown-linux-musl
+
+# Run the automated system installer
+sudo ./install.sh
+```
+
+### Option C: Semantic Versioning & CI Releases
+
+To trigger an automated release build and publish binaries to GitHub Releases:
+
+```bash
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
+```
+
+The GitHub Actions release pipeline (`.github/workflows/release.yml`) will:
+1. Compile the production web client.
+2. Build musl static binaries for `x86_64` and `aarch64` (Docker cross-compiled).
+3. Generate standalone `.tar.gz` archives with `install.sh` and systemd units.
+4. Generate `.deb` packages with maintainer scripts.
+5. Compute SHA256 checksums (`SHA256SUMS.txt`).
+6. Create the GitHub Release with attached assets and release notes.
+
+---
+
+## Building from Source
 
 ### Prerequisites
 

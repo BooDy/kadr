@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create system user and group
+        if ! id -u kadr >/dev/null 2>&1; then
+            useradd --system --no-create-home --user-group --shell /usr/sbin/nologin kadr
+        fi
+
+        # Setup directories and permissions
+        mkdir -p /var/lib/kadr /var/lib/kadr/media /etc/kadr
+        chown -R kadr:kadr /var/lib/kadr
+        chmod 0750 /var/lib/kadr
+
+        # Reload systemd
+        if [ -d /run/systemd/system ]; then
+            systemctl --system daemon-reload >/dev/null 2>&1 || true
+        fi
+    ;;
+esac
+
+exit 0
