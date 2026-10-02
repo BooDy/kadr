@@ -41,7 +41,7 @@ pub fn create_router_with_events(
     event_bus: Arc<EventBus>,
     telemetry_collector: Arc<TelemetryCollector>,
 ) -> Router {
-    Router::new()
+    let router = Router::new()
         // Public profile list & auth
         .route("/api/v1/users/profiles", get(user_routes::list_profiles))
         .route("/api/v1/auth/profile-pin", post(auth_routes::profile_pin_auth))
@@ -87,7 +87,22 @@ pub fn create_router_with_events(
         .layer(Extension(opensubtitles_client))
         .layer(Extension(event_bus.clone()))
         .layer(Extension((*event_bus).clone()))
-        .layer(Extension(telemetry_collector))
+        .layer(Extension(telemetry_collector));
+
+    mount_web_serving(router, std::path::Path::new("web/dist"))
+}
+
+use tower_http::services::{ServeDir, ServeFile};
+
+pub fn mount_web_serving(router: Router, web_dir: &std::path::Path) -> Router {
+    if web_dir.exists() {
+        let index_file = web_dir.join("index.html");
+        if index_file.exists() {
+            let serve_dir = ServeDir::new(web_dir).fallback(ServeFile::new(index_file));
+            return router.fallback_service(serve_dir);
+        }
+    }
+    router
 }
 
 pub use create_router_with_events as create_full_router;

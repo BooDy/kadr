@@ -7,7 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use kadr_core::models::{Library, User, UserRole};
 use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
-use kadr_server::api::create_full_router;
+use kadr_server::api::{create_full_router, mount_web_serving};
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
@@ -270,7 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let telemetry_handle = telemetry_collector.clone().spawn_periodic_broadcaster(Duration::from_secs(5));
 
     // Assemble Axum HTTP router
-    let app = create_full_router(
+    let mut app = create_full_router(
         user_repo,
         playback_repo,
         media_repo,
@@ -285,6 +285,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_bus,
         telemetry_collector,
     );
+
+    // Mount static web SPA serving if assets exist
+    let web_dist = std::path::Path::new("web/dist");
+    let data_web = config.server.data_dir.join("web");
+    let web_dir = if web_dist.exists() {
+        Some(web_dist)
+    } else if data_web.exists() {
+        Some(data_web.as_path())
+    } else {
+        None
+    };
+
+    if let Some(dir) = web_dir {
+        info!(path = ?dir, "Static web assets directory found; mounting SPA static file serving");
+        app = mount_web_serving(app, dir);
+    } else {
+        info!("Static web assets directory not found (checked 'web/dist' and data_dir/'web'); running in API-only headless mode");
+    }
 
     // Bind TCP listener and serve Axum router
     let addr = format!("{}:{}", config.server.host, config.server.port);

@@ -28,6 +28,10 @@ path = "../../tests/e2e_subtitles_test.rs"
 name = "e2e_events_telemetry_test"
 path = "../../tests/e2e_events_telemetry_test.rs"
 
+[[test]]
+name = "e2e_web_serving_test"
+path = "../../tests/e2e_web_serving_test.rs"
+
 [dependencies]
 kadr-core = { path = "../kadr-core" }
 kadr-storage = { path = "../kadr-storage" }
@@ -46,7 +50,7 @@ rand = "0.8"
 jsonwebtoken = "9.3"
 axum = { version = "0.8", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tokio-util = { version = "0.7", features = ["io"] }
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
