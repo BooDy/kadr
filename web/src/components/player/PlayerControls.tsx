@@ -35,7 +35,7 @@ export interface PlayerControlsProps {
 }
 
 export function formatPlaybackTime(seconds: number): string {
-  if (isNaN(seconds) || seconds < 0) return '00:00';
+  if (!isFinite(seconds) || seconds < 0) return '00:00';
   const total = Math.floor(seconds);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);

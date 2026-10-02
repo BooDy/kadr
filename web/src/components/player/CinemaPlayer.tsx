@@ -66,11 +66,16 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
 
   // Initialize playback session, heartbeat interval, and close on unmount
   useEffect(() => {
+    let isDisposed = false;
     let sessionId: string | null = null;
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
     api.createPlaybackSession(itemId)
       .then((session) => {
+        if (isDisposed) {
+          api.closePlaybackSession(session.session_id).catch(() => {});
+          return;
+        }
         sessionId = session.session_id;
         heartbeatInterval = setInterval(() => {
           if (sessionId && videoRef.current) {
@@ -81,6 +86,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
       .catch(() => {});
 
     return () => {
+      isDisposed = true;
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
       }

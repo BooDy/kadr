@@ -13,6 +13,8 @@ import type { User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
 import { BrowseScreen } from './components/browse/BrowseScreen';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
+import { LayoutStudio } from './components/studio/LayoutStudio';
+import { TelemetryDashboard } from './components/telemetry/TelemetryDashboard';
 
 export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'player';
 
@@ -201,17 +203,11 @@ export const App: FC = () => {
             )}
 
             {currentView === 'studio' && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold tracking-tight text-white">Layout Studio</h2>
-                <p className="text-zinc-400 text-sm">Design and preview declarative screen ASTs.</p>
-              </div>
+              <LayoutStudio onPlayItem={handlePlayItem} />
             )}
 
             {currentView === 'telemetry' && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold tracking-tight text-white">System Telemetry</h2>
-                <p className="text-zinc-400 text-sm">Monitor system memory, SQLite WAL, and active playback sessions.</p>
-              </div>
+              <TelemetryDashboard />
             )}
           </>
         )}
