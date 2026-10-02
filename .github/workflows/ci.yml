@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # =========================================================================
+  # 1. Rust Quality & Test Suite
+  # =========================================================================
+  rust-ci:
+    name: Rust (Format, Clippy, Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Configure Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check code formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy linter
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run workspace tests
+        run: cargo test --workspace
+
+  # =========================================================================
+  # 2. Frontend React / TypeScript Web App
+  # =========================================================================
+  web-ci:
+    name: Web Client (Lint, Test, Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Vitest unit & component tests
+        run: npm test -- --run
+
+      - name: Typecheck and build production bundle
+        run: npm run build
+
+      - name: Upload web distribution bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+
+  # =========================================================================
+  # 3. Musl Static Compilation Verification (Zero C Dependency Baseline)
+  # =========================================================================
+  musl-verification:
+    name: Musl Static Binary Check (x86_64-unknown-linux-musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install stable Rust with musl target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Configure Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: musl
+
+      - name: Check workspace compilation for musl target
+        run: cargo check --workspace --target x86_64-unknown-linux-musl
+
+      - name: Build release static server binary
+        run: cargo build -p kadr-server --target x86_64-unknown-linux-musl --release
+
+  # =========================================================================
+  # 4. End-to-End Integration (Serving Web SPA via Axum)
+  # =========================================================================
+  e2e-serving:
+    name: Full E2E Web Serving Test
+    runs-on: ubuntu-latest
+    needs: [web-ci]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Download web distribution bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Run End-to-End Web Serving Integration Tests
+        run: cargo test --workspace --test e2e_web_serving_test

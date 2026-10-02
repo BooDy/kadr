@@ -1,5 +1,6 @@
 # Kadr (كادر)
 
+[![CI](https://github.com/boody/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/boody/kadr/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-edition%202021-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Memory Budget](https://img.shields.io/badge/RSS%20Memory-%E2%89%A4%2030%20MB-emerald.svg)](#performance--constraints)
