@@ -5,21 +5,21 @@ import {
   Tv,
   Layout,
   Activity,
-  User as UserIcon,
   LogOut,
-  Clapperboard,
   Users,
 } from 'lucide-react';
 import { api } from './api/client';
 import type { User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
+import { BrowseScreen } from './components/browse/BrowseScreen';
 
-export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry';
+export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'player';
 
 export const App: FC = () => {
   const [currentView, setCurrentView] = useState<NavView>('home');
   const [currentUser, setCurrentUser] = useState<User | null>(() => api.getUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [activePlayingItemId, setActivePlayingItemId] = useState<number | null>(null);
 
   useEffect(() => {
     // Sync initial user state from local storage or verify session
@@ -40,6 +40,11 @@ export const App: FC = () => {
     api.logout();
     setCurrentUser(null);
     setIsAuthModalOpen(false);
+  };
+
+  const handlePlayItem = (itemId: number) => {
+    setActivePlayingItemId(itemId);
+    setCurrentView('player');
   };
 
   return (
@@ -159,15 +164,7 @@ export const App: FC = () => {
                   <LogOut className="h-4 w-4" />
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors"
-              >
-                <UserIcon className="h-4 w-4" />
-                Sign In
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
@@ -181,35 +178,44 @@ export const App: FC = () => {
         ) : (
           <>
             {currentView === 'home' && (
-              <div className="space-y-6">
-                <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 p-8 shadow-xl">
-                  <div className="flex items-center gap-3 text-rose-500 mb-2">
-                    <Clapperboard className="h-6 w-6" />
-                    <span className="text-xs font-bold tracking-widest uppercase">
-                      Cinema Media Server
-                    </span>
-                  </div>
-                  <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-                    Welcome to Kadr
-                  </h1>
-                  <p className="mt-3 text-base text-zinc-400 max-w-2xl">
-                    Declarative, hardware-accelerated media streaming with native WebVTT subtitles, dynamic screen layouts, and real-time telemetry.
-                  </p>
-                </div>
-              </div>
+              <BrowseScreen screenId="home" onPlayItem={handlePlayItem} />
             )}
 
             {currentView === 'movies' && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold tracking-tight text-white">Movies Catalog</h2>
-                <p className="text-zinc-400 text-sm">Browse movies library and high-definition titles.</p>
-              </div>
+              <BrowseScreen screenId="movies" onPlayItem={handlePlayItem} />
             )}
 
             {currentView === 'shows' && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold tracking-tight text-white">TV Shows</h2>
-                <p className="text-zinc-400 text-sm">Follow your favorite TV series and episodes.</p>
+              <BrowseScreen screenId="shows" onPlayItem={handlePlayItem} />
+            )}
+
+            {currentView === 'player' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight text-white">
+                      Player
+                    </h2>
+                    <p className="text-sm text-zinc-400">
+                      Now playing item #{activePlayingItemId}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setCurrentView('home')}
+                    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-semibold text-zinc-200 transition-colors cursor-pointer"
+                  >
+                    Back to Browse
+                  </button>
+                </div>
+                <div className="aspect-video w-full rounded-3xl bg-zinc-900 border border-zinc-800 flex flex-col items-center justify-center text-zinc-400 gap-3 shadow-2xl">
+                  <Film className="w-16 h-16 text-rose-500/80 animate-pulse" />
+                  <span className="text-base font-semibold text-zinc-200">
+                    Cinema Player Session
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    Media Item ID: {activePlayingItemId}
+                  </span>
+                </div>
               </div>
             )}
 

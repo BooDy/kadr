@@ -52,12 +52,14 @@ export interface WidgetQueryBinding {
 export type WidgetNode =
   | {
       type: 'hero_banner';
+      display_type?: string;
       id: string;
       binding: WidgetQueryBinding;
       data?: CardViewModel;
     }
   | {
       type: 'carousel';
+      display_type?: string;
       id: string;
       title: string;
       binding: WidgetQueryBinding;
@@ -66,6 +68,7 @@ export type WidgetNode =
     }
   | {
       type: 'grid';
+      display_type?: string;
       id: string;
       title: string;
       binding: WidgetQueryBinding;
@@ -76,6 +79,7 @@ export type WidgetNode =
     }
   | {
       type: 'item_details';
+      display_type?: string;
       id: string;
       item_id: number;
       details?: ItemDetailsPayload;

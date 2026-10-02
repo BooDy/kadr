@@ -26,18 +26,69 @@ describe('App Shell', () => {
     await waitFor(() => expect(screen.getByText('admin')).toBeDefined());
   });
 
-  it('navigates between views when user is authenticated', () => {
+  it('navigates between views when user is authenticated', async () => {
     api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
     api.setToken('test-jwt');
 
+    vi.spyOn(api, 'getScreen').mockImplementation(async (screenId: string) => {
+      if (screenId === 'home') {
+        return {
+          id: 'home',
+          title: 'Home',
+          widgets: [
+            {
+              type: 'carousel',
+              id: 'cw',
+              title: 'Continue Watching',
+              binding: { macro_type: 'continue_watching', limit: 10 },
+              items: [{ id: 1, title: 'Movie 1', media_type: 'movie' }],
+            },
+          ],
+        };
+      }
+      if (screenId === 'movies') {
+        return {
+          id: 'movies',
+          title: 'Movies',
+          widgets: [
+            {
+              type: 'grid',
+              id: 'all_movies',
+              title: 'All Movies',
+              columns: 6,
+              binding: { macro_type: 'top_rated', limit: 20 },
+              items: [{ id: 2, title: 'Movie 2', media_type: 'movie' }],
+            },
+          ],
+        };
+      }
+      if (screenId === 'shows') {
+        return {
+          id: 'shows',
+          title: 'TV Shows',
+          widgets: [
+            {
+              type: 'grid',
+              id: 'all_shows',
+              title: 'All TV Shows',
+              columns: 6,
+              binding: { macro_type: 'top_rated', limit: 20 },
+              items: [{ id: 3, title: 'Show 1', media_type: 'show' }],
+            },
+          ],
+        };
+      }
+      throw new Error('Not found');
+    });
+
     render(<App />);
-    expect(screen.getByText('Welcome to Kadr')).toBeDefined();
+    await waitFor(() => expect(screen.getByText('Continue Watching')).toBeDefined());
 
     fireEvent.click(screen.getByRole('button', { name: /movies/i }));
-    expect(screen.getByText('Movies Catalog')).toBeDefined();
+    await waitFor(() => expect(screen.getByText('All Movies')).toBeDefined());
 
     fireEvent.click(screen.getByRole('button', { name: /shows/i }));
-    expect(screen.getByText('TV Shows')).toBeDefined();
+    await waitFor(() => expect(screen.getByText('All TV Shows')).toBeDefined());
 
     fireEvent.click(screen.getByRole('button', { name: /studio/i }));
     expect(screen.getByText('Layout Studio')).toBeDefined();
@@ -46,7 +97,41 @@ describe('App Shell', () => {
     expect(screen.getByText('System Telemetry')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: /home/i }));
-    expect(screen.getByText('Welcome to Kadr')).toBeDefined();
+    await waitFor(() => expect(screen.getByText('Continue Watching')).toBeDefined());
+  });
+
+  it('navigates to player placeholder when onPlayItem is triggered', async () => {
+    api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
+    api.setToken('test-jwt');
+
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce({
+      id: 'home',
+      title: 'Home',
+      widgets: [
+        {
+          type: 'hero_banner',
+          id: 'spotlight',
+          binding: { macro_type: 'spotlight_item', limit: 1 },
+          data: {
+            id: 999,
+            title: 'Sample Film',
+            media_type: 'movie',
+          },
+        },
+      ],
+    });
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sample Film')).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Now playing item #999/i)).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /back to browse/i }));
+    expect(screen.queryByText(/Now playing item #999/i)).toBeNull();
   });
 
   it('shows active user avatar in header with Switch Profile menu and opens switch profile modal', async () => {
