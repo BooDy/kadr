@@ -305,21 +305,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Mount static web SPA serving if assets exist
+    let env_web = std::env::var("KADR_WEB_DIR")
+        .ok()
+        .map(std::path::PathBuf::from);
+    let config_web = config.server.web_dir.clone();
     let web_dist = std::path::Path::new("web/dist");
     let data_web = config.server.data_dir.join("web");
-    let web_dir = if web_dist.exists() {
-        Some(web_dist)
+    let sys_web = std::path::Path::new("/usr/share/kadr/web");
+
+    let web_dir: Option<std::path::PathBuf> = if let Some(ref path) = env_web.filter(|p| p.exists())
+    {
+        Some(path.clone())
+    } else if let Some(ref path) = config_web.filter(|p| p.exists()) {
+        Some(path.clone())
+    } else if web_dist.exists() {
+        Some(web_dist.to_path_buf())
     } else if data_web.exists() {
-        Some(data_web.as_path())
+        Some(data_web)
+    } else if sys_web.exists() {
+        Some(sys_web.to_path_buf())
     } else {
         None
     };
 
-    if let Some(dir) = web_dir {
+    if let Some(ref dir) = web_dir {
         info!(path = ?dir, "Static web assets directory found; mounting SPA static file serving");
         app = mount_web_serving(app, dir);
     } else {
-        info!("Static web assets directory not found (checked 'web/dist' and data_dir/'web'); running in API-only headless mode");
+        info!("Static web assets directory not found (checked KADR_WEB_DIR, server.web_dir, 'web/dist', data_dir/'web', and '/usr/share/kadr/web'); running in API-only headless mode");
     }
 
     // Bind TCP listener and serve Axum router

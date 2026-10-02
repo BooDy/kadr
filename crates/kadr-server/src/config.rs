@@ -10,6 +10,8 @@ pub struct ServerSettings {
     pub port: u16,
     #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
+    #[serde(default)]
+    pub web_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +78,7 @@ impl Default for ServerSettings {
             host: default_host(),
             port: default_port(),
             data_dir: default_data_dir(),
+            web_dir: None,
         }
     }
 }
