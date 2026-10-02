@@ -8,9 +8,11 @@ import {
   User as UserIcon,
   LogOut,
   Clapperboard,
+  Users,
 } from 'lucide-react';
 import { api } from './api/client';
 import type { User } from './types';
+import { ProfileSelect } from './components/auth/ProfileSelect';
 
 export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry';
 
@@ -27,9 +29,17 @@ export const App: FC = () => {
     }
   }, []);
 
+  const handleAuthSuccess = (token: string, user: User) => {
+    api.setToken(token);
+    api.setUser(user);
+    setCurrentUser(user);
+    setIsAuthModalOpen(false);
+  };
+
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
+    setIsAuthModalOpen(false);
   };
 
   return (
@@ -114,7 +124,8 @@ export const App: FC = () => {
           {/* User Profile / Auth Area */}
           <div className="flex items-center gap-3">
             {currentUser ? (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Active user avatar chip */}
                 <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800">
                   <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-rose-500 to-amber-500 flex items-center justify-center text-xs font-bold text-white uppercase">
                     {currentUser.username[0] || 'U'}
@@ -128,10 +139,22 @@ export const App: FC = () => {
                     </span>
                   )}
                 </div>
+
+                {/* Switch Profile Button */}
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  title="Switch Profile"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-300 hover:text-white bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                >
+                  <Users className="h-3.5 w-3.5 text-zinc-400" />
+                  <span className="hidden sm:inline">Switch Profile</span>
+                </button>
+
+                {/* Sign Out Button */}
                 <button
                   onClick={handleLogout}
                   title="Sign out"
-                  className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 transition-colors"
+                  className="p-2 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800/80 transition-colors"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -151,67 +174,71 @@ export const App: FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {currentView === 'home' && (
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 p-8 shadow-xl">
-              <div className="flex items-center gap-3 text-rose-500 mb-2">
-                <Clapperboard className="h-6 w-6" />
-                <span className="text-xs font-bold tracking-widest uppercase">
-                  Cinema Media Server
-                </span>
+        {!currentUser ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <ProfileSelect onSuccess={handleAuthSuccess} />
+          </div>
+        ) : (
+          <>
+            {currentView === 'home' && (
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 p-8 shadow-xl">
+                  <div className="flex items-center gap-3 text-rose-500 mb-2">
+                    <Clapperboard className="h-6 w-6" />
+                    <span className="text-xs font-bold tracking-widest uppercase">
+                      Cinema Media Server
+                    </span>
+                  </div>
+                  <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+                    Welcome to Kadr
+                  </h1>
+                  <p className="mt-3 text-base text-zinc-400 max-w-2xl">
+                    Declarative, hardware-accelerated media streaming with native WebVTT subtitles, dynamic screen layouts, and real-time telemetry.
+                  </p>
+                </div>
               </div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-                Welcome to Kadr
-              </h1>
-              <p className="mt-3 text-base text-zinc-400 max-w-2xl">
-                Declarative, hardware-accelerated media streaming with native WebVTT subtitles, dynamic screen layouts, and real-time telemetry.
-              </p>
-            </div>
-          </div>
+            )}
+
+            {currentView === 'movies' && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold tracking-tight text-white">Movies Catalog</h2>
+                <p className="text-zinc-400 text-sm">Browse movies library and high-definition titles.</p>
+              </div>
+            )}
+
+            {currentView === 'shows' && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold tracking-tight text-white">TV Shows</h2>
+                <p className="text-zinc-400 text-sm">Follow your favorite TV series and episodes.</p>
+              </div>
+            )}
+
+            {currentView === 'studio' && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold tracking-tight text-white">Layout Studio</h2>
+                <p className="text-zinc-400 text-sm">Design and preview declarative screen ASTs.</p>
+              </div>
+            )}
+
+            {currentView === 'telemetry' && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold tracking-tight text-white">System Telemetry</h2>
+                <p className="text-zinc-400 text-sm">Monitor system memory, SQLite WAL, and active playback sessions.</p>
+              </div>
+            )}
+          </>
         )}
 
-        {currentView === 'movies' && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight text-white">Movies Catalog</h2>
-            <p className="text-zinc-400 text-sm">Browse movies library and high-definition titles.</p>
-          </div>
-        )}
-
-        {currentView === 'shows' && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight text-white">TV Shows</h2>
-            <p className="text-zinc-400 text-sm">Follow your favorite TV series and episodes.</p>
-          </div>
-        )}
-
-        {currentView === 'studio' && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight text-white">Layout Studio</h2>
-            <p className="text-zinc-400 text-sm">Design and preview declarative screen ASTs.</p>
-          </div>
-        )}
-
-        {currentView === 'telemetry' && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight text-white">System Telemetry</h2>
-            <p className="text-zinc-400 text-sm">Monitor system memory, SQLite WAL, and active playback sessions.</p>
-          </div>
-        )}
-
-        {/* Authentication Modal Slot (wired in Task 2) */}
-        {isAuthModalOpen && (
+        {/* Switch Profile Modal (when already authenticated and user clicked Switch Profile) */}
+        {currentUser && isAuthModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
-              <h3 className="text-lg font-semibold text-white mb-2">Sign In</h3>
-              <p className="text-sm text-zinc-400 mb-6">Enter your 4-digit profile PIN to authenticate.</p>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setIsAuthModalOpen(false)}
-                  className="px-4 py-2 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
+            <div className="relative w-full max-w-2xl rounded-3xl border border-zinc-800 bg-zinc-950/95 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+              <ProfileSelect
+                currentUser={currentUser}
+                onSuccess={handleAuthSuccess}
+                onCancel={() => setIsAuthModalOpen(false)}
+                onSignOut={handleLogout}
+              />
             </div>
           </div>
         )}

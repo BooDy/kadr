@@ -295,5 +295,26 @@ describe('ApiClient', () => {
       expect(telem.active_sessions_count).toBe(3);
       expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/system/telemetry');
     });
+
+    it('safely handles empty response bodies on 200 or 204 responses', async () => {
+      // 204 No Content
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        headers: new Headers(),
+      });
+      const res204 = await client.request('/api/v1/empty-204');
+      expect(res204).toBeUndefined();
+
+      // 200 with empty text body
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => '',
+      });
+      const res200Empty = await client.request('/api/v1/empty-200');
+      expect(res200Empty).toBeUndefined();
+    });
   });
 });
