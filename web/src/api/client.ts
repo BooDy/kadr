@@ -167,7 +167,15 @@ export class ApiClient {
 
   // URL Resolution Methods
   public getStreamUrl(itemId: number): string {
-    return `${this.baseUrl}/api/v1/stream/${itemId}`;
+    const token = this.getToken();
+    const base = `${this.baseUrl}/api/v1/stream/${itemId}`;
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  }
+
+  public getSubtitleStreamUrl(subtitleId: number): string {
+    const token = this.getToken();
+    const base = `${this.baseUrl}/api/v1/subtitles/${subtitleId}/stream.vtt`;
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
   }
 
   public getArtworkUrl(

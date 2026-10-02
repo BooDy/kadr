@@ -12,6 +12,7 @@ import { api } from './api/client';
 import type { User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
 import { BrowseScreen } from './components/browse/BrowseScreen';
+import { CinemaPlayer } from './components/player/CinemaPlayer';
 
 export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'player';
 
@@ -189,34 +190,14 @@ export const App: FC = () => {
               <BrowseScreen screenId="shows" onPlayItem={handlePlayItem} />
             )}
 
-            {currentView === 'player' && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold tracking-tight text-white">
-                      Player
-                    </h2>
-                    <p className="text-sm text-zinc-400">
-                      Now playing item #{activePlayingItemId}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setCurrentView('home')}
-                    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-semibold text-zinc-200 transition-colors cursor-pointer"
-                  >
-                    Back to Browse
-                  </button>
-                </div>
-                <div className="aspect-video w-full rounded-3xl bg-zinc-900 border border-zinc-800 flex flex-col items-center justify-center text-zinc-400 gap-3 shadow-2xl">
-                  <Film className="w-16 h-16 text-rose-500/80 animate-pulse" />
-                  <span className="text-base font-semibold text-zinc-200">
-                    Cinema Player Session
-                  </span>
-                  <span className="text-xs text-zinc-500">
-                    Media Item ID: {activePlayingItemId}
-                  </span>
-                </div>
-              </div>
+            {currentView === 'player' && activePlayingItemId !== null && (
+              <CinemaPlayer
+                itemId={activePlayingItemId}
+                onClose={() => {
+                  setActivePlayingItemId(null);
+                  setCurrentView('home');
+                }}
+              />
             )}
 
             {currentView === 'studio' && (

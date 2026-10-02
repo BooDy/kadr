@@ -138,6 +138,17 @@ describe('ApiClient', () => {
       expect(client.getStreamUrl(42)).toBe('/api/v1/stream/42');
     });
 
+    it('resolves stream URL with token when token is present', () => {
+      client.setToken('test-token-123');
+      expect(client.getStreamUrl(42)).toBe('/api/v1/stream/42?token=test-token-123');
+    });
+
+    it('resolves subtitle stream URL correctly', () => {
+      expect(client.getSubtitleStreamUrl(99)).toBe('/api/v1/subtitles/99/stream.vtt');
+      client.setToken('test-token-123');
+      expect(client.getSubtitleStreamUrl(99)).toBe('/api/v1/subtitles/99/stream.vtt?token=test-token-123');
+    });
+
     it('resolves artwork URLs correctly', () => {
       expect(client.getArtworkUrl(42, 'poster')).toBe('/api/v1/artwork/42/poster');
       expect(client.getArtworkUrl(42, 'backdrop')).toBe('/api/v1/artwork/42/backdrop');
