@@ -134,9 +134,12 @@ impl WidgetResolver {
             QueryMacro::SpotlightItem { item_id: Some(id) } => {
                 self.media_repo.get_by_id(id).await.ok().flatten()
             }
-            QueryMacro::SpotlightItem { item_id: None } => {
-                self.media_repo.find_spotlight_candidate().await.ok().flatten()
-            }
+            QueryMacro::SpotlightItem { item_id: None } => self
+                .media_repo
+                .find_spotlight_candidate()
+                .await
+                .ok()
+                .flatten(),
             QueryMacro::ItemDetails { item_id } => {
                 self.media_repo.get_by_id(item_id).await.ok().flatten()
             }
@@ -182,7 +185,11 @@ impl WidgetResolver {
                 let has_more = page_states.len() == binding.limit as usize;
 
                 let item_ids: Vec<i64> = page_states.iter().map(|s| s.media_item_id).collect();
-                let items_map = self.media_repo.get_by_ids(&item_ids).await.unwrap_or_default();
+                let items_map = self
+                    .media_repo
+                    .get_by_ids(&item_ids)
+                    .await
+                    .unwrap_or_default();
 
                 let mut cards = Vec::with_capacity(page_states.len());
                 for state in &page_states {

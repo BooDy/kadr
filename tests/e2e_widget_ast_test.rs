@@ -51,7 +51,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
     // Prepare dummy media files and artwork on disk
     let poster_path = temp_dir.path().join("dune_poster.jpg");
     let mut poster_file = File::create(&poster_path).expect("Failed to create poster file");
-    let poster_bytes: Vec<u8> = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x01, 0x02];
+    let poster_bytes: Vec<u8> = vec![
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x01, 0x02,
+    ];
     poster_file
         .write_all(&poster_bytes)
         .expect("Failed to write poster bytes");
@@ -218,7 +220,10 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
     let rate_limiter = RateLimiter::new(10, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let app = create_router_with_layout(
         user_repo,
@@ -243,9 +248,14 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let auth_data: Value = serde_json::from_slice(&body).unwrap();
-    let token = auth_data["token"].as_str().expect("Token should be returned").to_string();
+    let token = auth_data["token"]
+        .as_str()
+        .expect("Token should be returned")
+        .to_string();
 
     // =========================================================================
     // User Journey Step 2: GET /api/v1/screens -> verify screen list contains home, movies, shows
@@ -258,7 +268,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let screens: Vec<ScreenSummary> = serde_json::from_slice(&body).unwrap();
     let screen_ids: Vec<String> = screens.into_iter().map(|s| s.id).collect();
     assert!(screen_ids.contains(&"home".to_string()));
@@ -276,7 +288,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let home_layout: ScreenLayout = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(home_layout.id, ScreenId::Home);
@@ -334,7 +348,10 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             let cards = items
                 .as_ref()
                 .expect("continue_watching carousel should be populated");
-            assert!(cards.is_empty(), "Continue Watching should initially be empty");
+            assert!(
+                cards.is_empty(),
+                "Continue Watching should initially be empty"
+            );
         }
         _ => panic!("continue_watching is not a Carousel"),
     }
@@ -378,7 +395,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let updated_home: ScreenLayout = serde_json::from_slice(&body).unwrap();
 
     let updated_cw = updated_home
@@ -419,7 +438,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let unhydrated: ScreenLayout = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(unhydrated.id, ScreenId::Home);
@@ -443,7 +464,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 32).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 32)
+        .await
+        .unwrap();
     let widget_resp: WidgetDataResponse = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(widget_resp.widget_id, "recently_added");
@@ -469,7 +492,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 32).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 32)
+        .await
+        .unwrap();
     let details: ItemDetailsPayload = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(details.card.id, movie_id);
@@ -495,7 +520,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 32).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 32)
+        .await
+        .unwrap();
     let show_details: ItemDetailsPayload = serde_json::from_slice(&body).unwrap();
     assert_eq!(show_details.card.id, show_id);
     assert_eq!(show_details.card.title, "Severance");
@@ -528,7 +555,9 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             .expect("cache-control header"),
         "public, max-age=86400"
     );
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(body.as_ref(), &poster_bytes[..]);
 
     // =========================================================================
@@ -548,6 +577,8 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             .expect("content-type header"),
         "image/jpeg"
     );
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(body.as_ref(), &backdrop_bytes[..]);
 }

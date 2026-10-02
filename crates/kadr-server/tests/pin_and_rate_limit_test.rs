@@ -1,7 +1,7 @@
-use std::net::IpAddr;
-use std::time::Duration;
 use kadr_server::auth::pin::{hash_pin, validate_pin, verify_pin};
 use kadr_server::auth::rate_limiter::{RateLimitStatus, RateLimiter};
+use std::net::IpAddr;
+use std::time::Duration;
 
 #[test]
 fn test_pin_validation_and_argon2_hashing() {
@@ -39,7 +39,10 @@ async fn test_rate_limiter_lockout_after_five_attempts() {
 
     // Success on different IP works
     let other_ip: IpAddr = "192.168.1.200".parse().unwrap();
-    assert_eq!(limiter.check_attempt(&other_ip).await, RateLimitStatus::Allowed);
+    assert_eq!(
+        limiter.check_attempt(&other_ip).await,
+        RateLimitStatus::Allowed
+    );
 }
 
 #[tokio::test]
@@ -76,4 +79,3 @@ async fn test_rate_limiter_prune_stale() {
     assert_eq!(limiter.prune_stale().await, 1);
     assert_eq!(limiter.check_attempt(&ip2).await, RateLimitStatus::Allowed);
 }
-

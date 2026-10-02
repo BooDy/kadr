@@ -1,19 +1,19 @@
+use crate::auth::jwt::AuthUser;
+use crate::events::EventBus;
+use crate::playback::session::SessionRegistry;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
+use kadr_core::events::SystemEvent;
+use kadr_core::models::{PlaybackSession, WatchState};
+use kadr_storage::repos::{MediaItemRepository, PlaybackRepository};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
-use kadr_core::events::SystemEvent;
-use kadr_core::models::{PlaybackSession, WatchState};
-use crate::auth::jwt::AuthUser;
-use crate::events::EventBus;
-use crate::playback::session::SessionRegistry;
-use kadr_storage::repos::{MediaItemRepository, PlaybackRepository};
 
 #[derive(Deserialize, Debug)]
 pub struct CreateSessionRequest {
@@ -60,11 +60,15 @@ pub async fn create_session(
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": "Media item not found" })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
-    let resume_pos = match playback_repo.get_state(&auth_user.id, payload.media_item_id).await {
+    let resume_pos = match playback_repo
+        .get_state(&auth_user.id, payload.media_item_id)
+        .await
+    {
         Ok(Some(s)) => {
             if s.watch_state == WatchState::Completed {
                 0
@@ -75,7 +79,10 @@ pub async fn create_session(
         _ => 0,
     };
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
     let session = PlaybackSession {
         session_id: Uuid::new_v4().to_string(),
         user_id: auth_user.id,
@@ -96,7 +103,8 @@ pub async fn create_session(
             duration_seconds: session.duration_seconds,
             resume_position_seconds: resume_pos,
         }),
-    ).into_response()
+    )
+        .into_response()
 }
 
 pub async fn progress_heartbeat(
@@ -113,24 +121,37 @@ pub async fn progress_heartbeat(
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": "Playback session not found or unauthorized" })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
     let watch_state = evaluate_scrobble(payload.position_seconds, session.duration_seconds);
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
 
     if let Err(e) = playback_repo
-        .upsert_progress(&auth_user.id, session.media_item_id, payload.position_seconds, watch_state, now)
+        .upsert_progress(
+            &auth_user.id,
+            session.media_item_id,
+            payload.position_seconds,
+            watch_state,
+            now,
+        )
         .await
     {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response();
+        )
+            .into_response();
     }
 
-    sessions.update_progress(&session_id, payload.position_seconds).await;
+    sessions
+        .update_progress(&session_id, payload.position_seconds)
+        .await;
 
     if let Some(Extension(event_bus)) = event_bus {
         event_bus.publish(SystemEvent::SessionSynced {
@@ -162,11 +183,13 @@ pub async fn get_playback_state(
                 "last_watched_at": 0,
                 "play_count": 0
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -174,12 +197,16 @@ pub async fn list_continue_watching(
     auth_user: AuthUser,
     Extension(playback_repo): Extension<PlaybackRepository>,
 ) -> impl IntoResponse {
-    match playback_repo.list_user_states(&auth_user.id, Some(WatchState::InProgress), 50).await {
+    match playback_repo
+        .list_user_states(&auth_user.id, Some(WatchState::InProgress), 50)
+        .await
+    {
         Ok(list) => Json(list).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 

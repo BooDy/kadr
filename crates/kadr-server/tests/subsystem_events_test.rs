@@ -63,7 +63,9 @@ async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
     let db_path = dir.path().join("kadr.db");
 
     let pool = create_pool(&db_path, 2).expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -144,7 +146,10 @@ async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
     };
 
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let limiter = RateLimiter::new(100, Duration::from_secs(300), Duration::from_secs(300));
     let session_registry = Arc::new(SessionRegistry::new());
     let event_bus = Arc::new(EventBus::default_bus());
@@ -249,16 +254,18 @@ async fn test_subtitle_download_emits_subtitle_downloaded_event() {
     let mock_app = Router::new()
         .route(
             "/download",
-            post(|_headers: HeaderMap, Json(body): Json<MockDownloadReq>| async move {
-                assert_eq!(body.file_id, 12345);
-                (
-                    StatusCode::OK,
-                    Json(MockDownloadResp {
-                        link: "/files/downloaded.srt".to_string(),
-                        file_name: "downloaded.srt".to_string(),
-                    }),
-                )
-            }),
+            post(
+                |_headers: HeaderMap, Json(body): Json<MockDownloadReq>| async move {
+                    assert_eq!(body.file_id, 12345);
+                    (
+                        StatusCode::OK,
+                        Json(MockDownloadResp {
+                            link: "/files/downloaded.srt".to_string(),
+                            file_name: "downloaded.srt".to_string(),
+                        }),
+                    )
+                },
+            ),
         )
         .route(
             "/files/downloaded.srt",
@@ -334,9 +341,10 @@ async fn test_ingest_worker_flush_emits_library_updated_event() {
 
     let (tx, ingest_rx) = tokio::sync::mpsc::channel(10);
     let bus = ctx.event_bus.clone();
-    let worker = IngestWorker::new(ingest_rx, ctx.media_repo.clone()).with_event_callback(move |ev| {
-        bus.publish(ev);
-    });
+    let worker =
+        IngestWorker::new(ingest_rx, ctx.media_repo.clone()).with_event_callback(move |ev| {
+            bus.publish(ev);
+        });
 
     let worker_handle = tokio::spawn(worker.run());
 

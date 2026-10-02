@@ -1,24 +1,34 @@
+use kadr_core::models::{Library, MediaItem, MediaType};
+use kadr_ingest::watcher::pipeline::IngestPipeline;
+use kadr_ingest::watcher::{
+    scan_directory_recursive, start_library_watcher, IngestMessage, IngestWorker,
+};
+use kadr_storage::repos::MediaItemRepository;
 use std::fs::File;
 use std::io::Write;
 use tempfile::tempdir;
-use kadr_core::models::{Library, MediaItem, MediaType};
-use kadr_ingest::watcher::pipeline::IngestPipeline;
-use kadr_ingest::watcher::{scan_directory_recursive, start_library_watcher, IngestMessage, IngestWorker};
-use kadr_storage::repos::MediaItemRepository;
 
 #[tokio::test]
 async fn test_pipeline_processes_file_and_extracts_all_metadata() {
     let dir = tempdir().unwrap();
-    let video_path = dir.path().join("Cairo.Station.1958.1080p.BluRay.x264-Ghareeb.mkv");
-    let nfo_path = dir.path().join("Cairo.Station.1958.1080p.BluRay.x264-Ghareeb.nfo");
+    let video_path = dir
+        .path()
+        .join("Cairo.Station.1958.1080p.BluRay.x264-Ghareeb.mkv");
+    let nfo_path = dir
+        .path()
+        .join("Cairo.Station.1958.1080p.BluRay.x264-Ghareeb.nfo");
 
     // Write dummy video file with MKV magic
     let mut vfile = File::create(&video_path).unwrap();
-    vfile.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00]).unwrap();
+    vfile
+        .write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00])
+        .unwrap();
 
     // Write nfo
     let mut nfile = File::create(&nfo_path).unwrap();
-    nfile.write_all(r#"<movie><director>Youssef Chahine</director></movie>"#.as_bytes()).unwrap();
+    nfile
+        .write_all(r#"<movie><director>Youssef Chahine</director></movie>"#.as_bytes())
+        .unwrap();
 
     let library = Library {
         id: "classics".to_string(),
@@ -29,7 +39,11 @@ async fn test_pipeline_processes_file_and_extracts_all_metadata() {
     };
 
     let pipeline = IngestPipeline::new(false);
-    let (item, _) = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process");
+    let (item, _) = pipeline
+        .process_file(&library, &video_path)
+        .await
+        .unwrap()
+        .expect("should process");
 
     assert_eq!(item.title, "Cairo Station");
     assert_eq!(item.release_year, Some(1958));
@@ -124,7 +138,9 @@ async fn test_ingest_worker_upsert_and_delete() {
         metadata: Default::default(),
     };
 
-    tx.send(IngestMessage::Upsert(item.clone(), Vec::new())).await.unwrap();
+    tx.send(IngestMessage::Upsert(item.clone(), Vec::new()))
+        .await
+        .unwrap();
 
     // Allow worker to flush via 100ms timeout
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -134,7 +150,9 @@ async fn test_ingest_worker_upsert_and_delete() {
     assert_eq!(items[0].title, "Test Movie");
 
     // Send delete message
-    tx.send(IngestMessage::Delete(item.file_path.clone())).await.unwrap();
+    tx.send(IngestMessage::Delete(item.file_path.clone()))
+        .await
+        .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let items_after_del = repo.list_by_library("movies", 10, 0).await.unwrap();
@@ -149,7 +167,8 @@ async fn test_start_library_watcher_initial_scan() {
     let dir = tempdir().unwrap();
     let video_path = dir.path().join("Alexandria.Why.1979.1080p.BluRay.x264.mkv");
     let mut file = File::create(&video_path).unwrap();
-    file.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00]).unwrap();
+    file.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00])
+        .unwrap();
 
     let library = Library {
         id: "chahine".to_string(),
@@ -162,12 +181,10 @@ async fn test_start_library_watcher_initial_scan() {
     let pipeline = std::sync::Arc::new(IngestPipeline::new(false));
     let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-    let _watcher = start_library_watcher(
-        library,
-        pipeline,
-        tx,
-        std::time::Duration::from_millis(50),
-    ).await.unwrap();
+    let _watcher =
+        start_library_watcher(library, pipeline, tx, std::time::Duration::from_millis(50))
+            .await
+            .unwrap();
 
     // The startup scan should discover Alexandria.Why.1979...
     let msg = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
@@ -187,16 +204,24 @@ async fn test_start_library_watcher_initial_scan() {
 #[tokio::test]
 async fn test_pipeline_malformed_nfo_falls_back_to_filename_metadata() {
     let dir = tempdir().unwrap();
-    let video_path = dir.path().join("The.Nightingale.Prayer.1959.1080p.BluRay.x264.mkv");
-    let nfo_path = dir.path().join("The.Nightingale.Prayer.1959.1080p.BluRay.x264.nfo");
+    let video_path = dir
+        .path()
+        .join("The.Nightingale.Prayer.1959.1080p.BluRay.x264.mkv");
+    let nfo_path = dir
+        .path()
+        .join("The.Nightingale.Prayer.1959.1080p.BluRay.x264.nfo");
 
     // Write dummy video file with MKV magic
     let mut vfile = File::create(&video_path).unwrap();
-    vfile.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00]).unwrap();
+    vfile
+        .write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00])
+        .unwrap();
 
     // Write malformed/corrupted nfo
     let mut nfile = File::create(&nfo_path).unwrap();
-    nfile.write_all(b"<movie><title>Unclosed Tag<broken").unwrap();
+    nfile
+        .write_all(b"<movie><title>Unclosed Tag<broken")
+        .unwrap();
 
     let library = Library {
         id: "classics".to_string(),
@@ -207,7 +232,11 @@ async fn test_pipeline_malformed_nfo_falls_back_to_filename_metadata() {
     };
 
     let pipeline = IngestPipeline::new(false);
-    let (item, _) = pipeline.process_file(&library, &video_path).await.unwrap().expect("should process despite bad nfo");
+    let (item, _) = pipeline
+        .process_file(&library, &video_path)
+        .await
+        .unwrap()
+        .expect("should process despite bad nfo");
 
     assert_eq!(item.title, "The Nightingale Prayer");
     assert_eq!(item.release_year, Some(1959));
@@ -251,8 +280,12 @@ async fn test_ingest_worker_delete_purges_inflight_batch() {
     };
 
     // Send Upsert followed immediately by Delete before 100ms batch flush
-    tx.send(IngestMessage::Upsert(item.clone(), Vec::new())).await.unwrap();
-    tx.send(IngestMessage::Delete(item.file_path.clone())).await.unwrap();
+    tx.send(IngestMessage::Upsert(item.clone(), Vec::new()))
+        .await
+        .unwrap();
+    tx.send(IngestMessage::Delete(item.file_path.clone()))
+        .await
+        .unwrap();
 
     // Give worker time to process messages and potential flush timeout
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;

@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 use crate::models::TechnicalInfo;
 

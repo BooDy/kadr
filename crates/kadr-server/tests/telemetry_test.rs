@@ -16,12 +16,22 @@ async fn test_collect_snapshot_metrics() {
     let wal_path = dir.path().join("kadr.db-wal");
 
     // Write known sizes to db and wal files
-    let mut db_file = tokio::fs::File::create(&db_path).await.expect("create db file");
-    db_file.write_all(&vec![0u8; 2048]).await.expect("write db file");
+    let mut db_file = tokio::fs::File::create(&db_path)
+        .await
+        .expect("create db file");
+    db_file
+        .write_all(&vec![0u8; 2048])
+        .await
+        .expect("write db file");
     db_file.flush().await.expect("flush db");
 
-    let mut wal_file = tokio::fs::File::create(&wal_path).await.expect("create wal file");
-    wal_file.write_all(&vec![0u8; 512]).await.expect("write wal file");
+    let mut wal_file = tokio::fs::File::create(&wal_path)
+        .await
+        .expect("create wal file");
+    wal_file
+        .write_all(&vec![0u8; 512])
+        .await
+        .expect("write wal file");
     wal_file.flush().await.expect("flush wal");
 
     let session_registry = Arc::new(SessionRegistry::new());
@@ -58,7 +68,10 @@ async fn test_collect_snapshot_metrics() {
 
     #[cfg(target_os = "linux")]
     {
-        assert!(snapshot.rss_memory_bytes > 0, "RSS memory should be non-zero on Linux");
+        assert!(
+            snapshot.rss_memory_bytes > 0,
+            "RSS memory should be non-zero on Linux"
+        );
     }
 }
 
@@ -83,13 +96,19 @@ async fn test_collect_snapshot_missing_files() {
 async fn test_spawn_periodic_broadcaster() {
     let dir = tempdir().expect("create tempdir");
     let db_path = dir.path().join("broadcast_test.db");
-    tokio::fs::write(&db_path, b"dummy data").await.expect("write db");
+    tokio::fs::write(&db_path, b"dummy data")
+        .await
+        .expect("write db");
 
     let session_registry = Arc::new(SessionRegistry::new());
     let event_bus = Arc::new(EventBus::default_bus());
     let mut rx = event_bus.subscribe();
 
-    let collector = Arc::new(TelemetryCollector::new(db_path, session_registry, event_bus));
+    let collector = Arc::new(TelemetryCollector::new(
+        db_path,
+        session_registry,
+        event_bus,
+    ));
     let handle = collector.spawn_periodic_broadcaster(Duration::from_millis(50));
 
     // Wait for first event

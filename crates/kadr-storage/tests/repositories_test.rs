@@ -1,7 +1,7 @@
-use std::path::PathBuf;
 use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
+use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_library_and_media_item_repositories() {
@@ -21,7 +21,11 @@ async fn test_library_and_media_item_repositories() {
     };
     lib_repo.create(&lib).await.unwrap();
 
-    let retrieved_lib = lib_repo.get_by_id("movies").await.unwrap().expect("library not found");
+    let retrieved_lib = lib_repo
+        .get_by_id("movies")
+        .await
+        .unwrap()
+        .expect("library not found");
     assert_eq!(retrieved_lib.name, "Feature Films");
 
     // 2. Insert Batch of Media Items
@@ -48,7 +52,9 @@ async fn test_library_and_media_item_repositories() {
             director: Some("Henry Barakat".to_string()),
             writers: vec!["Taha Hussein".to_string()],
             actors: vec!["Faten Hamama".to_string(), "Ahmed Mazhar".to_string()],
-            overview: Some("A young woman seeks revenge for her sister's honor killing.".to_string()),
+            overview: Some(
+                "A young woman seeks revenge for her sister's honor killing.".to_string(),
+            ),
             country: Some("Egypt".to_string()),
             language: Some("ara".to_string()),
             tags: vec!["drama".to_string()],
@@ -60,7 +66,10 @@ async fn test_library_and_media_item_repositories() {
         },
     };
 
-    let count = media_repo.upsert_batch(std::slice::from_ref(&item1)).await.unwrap();
+    let count = media_repo
+        .upsert_batch(std::slice::from_ref(&item1))
+        .await
+        .unwrap();
     assert_eq!(count, 1);
 
     // 3. Query items
@@ -177,17 +186,26 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
     assert_eq!(total, 5);
 
     // Test pagination (ORDER BY title ASC)
-    let page1 = media_repo.list_by_library("classic-movies", 2, 0).await.unwrap();
+    let page1 = media_repo
+        .list_by_library("classic-movies", 2, 0)
+        .await
+        .unwrap();
     assert_eq!(page1.len(), 2);
     assert_eq!(page1[0].title, "Movie 01");
     assert_eq!(page1[1].title, "Movie 02");
 
-    let page2 = media_repo.list_by_library("classic-movies", 2, 2).await.unwrap();
+    let page2 = media_repo
+        .list_by_library("classic-movies", 2, 2)
+        .await
+        .unwrap();
     assert_eq!(page2.len(), 2);
     assert_eq!(page2[0].title, "Movie 03");
     assert_eq!(page2[1].title, "Movie 04");
 
-    let page3 = media_repo.list_by_library("classic-movies", 2, 4).await.unwrap();
+    let page3 = media_repo
+        .list_by_library("classic-movies", 2, 4)
+        .await
+        .unwrap();
     assert_eq!(page3.len(), 1);
     assert_eq!(page3[0].title, "Movie 05");
 
@@ -203,7 +221,10 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
     let total_after_upsert = media_repo.count_by_library("classic-movies").await.unwrap();
     assert_eq!(total_after_upsert, 5);
 
-    let page1_after_update = media_repo.list_by_library("classic-movies", 1, 0).await.unwrap();
+    let page1_after_update = media_repo
+        .list_by_library("classic-movies", 1, 0)
+        .await
+        .unwrap();
     assert_eq!(page1_after_update[0].title, "Movie 01 (Remastered)");
 
     // Cascade delete on library deletion
@@ -292,16 +313,35 @@ async fn test_media_item_get_by_ids_batch() {
     let fetched_items = media_repo.list_by_library("lib1", 10, 0).await.unwrap();
     assert_eq!(fetched_items.len(), 3);
 
-    let id_alpha = fetched_items.iter().find(|i| i.title == "Alpha").unwrap().id.unwrap();
-    let id_gamma = fetched_items.iter().find(|i| i.title == "Gamma").unwrap().id.unwrap();
+    let id_alpha = fetched_items
+        .iter()
+        .find(|i| i.title == "Alpha")
+        .unwrap()
+        .id
+        .unwrap();
+    let id_gamma = fetched_items
+        .iter()
+        .find(|i| i.title == "Gamma")
+        .unwrap()
+        .id
+        .unwrap();
 
     // Query for Alpha, Gamma, and a nonexistent ID 99999
-    let map = media_repo.get_by_ids(&[id_alpha, id_gamma, 99999]).await.unwrap();
+    let map = media_repo
+        .get_by_ids(&[id_alpha, id_gamma, 99999])
+        .await
+        .unwrap();
     assert_eq!(map.len(), 2);
     assert_eq!(map.get(&id_alpha).unwrap().title, "Alpha");
-    assert_eq!(map.get(&id_alpha).unwrap().metadata.overview.as_deref(), Some("Alpha overview"));
+    assert_eq!(
+        map.get(&id_alpha).unwrap().metadata.overview.as_deref(),
+        Some("Alpha overview")
+    );
     assert_eq!(map.get(&id_gamma).unwrap().title, "Gamma");
-    assert_eq!(map.get(&id_gamma).unwrap().metadata.overview.as_deref(), Some("Gamma overview"));
+    assert_eq!(
+        map.get(&id_gamma).unwrap().metadata.overview.as_deref(),
+        Some("Gamma overview")
+    );
     assert!(!map.contains_key(&99999));
 }
 
@@ -367,7 +407,11 @@ async fn test_media_item_find_by_paths_batch() {
 
     // Batch query with existing paths and one nonexistent path
     let map = media_repo
-        .find_by_paths(&[path_a.as_path(), path_b.as_path(), path_nonexistent.as_path()])
+        .find_by_paths(&[
+            path_a.as_path(),
+            path_b.as_path(),
+            path_nonexistent.as_path(),
+        ])
         .await
         .unwrap();
 
@@ -376,4 +420,3 @@ async fn test_media_item_find_by_paths_batch() {
     assert_eq!(map.get(&path_b).unwrap().title, "Beta");
     assert!(!map.contains_key(&path_nonexistent));
 }
-

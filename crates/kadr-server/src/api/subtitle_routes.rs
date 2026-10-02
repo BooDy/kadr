@@ -77,16 +77,13 @@ pub async fn list_subtitles(
     Extension(subtitle_service): Extension<Arc<SubtitleDeliveryService>>,
 ) -> Result<Json<Vec<SubtitleTrackResponse>>, (StatusCode, Json<serde_json::Value>)> {
     // 1. Verify media item exists
-    let item_exists = media_repo
-        .find_by_id(item_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error fetching media item {item_id}: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Database error" })),
-            )
-        })?;
+    let item_exists = media_repo.find_by_id(item_id).await.map_err(|e| {
+        tracing::error!("Database error fetching media item {item_id}: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
 
     if item_exists.is_none() {
         return Err((
@@ -162,10 +159,9 @@ pub async fn stream_webvtt(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=86400"),
     );
-    response.headers_mut().insert(
-        header::ACCEPT_RANGES,
-        HeaderValue::from_static("bytes"),
-    );
+    response
+        .headers_mut()
+        .insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
 
     Ok(response)
 }
@@ -180,16 +176,13 @@ pub async fn search_online_subtitles(
     Extension(opensubtitles_client): Extension<Arc<OpenSubtitlesClient>>,
 ) -> Result<Json<OnlineSubtitleSearchResponse>, (StatusCode, Json<serde_json::Value>)> {
     // 1. Verify media item exists
-    let item = media_repo
-        .find_by_id(item_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error fetching media item {item_id}: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Database error" })),
-            )
-        })?;
+    let item = media_repo.find_by_id(item_id).await.map_err(|e| {
+        tracing::error!("Database error fetching media item {item_id}: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
 
     let item = match item {
         Some(item) => item,
@@ -250,16 +243,13 @@ pub async fn download_subtitle(
     Json(body): Json<DownloadSubtitleRequest>,
 ) -> Result<(StatusCode, Json<SubtitleTrackResponse>), (StatusCode, Json<serde_json::Value>)> {
     // 1. Verify media item exists
-    let item_exists = media_repo
-        .find_by_id(item_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error fetching media item {item_id}: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Database error" })),
-            )
-        })?;
+    let item_exists = media_repo.find_by_id(item_id).await.map_err(|e| {
+        tracing::error!("Database error fetching media item {item_id}: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
 
     if item_exists.is_none() {
         return Err((
@@ -281,7 +271,10 @@ pub async fn download_subtitle(
         .download(&body.file_id)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to download subtitle {} from OpenSubtitles: {e}", body.file_id);
+            tracing::error!(
+                "Failed to download subtitle {} from OpenSubtitles: {e}",
+                body.file_id
+            );
             (
                 StatusCode::BAD_GATEWAY,
                 Json(serde_json::json!({ "error": format!("Failed to download subtitle: {e}") })),
@@ -294,22 +287,32 @@ pub async fn download_subtitle(
         .join("subtitles")
         .join(item_id.to_string());
 
-    tokio::fs::create_dir_all(&item_subtitles_dir).await.map_err(|e| {
-        tracing::error!("Failed to create subtitle save directory {}: {e}", item_subtitles_dir.display());
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Failed to create directory on disk" })),
-        )
-    })?;
+    tokio::fs::create_dir_all(&item_subtitles_dir)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to create subtitle save directory {}: {e}",
+                item_subtitles_dir.display()
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to create directory on disk" })),
+            )
+        })?;
 
     let target_file_path = item_subtitles_dir.join(format!("{}.srt", body.file_id));
-    tokio::fs::write(&target_file_path, &bytes).await.map_err(|e| {
-        tracing::error!("Failed to write downloaded subtitle to {}: {e}", target_file_path.display());
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Failed to save file to disk" })),
-        )
-    })?;
+    tokio::fs::write(&target_file_path, &bytes)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to write downloaded subtitle to {}: {e}",
+                target_file_path.display()
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to save file to disk" })),
+            )
+        })?;
 
     let file_path_str = target_file_path.to_string_lossy().into_owned();
     let now = SystemTime::now()

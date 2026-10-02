@@ -3,19 +3,21 @@ use axum::{
     extract::ConnectInfo,
     http::{Request, StatusCode},
 };
-use serde_json::Value;
-use tower::ServiceExt;
 use kadr_core::models::{User, UserRole};
+use kadr_server::api::create_router;
+use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
-use kadr_server::auth::jwt::JwtService;
 use kadr_server::playback::SessionRegistry;
-use kadr_server::api::create_router;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
-use kadr_storage::repos::{UserRepository, PlaybackRepository, MediaItemRepository, LibraryRepository};
+use kadr_storage::repos::{
+    LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
+};
+use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_auth_profile_flow_and_rate_limiting() {
@@ -50,10 +52,15 @@ async fn test_auth_profile_flow_and_rate_limiting() {
     );
 
     // 1. GET /api/v1/users/profiles
-    let req = Request::builder().uri("/api/v1/users/profiles").body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .uri("/api/v1/users/profiles")
+        .body(Body::empty())
+        .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let profiles: Value = serde_json::from_slice(&bytes).unwrap();
     let arr = profiles.as_array().unwrap();
     assert_eq!(arr.len(), 1);
@@ -81,7 +88,9 @@ async fn test_auth_profile_flow_and_rate_limiting() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&bytes).unwrap();
     let token = json["token"].as_str().unwrap();
     assert_eq!(json["user_id"], "admin-1");
@@ -96,7 +105,9 @@ async fn test_auth_profile_flow_and_rate_limiting() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let me: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(me["id"], "admin-1");
     assert_eq!(me["username"], "admin");
@@ -156,7 +167,10 @@ async fn test_rate_limiting_lockout_and_headers() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
-    let retry_after = res.headers().get("Retry-After").expect("missing Retry-After header");
+    let retry_after = res
+        .headers()
+        .get("Retry-After")
+        .expect("missing Retry-After header");
     let retry_secs: u64 = retry_after.to_str().unwrap().parse().unwrap();
     assert!(retry_secs > 0 && retry_secs <= 300);
 }
@@ -210,7 +224,9 @@ async fn test_user_creation_admin_and_forbidden() {
         .method("POST")
         .uri("/api/v1/users")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"username":"newuser","pin":"1111","role":"standard"}"#))
+        .body(Body::from(
+            r#"{"username":"newuser","pin":"1111","role":"standard"}"#,
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -221,7 +237,9 @@ async fn test_user_creation_admin_and_forbidden() {
         .uri("/api/v1/users")
         .header("authorization", format!("Bearer {}", standard_token))
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"username":"newuser","pin":"1111","role":"standard"}"#))
+        .body(Body::from(
+            r#"{"username":"newuser","pin":"1111","role":"standard"}"#,
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
@@ -232,7 +250,9 @@ async fn test_user_creation_admin_and_forbidden() {
         .uri("/api/v1/users")
         .header("authorization", format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"username":"newuser","pin":"not-a-pin","role":"standard"}"#))
+        .body(Body::from(
+            r#"{"username":"newuser","pin":"not-a-pin","role":"standard"}"#,
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
@@ -243,7 +263,9 @@ async fn test_user_creation_admin_and_forbidden() {
         .uri("/api/v1/users")
         .header("authorization", format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"username":"   ","pin":"1111","role":"standard"}"#))
+        .body(Body::from(
+            r#"{"username":"   ","pin":"1111","role":"standard"}"#,
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
@@ -254,11 +276,15 @@ async fn test_user_creation_admin_and_forbidden() {
         .uri("/api/v1/users")
         .header("authorization", format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"username":"family1","pin":"4321","role":"standard"}"#))
+        .body(Body::from(
+            r#"{"username":"family1","pin":"4321","role":"standard"}"#,
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let created: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(created["username"], "family1");
     assert_eq!(created["role"], "standard");
@@ -269,7 +295,10 @@ async fn test_user_creation_admin_and_forbidden() {
         .method("POST")
         .uri("/api/v1/auth/profile-pin")
         .header("content-type", "application/json")
-        .body(Body::from(format!(r#"{{"user_id":"{}","pin":"4321"}}"#, new_user_id)))
+        .body(Body::from(format!(
+            r#"{{"user_id":"{}","pin":"4321"}}"#,
+            new_user_id
+        )))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);

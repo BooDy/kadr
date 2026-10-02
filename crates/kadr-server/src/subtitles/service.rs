@@ -114,7 +114,9 @@ impl SubtitleDeliveryService {
         // Ensure cache directory exists before writing
         tokio::fs::create_dir_all(&self.cache_dir).await?;
 
-        let tmp_path = self.cache_dir.join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
+        let tmp_path =
+            self.cache_dir
+                .join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
         let source_path_buf = source_path.to_path_buf();
         let tmp_path_clone = tmp_path.clone();
         let format = track.format;

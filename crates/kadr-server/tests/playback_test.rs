@@ -26,8 +26,8 @@ async fn setup_test_context() -> (
     MediaItemRepository,
     LibraryRepository,
     JwtService,
-    i64, // movie 1 id (duration 5000s)
-    i64, // movie 2 id (duration 3000s)
+    i64,    // movie 1 id (duration 5000s)
+    i64,    // movie 2 id (duration 3000s)
     String, // user 1 token
     String, // user 2 token
 ) {
@@ -109,8 +109,18 @@ async fn setup_test_context() -> (
         .unwrap();
 
     let items = media_repo.list_by_library("lib1", 10, 0).await.unwrap();
-    let item1_id = items.iter().find(|i| i.title == "Cairo Station").unwrap().id.unwrap();
-    let item2_id = items.iter().find(|i| i.title == "The Land").unwrap().id.unwrap();
+    let item1_id = items
+        .iter()
+        .find(|i| i.title == "Cairo Station")
+        .unwrap()
+        .id
+        .unwrap();
+    let item2_id = items
+        .iter()
+        .find(|i| i.title == "The Land")
+        .unwrap()
+        .id
+        .unwrap();
 
     let jwt = JwtService::new("my-secret-key-that-is-at-least-32-bytes-long", 3600);
     let token1 = jwt.generate_token(&user1).unwrap();
@@ -171,7 +181,11 @@ async fn test_playback_session_lifecycle_and_scrobble() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let state = playback_repo.get_state("u1", item_id).await.unwrap().unwrap();
+    let state = playback_repo
+        .get_state("u1", item_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(state.watch_state, WatchState::InProgress);
     assert_eq!(state.playback_position_seconds, 150);
 
@@ -186,7 +200,11 @@ async fn test_playback_session_lifecycle_and_scrobble() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let state = playback_repo.get_state("u1", item_id).await.unwrap().unwrap();
+    let state = playback_repo
+        .get_state("u1", item_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(state.watch_state, WatchState::Completed);
     assert_eq!(state.play_count, 1);
 }

@@ -27,7 +27,9 @@ fn test_media_item_serialization_roundtrip() {
             director: Some("Youssef Chahine".to_string()),
             writers: vec!["Abdel Hay Adib".to_string()],
             actors: vec!["Farid Shawqi".to_string(), "Hind Rostom".to_string()],
-            overview: Some("A crippled newspaper vendor becomes obsessed with a lemonade seller.".to_string()),
+            overview: Some(
+                "A crippled newspaper vendor becomes obsessed with a lemonade seller.".to_string(),
+            ),
             country: Some("Egypt".to_string()),
             language: Some("ara".to_string()),
             tags: vec!["classic".to_string(), "drama".to_string()],
@@ -40,7 +42,8 @@ fn test_media_item_serialization_roundtrip() {
     };
 
     let serialized = serde_json::to_string(&item).expect("serialization failed");
-    let deserialized: MediaItem = serde_json::from_str(&serialized).expect("deserialization failed");
+    let deserialized: MediaItem =
+        serde_json::from_str(&serialized).expect("deserialization failed");
 
     assert_eq!(item, deserialized);
 }

@@ -189,15 +189,9 @@ mod tests {
             RangeResult::Ignore
         );
         assert_eq!(parse_range_header("bytes=100", 1000), RangeResult::Ignore);
-        assert_eq!(
-            parse_range_header("chars=0-100", 1000),
-            RangeResult::Ignore
-        );
+        assert_eq!(parse_range_header("chars=0-100", 1000), RangeResult::Ignore);
         assert_eq!(parse_range_header("bytes=-", 1000), RangeResult::Ignore);
-        assert_eq!(
-            parse_range_header("bytes=1-2-3", 1000),
-            RangeResult::Ignore
-        );
+        assert_eq!(parse_range_header("bytes=1-2-3", 1000), RangeResult::Ignore);
     }
 
     #[test]

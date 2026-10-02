@@ -2,6 +2,18 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use kadr_core::models::{
+    Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo, UserRole, WatchState,
+};
+use kadr_server::api::create_router;
+use kadr_server::auth::jwt::JwtService;
+use kadr_server::auth::pin::hash_pin;
+use kadr_server::auth::rate_limiter::RateLimiter;
+use kadr_server::playback::session::SessionRegistry;
+use kadr_storage::pool::{create_in_memory_pool, initialize_database};
+use kadr_storage::repos::{
+    LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
+};
 use serde_json::Value;
 use std::fs::File;
 use std::io::Write;
@@ -10,14 +22,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::tempdir;
 use tower::ServiceExt;
-use kadr_core::models::{Library, MediaItem, MediaType, TechnicalInfo, MediaMetadata, UserRole, WatchState};
-use kadr_server::auth::jwt::JwtService;
-use kadr_server::auth::pin::hash_pin;
-use kadr_server::auth::rate_limiter::RateLimiter;
-use kadr_server::playback::session::SessionRegistry;
-use kadr_server::api::create_router;
-use kadr_storage::pool::{create_in_memory_pool, initialize_database};
-use kadr_storage::repos::{UserRepository, PlaybackRepository, MediaItemRepository, LibraryRepository};
 
 #[tokio::test]
 async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
@@ -36,34 +40,42 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
     let sample_bytes: Vec<u8> = (0..5000).map(|i| (i % 256) as u8).collect();
     file.write_all(&sample_bytes).unwrap();
 
-    lib_repo.create(&Library {
-        id: "lib1".to_string(),
-        name: "Movies".to_string(),
-        path: dir.path().to_path_buf(),
-        media_type: MediaType::Movie,
-        created_at: 1000,
-    }).await.unwrap();
+    lib_repo
+        .create(&Library {
+            id: "lib1".to_string(),
+            name: "Movies".to_string(),
+            path: dir.path().to_path_buf(),
+            media_type: MediaType::Movie,
+            created_at: 1000,
+        })
+        .await
+        .unwrap();
 
-    media_repo.upsert_batch(&[MediaItem {
-        id: None,
-        library_id: "lib1".to_string(),
-        item_type: MediaType::Movie,
-        title: "The Nightingale's Prayer".to_string(),
-        original_title: Some("Doaa al-Karawan".to_string()),
-        release_year: Some(1959),
-        added_at: 1000,
-        file_path: video_path,
-        file_name: "film.mkv".to_string(),
-        file_size: 5000,
-        technical: TechnicalInfo {
-            duration_seconds: 6000,
-            container: Some("mkv".to_string()),
-            ..Default::default()
-        },
-        metadata: MediaMetadata::default(),
-    }]).await.unwrap();
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "The Nightingale's Prayer".to_string(),
+            original_title: Some("Doaa al-Karawan".to_string()),
+            release_year: Some(1959),
+            added_at: 1000,
+            file_path: video_path,
+            file_name: "film.mkv".to_string(),
+            file_size: 5000,
+            technical: TechnicalInfo {
+                duration_seconds: 6000,
+                container: Some("mkv".to_string()),
+                ..Default::default()
+            },
+            metadata: MediaMetadata::default(),
+        }])
+        .await
+        .unwrap();
 
-    let media_item_id = media_repo.list_by_library("lib1", 1, 0).await.unwrap()[0].id.unwrap();
+    let media_item_id = media_repo.list_by_library("lib1", 1, 0).await.unwrap()[0]
+        .id
+        .unwrap();
 
     // 2. Setup user and server router
     let admin_user = kadr_core::models::User {
@@ -90,7 +102,10 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
     );
 
     // 3. User lists profiles
-    let req = Request::builder().uri("/api/v1/users/profiles").body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .uri("/api/v1/users/profiles")
+        .body(Body::empty())
+        .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
@@ -103,7 +118,9 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let auth_data: Value = serde_json::from_slice(&body).unwrap();
     let token = auth_data["token"].as_str().unwrap();
 
@@ -116,8 +133,14 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(res.headers().get("content-range").unwrap(), "bytes 1000-1999/5000");
-    assert_eq!(res.headers().get("content-type").unwrap(), "video/x-matroska");
+    assert_eq!(
+        res.headers().get("content-range").unwrap(),
+        "bytes 1000-1999/5000"
+    );
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "video/x-matroska"
+    );
 
     let chunk = axum::body::to_bytes(res.into_body(), 2048).await.unwrap();
     assert_eq!(chunk.len(), 1000);
@@ -129,7 +152,10 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
         .uri("/api/v1/playback/sessions")
         .header("authorization", format!("Bearer {}", token))
         .header("content-type", "application/json")
-        .body(Body::from(format!(r#"{{"media_item_id":{}}}"#, media_item_id)))
+        .body(Body::from(format!(
+            r#"{{"media_item_id":{}}}"#,
+            media_item_id
+        )))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);

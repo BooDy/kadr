@@ -64,16 +64,14 @@ impl TelemetryCollector {
     }
 
     /// Spawns a background task broadcasting `TelemetrySnapshot` periodically on `EventBus`.
-    pub fn spawn_periodic_broadcaster(
-        self: Arc<Self>,
-        interval: Duration,
-    ) -> JoinHandle<()> {
+    pub fn spawn_periodic_broadcaster(self: Arc<Self>, interval: Duration) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             loop {
                 ticker.tick().await;
                 let snapshot = self.collect_snapshot().await;
-                self.event_bus.publish(SystemEvent::SystemTelemetry(snapshot));
+                self.event_bus
+                    .publish(SystemEvent::SystemTelemetry(snapshot));
             }
         })
     }

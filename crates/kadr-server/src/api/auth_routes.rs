@@ -1,16 +1,16 @@
-use axum::{
-    extract::{ConnectInfo, FromRequestParts, Extension, Json},
-    http::{request::Parts, StatusCode},
-    response::{IntoResponse, Response},
-};
-use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
-use kadr_core::models::UserRole;
 use crate::auth::jwt::{AuthUser, JwtService};
 use crate::auth::pin::verify_pin;
 use crate::auth::rate_limiter::{RateLimitStatus, RateLimiter};
+use axum::{
+    extract::{ConnectInfo, Extension, FromRequestParts, Json},
+    http::{request::Parts, StatusCode},
+    response::{IntoResponse, Response},
+};
+use kadr_core::models::UserRole;
 use kadr_storage::repos::UserRepository;
+use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
+use std::net::{IpAddr, SocketAddr};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClientIp(pub IpAddr);
@@ -79,7 +79,8 @@ pub async fn profile_pin_auth(
     ClientIp(client_ip): ClientIp,
     Json(payload): Json<PinAuthRequest>,
 ) -> Response {
-    if let RateLimitStatus::LockedOut { retry_after_secs } = limiter.check_attempt(&client_ip).await {
+    if let RateLimitStatus::LockedOut { retry_after_secs } = limiter.check_attempt(&client_ip).await
+    {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             [("Retry-After", retry_after_secs.to_string())],
@@ -87,7 +88,8 @@ pub async fn profile_pin_auth(
                 "error": "Too many failed attempts. Try again later.",
                 "retry_after_seconds": retry_after_secs
             })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let user = match user_repo.get_by_id(&payload.user_id).await {
@@ -97,14 +99,16 @@ pub async fn profile_pin_auth(
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({ "error": "Invalid user or PIN" })),
-            ).into_response();
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!(error = %e, "Database error retrieving user during auth");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": "Internal server error" })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -120,11 +124,13 @@ pub async fn profile_pin_auth(
                         username: user.username,
                         role: user.role,
                     }),
-                ).into_response(),
+                )
+                    .into_response(),
                 Err(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({ "error": "Failed to create session token" })),
-                ).into_response(),
+                )
+                    .into_response(),
             }
         }
         _ => {
@@ -132,7 +138,8 @@ pub async fn profile_pin_auth(
             (
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({ "error": "Invalid user or PIN" })),
-            ).into_response()
+            )
+                .into_response()
         }
     }
 }

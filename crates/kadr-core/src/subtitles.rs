@@ -105,11 +105,11 @@ pub struct SubtitleTrack {
     pub id: i64,
     pub media_item_id: i64,
     pub source: SubtitleSource,
-    pub language: String,              // e.g. "eng", "ara", "fre", "und"
-    pub title: Option<String>,          // e.g. "English [SDH]"
+    pub language: String,      // e.g. "eng", "ara", "fre", "und"
+    pub title: Option<String>, // e.g. "English [SDH]"
     pub format: SubtitleFormat,
-    pub file_path: Option<String>,      // Disk path
-    pub stream_index: Option<u32>,      // Stream index if embedded
+    pub file_path: Option<String>, // Disk path
+    pub stream_index: Option<u32>, // Stream index if embedded
     pub is_default: bool,
     pub is_forced: bool,
     pub created_at: i64,
@@ -118,11 +118,11 @@ pub struct SubtitleTrack {
 /// Match candidate returned from OpenSubtitles REST search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OnlineSubtitleMatch {
-    pub id: String,                    // OpenSubtitles file ID
-    pub language: String,              // e.g. "en", "ar"
-    pub release_name: Option<String>,  // Release name/hash sync
+    pub id: String,                   // OpenSubtitles file ID
+    pub language: String,             // e.g. "en", "ar"
+    pub release_name: Option<String>, // Release name/hash sync
     pub hearing_impaired: bool,
-    pub format: String,                // "srt"
+    pub format: String, // "srt"
     pub download_count: u32,
     pub rating: Option<f32>,
 }
@@ -138,11 +138,17 @@ mod tests {
         assert_eq!(SubtitleFormat::from_extension(".vtt"), SubtitleFormat::Vtt);
         assert_eq!(SubtitleFormat::from_extension("ASS"), SubtitleFormat::Ass);
         assert_eq!(SubtitleFormat::from_extension("sub"), SubtitleFormat::Sub);
-        assert_eq!(SubtitleFormat::from_extension("mkv"), SubtitleFormat::Unknown);
+        assert_eq!(
+            SubtitleFormat::from_extension("mkv"),
+            SubtitleFormat::Unknown
+        );
 
         assert_eq!(SubtitleFormat::Srt.as_str(), "srt");
         assert_eq!(SubtitleFormat::Srt.to_string(), "srt");
-        assert_eq!(SubtitleFormat::from_str("srt").unwrap(), SubtitleFormat::Srt);
+        assert_eq!(
+            SubtitleFormat::from_str("srt").unwrap(),
+            SubtitleFormat::Srt
+        );
     }
 
     #[test]
@@ -152,9 +158,18 @@ mod tests {
         assert_eq!(SubtitleSource::Downloaded.as_str(), "downloaded");
         assert_eq!(SubtitleSource::Sidecar.to_string(), "sidecar");
 
-        assert_eq!(SubtitleSource::from_str("sidecar").unwrap(), SubtitleSource::Sidecar);
-        assert_eq!(SubtitleSource::from_str("embedded").unwrap(), SubtitleSource::Embedded);
-        assert_eq!(SubtitleSource::from_str("downloaded").unwrap(), SubtitleSource::Downloaded);
+        assert_eq!(
+            SubtitleSource::from_str("sidecar").unwrap(),
+            SubtitleSource::Sidecar
+        );
+        assert_eq!(
+            SubtitleSource::from_str("embedded").unwrap(),
+            SubtitleSource::Embedded
+        );
+        assert_eq!(
+            SubtitleSource::from_str("downloaded").unwrap(),
+            SubtitleSource::Downloaded
+        );
         assert!(SubtitleSource::from_str("invalid").is_err());
     }
 }

@@ -1,11 +1,11 @@
-use std::fs;
-use std::path::Path;
-use std::time::SystemTime;
-use kadr_core::models::{Library, MediaItem, MediaMetadata};
 use crate::error::Result;
 use crate::parser::FilenameParser;
 use crate::probe::TechnicalProber;
 use crate::sidecars::{DiscoveredSubtitle, SidecarScanner};
+use kadr_core::models::{Library, MediaItem, MediaMetadata};
+use std::fs;
+use std::path::Path;
+use std::time::SystemTime;
 use tracing::warn;
 
 pub struct IngestPipeline {

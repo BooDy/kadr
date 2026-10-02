@@ -1,7 +1,7 @@
-use deadpool_sqlite::Pool;
-use rusqlite::params;
-use kadr_core::models::{User, UserRole};
 use crate::error::Result;
+use deadpool_sqlite::Pool;
+use kadr_core::models::{User, UserRole};
+use rusqlite::params;
 
 #[derive(Clone)]
 pub struct UserRepository {
@@ -50,48 +50,58 @@ impl UserRepository {
                 params![u.id, u.username, u.pin_hash, role_str, u.created_at],
             )?;
             Ok(())
-        }).await?
+        })
+        .await?
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<Option<User>> {
         let id = id.to_string();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let mut stmt = c.prepare("SELECT id, username, pin_hash, role, created_at FROM users WHERE id = ?1")?;
+            let mut stmt = c.prepare(
+                "SELECT id, username, pin_hash, role, created_at FROM users WHERE id = ?1",
+            )?;
             let mut rows = stmt.query(params![id])?;
             if let Some(row) = rows.next()? {
                 Ok(Some(map_user_row(row)?))
             } else {
                 Ok(None)
             }
-        }).await?
+        })
+        .await?
     }
 
     pub async fn get_by_username(&self, username: &str) -> Result<Option<User>> {
         let username = username.to_string();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let mut stmt = c.prepare("SELECT id, username, pin_hash, role, created_at FROM users WHERE username = ?1")?;
+            let mut stmt = c.prepare(
+                "SELECT id, username, pin_hash, role, created_at FROM users WHERE username = ?1",
+            )?;
             let mut rows = stmt.query(params![username])?;
             if let Some(row) = rows.next()? {
                 Ok(Some(map_user_row(row)?))
             } else {
                 Ok(None)
             }
-        }).await?
+        })
+        .await?
     }
 
     pub async fn list_all(&self) -> Result<Vec<User>> {
         let conn = self.pool.get().await?;
         conn.interact(|c| {
-            let mut stmt = c.prepare("SELECT id, username, pin_hash, role, created_at FROM users ORDER BY username ASC")?;
+            let mut stmt = c.prepare(
+                "SELECT id, username, pin_hash, role, created_at FROM users ORDER BY username ASC",
+            )?;
             let rows = stmt.query_map([], map_user_row)?;
             let mut list = Vec::new();
             for r in rows {
                 list.push(r?);
             }
             Ok(list)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn count(&self) -> Result<usize> {
@@ -99,7 +109,8 @@ impl UserRepository {
         conn.interact(|c| {
             let count: i64 = c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
             Ok(count as usize)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
@@ -108,6 +119,7 @@ impl UserRepository {
         conn.interact(move |c| {
             let rows = c.execute("DELETE FROM users WHERE id = ?1", params![id])?;
             Ok(rows > 0)
-        }).await?
+        })
+        .await?
     }
 }

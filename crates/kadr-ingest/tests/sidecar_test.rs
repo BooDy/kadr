@@ -1,7 +1,7 @@
+use kadr_ingest::sidecars::SidecarScanner;
 use std::fs::File;
 use std::io::Write;
 use tempfile::tempdir;
-use kadr_ingest::sidecars::SidecarScanner;
 
 #[test]
 fn test_parse_nfo_file() {
@@ -29,7 +29,10 @@ fn test_parse_nfo_file() {
     file.write_all(xml_content.as_bytes()).unwrap();
 
     let scanner = SidecarScanner::new();
-    let nfo = scanner.read_nfo(&nfo_path).unwrap().expect("nfo should parse");
+    let nfo = scanner
+        .read_nfo(&nfo_path)
+        .unwrap()
+        .expect("nfo should parse");
 
     assert_eq!(nfo.title.as_deref(), Some("The Land"));
     assert_eq!(nfo.original_title.as_deref(), Some("Al-Ard"));
@@ -73,7 +76,10 @@ fn test_find_nfo_for_media() {
     file.write_all(xml_content.as_bytes()).unwrap();
 
     let scanner = SidecarScanner::new();
-    let nfo = scanner.find_nfo_for_media(&video_path).unwrap().expect("film.nfo should be found");
+    let nfo = scanner
+        .find_nfo_for_media(&video_path)
+        .unwrap()
+        .expect("film.nfo should be found");
     assert_eq!(nfo.title.as_deref(), Some("Specific Film"));
 }
 
@@ -93,7 +99,10 @@ fn test_find_nfo_for_media_movie_fallback() {
     file.write_all(xml_content.as_bytes()).unwrap();
 
     let scanner = SidecarScanner::new();
-    let nfo = scanner.find_nfo_for_media(&video_path).unwrap().expect("movie.nfo should be found");
+    let nfo = scanner
+        .find_nfo_for_media(&video_path)
+        .unwrap()
+        .expect("movie.nfo should be found");
     assert_eq!(nfo.title.as_deref(), Some("Fallback Film"));
 }
 
@@ -112,7 +121,10 @@ fn test_parse_nfo_unicode_arabic() {
     file.write_all(xml_content.as_bytes()).unwrap();
 
     let scanner = SidecarScanner::new();
-    let nfo = scanner.read_nfo(&nfo_path).unwrap().expect("unicode nfo should parse");
+    let nfo = scanner
+        .read_nfo(&nfo_path)
+        .unwrap()
+        .expect("unicode nfo should parse");
 
     assert_eq!(nfo.title.as_deref(), Some("الأرض"));
     assert_eq!(nfo.director.as_deref(), Some("يوسف شاهين"));
@@ -141,7 +153,10 @@ fn test_parse_nfo_multibyte_year_no_panic() {
     file.write_all(xml_content.as_bytes()).unwrap();
 
     let scanner = SidecarScanner::new();
-    let nfo = scanner.read_nfo(&nfo_path).unwrap().expect("nfo should parse");
+    let nfo = scanner
+        .read_nfo(&nfo_path)
+        .unwrap()
+        .expect("nfo should parse");
 
     assert_eq!(nfo.title.as_deref(), Some("الكيف"));
     assert_eq!(nfo.year, Some(1985));

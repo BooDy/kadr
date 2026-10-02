@@ -1,3 +1,7 @@
+use crate::sidecars::DiscoveredSubtitle;
+use kadr_core::models::MediaItem;
+use kadr_core::subtitles::SubtitleTrack;
+use kadr_storage::repos::{MediaItemRepository, SubtitleRepository};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -5,10 +9,6 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::{error, info};
-use kadr_core::models::MediaItem;
-use kadr_core::subtitles::SubtitleTrack;
-use kadr_storage::repos::{MediaItemRepository, SubtitleRepository};
-use crate::sidecars::DiscoveredSubtitle;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -144,17 +144,29 @@ impl IngestWorker {
                                             if let Some(media_id) = persisted.id {
                                                 let tracks: Vec<SubtitleTrack> = subs
                                                     .iter()
-                                                    .map(|s| s.clone().into_subtitle_track(media_id, now))
+                                                    .map(|s| {
+                                                        s.clone().into_subtitle_track(media_id, now)
+                                                    })
                                                     .collect();
 
-                                                let existing = sub_repo.find_by_media_item(media_id).await.unwrap_or_default();
+                                                let existing = sub_repo
+                                                    .find_by_media_item(media_id)
+                                                    .await
+                                                    .unwrap_or_default();
                                                 let to_insert: Vec<SubtitleTrack> = tracks
                                                     .into_iter()
-                                                    .filter(|t| !existing.iter().any(|e| e.file_path == t.file_path && e.source == t.source))
+                                                    .filter(|t| {
+                                                        !existing.iter().any(|e| {
+                                                            e.file_path == t.file_path
+                                                                && e.source == t.source
+                                                        })
+                                                    })
                                                     .collect();
 
                                                 if !to_insert.is_empty() {
-                                                    if let Err(e) = sub_repo.batch_insert(&to_insert).await {
+                                                    if let Err(e) =
+                                                        sub_repo.batch_insert(&to_insert).await
+                                                    {
                                                         error!(path = ?item.file_path, error = ?e, "Failed to insert subtitle tracks");
                                                     }
                                                 }

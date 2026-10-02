@@ -8,9 +8,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use kadr_core::models::{
-    Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo,
-};
+use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_server::api::artwork_routes::resolve_artwork_mime;
 use kadr_server::api::create_router;
 use kadr_server::auth::jwt::JwtService;
@@ -35,7 +33,9 @@ struct ArtworkTestContext {
 
 async fn setup_test_context() -> ArtworkTestContext {
     let pool = create_in_memory_pool().expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -59,13 +59,17 @@ async fn setup_test_context() -> ArtworkTestContext {
     let poster_path = dir.path().join("poster.jpg");
     let mut poster_file = File::create(&poster_path).expect("create poster file");
     let poster_bytes: Vec<u8> = (0..5000).map(|i| (i % 256) as u8).collect();
-    poster_file.write_all(&poster_bytes).expect("write poster bytes");
+    poster_file
+        .write_all(&poster_bytes)
+        .expect("write poster bytes");
 
     // Backdrop file
     let backdrop_path = dir.path().join("backdrop.png");
     let mut backdrop_file = File::create(&backdrop_path).expect("create backdrop file");
     let backdrop_bytes: Vec<u8> = (0..8000).map(|i| ((i * 7) % 256) as u8).collect();
-    backdrop_file.write_all(&backdrop_bytes).expect("write backdrop bytes");
+    backdrop_file
+        .write_all(&backdrop_bytes)
+        .expect("write backdrop bytes");
 
     let dummy1 = dir.path().join("sample1.mp4");
     File::create(&dummy1).expect("create dummy1");
@@ -135,10 +139,28 @@ async fn setup_test_context() -> ArtworkTestContext {
         .await
         .expect("upsert batch");
 
-    let items = media_repo.list_by_library("lib1", 10, 0).await.expect("list items");
-    let valid_item_id = items.iter().find(|i| i.title == "Valid Movie").unwrap().id.unwrap();
-    let missing_artwork_item_id = items.iter().find(|i| i.title == "Missing Artwork Movie").unwrap().id.unwrap();
-    let not_on_disk_item_id = items.iter().find(|i| i.title == "Nonexistent File Movie").unwrap().id.unwrap();
+    let items = media_repo
+        .list_by_library("lib1", 10, 0)
+        .await
+        .expect("list items");
+    let valid_item_id = items
+        .iter()
+        .find(|i| i.title == "Valid Movie")
+        .unwrap()
+        .id
+        .unwrap();
+    let missing_artwork_item_id = items
+        .iter()
+        .find(|i| i.title == "Missing Artwork Movie")
+        .unwrap()
+        .id
+        .unwrap();
+    let not_on_disk_item_id = items
+        .iter()
+        .find(|i| i.title == "Nonexistent File Movie")
+        .unwrap()
+        .id
+        .unwrap();
 
     let jwt = JwtService::new("super-secret-key-that-is-at-least-32-bytes-long", 3600);
     let app = create_router(
@@ -175,24 +197,20 @@ async fn test_valid_poster_streaming() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        res.headers().get("content-type").unwrap(),
-        "image/jpeg"
-    );
+    assert_eq!(res.headers().get("content-type").unwrap(), "image/jpeg");
     assert_eq!(
         res.headers().get("cache-control").unwrap(),
         "public, max-age=86400"
     );
-    assert_eq!(
-        res.headers().get("accept-ranges").unwrap(),
-        "bytes"
-    );
+    assert_eq!(res.headers().get("accept-ranges").unwrap(), "bytes");
     assert_eq!(
         res.headers().get("content-length").unwrap(),
         &ctx.poster_bytes.len().to_string()
     );
 
-    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(body_bytes.as_ref(), &ctx.poster_bytes[..]);
 }
 
@@ -209,24 +227,20 @@ async fn test_valid_backdrop_streaming() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        res.headers().get("content-type").unwrap(),
-        "image/png"
-    );
+    assert_eq!(res.headers().get("content-type").unwrap(), "image/png");
     assert_eq!(
         res.headers().get("cache-control").unwrap(),
         "public, max-age=86400"
     );
-    assert_eq!(
-        res.headers().get("accept-ranges").unwrap(),
-        "bytes"
-    );
+    assert_eq!(res.headers().get("accept-ranges").unwrap(), "bytes");
     assert_eq!(
         res.headers().get("content-length").unwrap(),
         &ctx.backdrop_bytes.len().to_string()
     );
 
-    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(body_bytes.as_ref(), &ctx.backdrop_bytes[..]);
 }
 
@@ -236,12 +250,17 @@ async fn test_artwork_with_query_token_and_auth_header() {
 
     // Query token param
     let req = Request::builder()
-        .uri(format!("/api/v1/artwork/{}/poster?token=some_jwt_token", ctx.valid_item_id))
+        .uri(format!(
+            "/api/v1/artwork/{}/poster?token=some_jwt_token",
+            ctx.valid_item_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(body_bytes.as_ref(), &ctx.poster_bytes[..]);
 
     // Authorization header
@@ -252,7 +271,9 @@ async fn test_artwork_with_query_token_and_auth_header() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(body_bytes.as_ref(), &ctx.backdrop_bytes[..]);
 }
 
@@ -262,7 +283,10 @@ async fn test_missing_artwork_path_returns_404() {
 
     // Poster path is None
     let req = Request::builder()
-        .uri(format!("/api/v1/artwork/{}/poster", ctx.missing_artwork_item_id))
+        .uri(format!(
+            "/api/v1/artwork/{}/poster",
+            ctx.missing_artwork_item_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -273,7 +297,10 @@ async fn test_missing_artwork_path_returns_404() {
 
     // Backdrop path is whitespace-only
     let req = Request::builder()
-        .uri(format!("/api/v1/artwork/{}/backdrop", ctx.missing_artwork_item_id))
+        .uri(format!(
+            "/api/v1/artwork/{}/backdrop",
+            ctx.missing_artwork_item_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -289,7 +316,10 @@ async fn test_artwork_file_not_on_disk_returns_404() {
 
     // Poster file doesn't exist on disk
     let req = Request::builder()
-        .uri(format!("/api/v1/artwork/{}/poster", ctx.not_on_disk_item_id))
+        .uri(format!(
+            "/api/v1/artwork/{}/poster",
+            ctx.not_on_disk_item_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -300,7 +330,10 @@ async fn test_artwork_file_not_on_disk_returns_404() {
 
     // Backdrop file doesn't exist on disk
     let req = Request::builder()
-        .uri(format!("/api/v1/artwork/{}/backdrop", ctx.not_on_disk_item_id))
+        .uri(format!(
+            "/api/v1/artwork/{}/backdrop",
+            ctx.not_on_disk_item_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();

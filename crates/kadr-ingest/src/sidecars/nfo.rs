@@ -1,8 +1,8 @@
-use std::fs;
-use std::path::Path;
+use crate::error::Result;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
-use crate::error::Result;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NfoData {

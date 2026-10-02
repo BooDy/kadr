@@ -1,7 +1,7 @@
+use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use clap::Parser;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -62,7 +62,11 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "kadr=info,kadr_server=info,kadr_ingest=info,kadr_storage=info".into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "kadr=info,kadr_server=info,kadr_ingest=info,kadr_storage=info".into()
+            }),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -114,13 +118,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             name: lib_cfg.name.clone(),
             path: lib_cfg.path.clone(),
             media_type: lib_cfg.media_type,
-            created_at: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs() as i64,
+            created_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_secs() as i64,
         };
         lib_repo.create(&lib).await?;
     }
 
     let active_libraries = lib_repo.get_all().await?;
-    info!(count = active_libraries.len(), "Loaded registered libraries");
+    info!(
+        count = active_libraries.len(),
+        "Loaded registered libraries"
+    );
 
     let event_bus = Arc::new(EventBus::default_bus());
 
@@ -144,7 +153,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pipeline.clone(),
                 ingest_tx.clone(),
                 Duration::from_millis(config.scanner.debounce_millis),
-            ).await?;
+            )
+            .await?;
             watchers.push(watcher);
         } else {
             error!(library = %lib.name, path = ?lib.path, "Library path does not exist, skipping watcher");
@@ -157,7 +167,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let admin_id = uuid::Uuid::new_v4().to_string();
         let default_pin = "1234";
         let pin_hash = hash_pin(default_pin)?;
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs() as i64;
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs() as i64;
         let admin = User {
             id: admin_id,
             username: "admin".to_string(),
@@ -166,13 +178,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             created_at: now,
         };
         user_repo.create(&admin).await?;
-        info!("Seeded default admin user 'admin' with initial PIN '{}'", default_pin);
+        info!(
+            "Seeded default admin user 'admin' with initial PIN '{}'",
+            default_pin
+        );
     }
 
     // Initialize JWT service with persisted secret or auto-generate
     let jwt_secret_path = config.server.data_dir.join("jwt.secret");
     let existing_secret = if jwt_secret_path.exists() {
-        let content = std::fs::read_to_string(&jwt_secret_path)?.trim().to_string();
+        let content = std::fs::read_to_string(&jwt_secret_path)?
+            .trim()
+            .to_string();
         if content.is_empty() {
             None
         } else {
@@ -208,11 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jwt_svc = JwtService::new(&jwt_secret, 86400 * 7);
 
     // Initialize rate limiter (5 attempts, 300s window, 300s lockout)
-    let rate_limiter = RateLimiter::new(
-        5,
-        Duration::from_secs(300),
-        Duration::from_secs(300),
-    );
+    let rate_limiter = RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300));
 
     // Initialize session registry and spawn periodic stale session and rate limiter pruning task
     let session_registry = Arc::new(SessionRegistry::new());
@@ -247,7 +260,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             warn!(error = %e, "Failed to load layout overrides from disk");
         }
     }
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     // Initialize subtitle delivery service and OpenSubtitles client
     let subtitle_cache_dir = config.server.data_dir.join("subtitles_cache");
@@ -267,7 +283,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session_registry.clone(),
         event_bus.clone(),
     ));
-    let telemetry_handle = telemetry_collector.clone().spawn_periodic_broadcaster(Duration::from_secs(5));
+    let telemetry_handle = telemetry_collector
+        .clone()
+        .spawn_periodic_broadcaster(Duration::from_secs(5));
 
     // Assemble Axum HTTP router
     let mut app = create_full_router(

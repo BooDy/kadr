@@ -1,7 +1,7 @@
 // crates/kadr-server/tests/config_test.rs
-use std::path::PathBuf;
 use kadr_core::models::MediaType;
 use kadr_server::config::AppConfig;
+use std::path::PathBuf;
 
 #[test]
 fn test_config_parsing_from_str() {
@@ -30,7 +30,10 @@ fn test_config_parsing_from_str() {
     assert_eq!(config.server.host, "127.0.0.1");
     assert_eq!(config.server.port, 8096);
     assert_eq!(config.server.data_dir, PathBuf::from("./test_data"));
-    assert_eq!(config.storage.database_path, PathBuf::from("./test_data/kadr.db"));
+    assert_eq!(
+        config.storage.database_path,
+        PathBuf::from("./test_data/kadr.db")
+    );
     assert_eq!(config.storage.max_readers, 4);
     assert_eq!(config.scanner.debounce_millis, 500);
     assert!(!config.scanner.use_ffprobe);
@@ -47,7 +50,10 @@ fn test_config_defaults() {
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 8096);
     assert_eq!(config.server.data_dir, PathBuf::from("./data"));
-    assert_eq!(config.storage.database_path, PathBuf::from("./data/kadr.db"));
+    assert_eq!(
+        config.storage.database_path,
+        PathBuf::from("./data/kadr.db")
+    );
     assert_eq!(config.storage.max_readers, 4);
     assert_eq!(config.scanner.debounce_millis, 500);
     assert!(config.scanner.use_ffprobe);
@@ -70,7 +76,10 @@ fn test_load_from_file_and_root_kadr_toml() {
     let config = AppConfig::load_from_file(&root_toml).expect("should load root kadr.toml");
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 8096);
-    assert_eq!(config.storage.database_path, PathBuf::from("./data/kadr.db"));
+    assert_eq!(
+        config.storage.database_path,
+        PathBuf::from("./data/kadr.db")
+    );
     assert_eq!(config.storage.max_readers, 4);
     assert_eq!(config.scanner.debounce_millis, 500);
     assert!(config.scanner.use_ffprobe);

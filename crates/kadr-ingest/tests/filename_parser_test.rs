@@ -4,7 +4,9 @@ use kadr_ingest::parser::FilenameParser;
 #[test]
 fn test_standard_scene_release() {
     let parser = FilenameParser::new();
-    let parsed = parser.parse("Bab.El-Hadid.1958.Restored.1080p.BluRay.x264-Ghareeb.mkv").unwrap();
+    let parsed = parser
+        .parse("Bab.El-Hadid.1958.Restored.1080p.BluRay.x264-Ghareeb.mkv")
+        .unwrap();
 
     assert_eq!(parsed.title, "Bab El-Hadid");
     assert_eq!(parsed.year, Some(1958));
@@ -18,7 +20,9 @@ fn test_standard_scene_release() {
 #[test]
 fn test_release_with_parenthesized_year() {
     let parser = FilenameParser::new();
-    let parsed = parser.parse("The Nightingale's Prayer (1959) [1080p].mp4").unwrap();
+    let parsed = parser
+        .parse("The Nightingale's Prayer (1959) [1080p].mp4")
+        .unwrap();
 
     assert_eq!(parsed.title, "The Nightingale's Prayer");
     assert_eq!(parsed.year, Some(1959));
@@ -39,7 +43,9 @@ fn test_simple_movie_file() {
 #[test]
 fn test_underscore_and_webdl_x265() {
     let parser = FilenameParser::new();
-    let parsed = parser.parse("Al_Karnak_1975_2160p_WEB-DL_x265.mp4").unwrap();
+    let parsed = parser
+        .parse("Al_Karnak_1975_2160p_WEB-DL_x265.mp4")
+        .unwrap();
 
     assert_eq!(parsed.title, "Al Karnak");
     assert_eq!(parsed.year, Some(1975));
@@ -98,7 +104,9 @@ fn test_hyphenated_source_webrip() {
 #[test]
 fn test_release_group_with_underscore() {
     let parser = FilenameParser::new();
-    let parsed = parser.parse("Movie.2020.1080p.BluRay.x264-Ghareeb_Team.mkv").unwrap();
+    let parsed = parser
+        .parse("Movie.2020.1080p.BluRay.x264-Ghareeb_Team.mkv")
+        .unwrap();
 
     assert_eq!(parsed.title, "Movie");
     assert_eq!(parsed.year, Some(2020));

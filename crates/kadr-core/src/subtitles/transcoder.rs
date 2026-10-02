@@ -18,15 +18,35 @@ fn normalize_timestamp(ts: &str) -> String {
             let h = parts[0];
             let m = parts[1];
             let s = parts[2];
-            let h_padded = if h.len() == 1 { format!("0{}", h) } else { h.to_string() };
-            let m_padded = if m.len() == 1 { format!("0{}", m) } else { m.to_string() };
-            let s_padded = if s.len() == 1 { format!("0{}", s) } else { s.to_string() };
+            let h_padded = if h.len() == 1 {
+                format!("0{}", h)
+            } else {
+                h.to_string()
+            };
+            let m_padded = if m.len() == 1 {
+                format!("0{}", m)
+            } else {
+                m.to_string()
+            };
+            let s_padded = if s.len() == 1 {
+                format!("0{}", s)
+            } else {
+                s.to_string()
+            };
             format!("{}:{}:{}.{}", h_padded, m_padded, s_padded, ms_padded)
         } else if parts.len() == 2 {
             let m = parts[0];
             let s = parts[1];
-            let m_padded = if m.len() == 1 { format!("0{}", m) } else { m.to_string() };
-            let s_padded = if s.len() == 1 { format!("0{}", s) } else { s.to_string() };
+            let m_padded = if m.len() == 1 {
+                format!("0{}", m)
+            } else {
+                m.to_string()
+            };
+            let s_padded = if s.len() == 1 {
+                format!("0{}", s)
+            } else {
+                s.to_string()
+            };
             format!("{}:{}.{}", m_padded, s_padded, ms_padded)
         } else {
             format!("{}.{}", main, ms_padded)
@@ -63,7 +83,12 @@ fn normalize_timing_line(line: &str) -> Option<String> {
     if settings.is_empty() {
         Some(format!("{} --> {}", norm_start, norm_end))
     } else {
-        Some(format!("{} --> {} {}", norm_start, norm_end, settings.join(" ")))
+        Some(format!(
+            "{} --> {} {}",
+            norm_start,
+            norm_end,
+            settings.join(" ")
+        ))
     }
 }
 
@@ -84,7 +109,8 @@ fn clean_cue_text(text: &str) -> String {
                 }
                 temp.push(next_ch);
             }
-            if !found_close || temp.contains('\n') || temp.contains('{') || !temp.starts_with('\\') {
+            if !found_close || temp.contains('\n') || temp.contains('{') || !temp.starts_with('\\')
+            {
                 result.push('{');
                 result.push_str(&temp);
                 if found_close {
@@ -268,7 +294,10 @@ mod tests {
     #[test]
     fn test_clean_cue_text_unmatched_or_complex() {
         assert_eq!(clean_cue_text("A < B and C > D"), "A < B and C > D");
-        assert_eq!(clean_cue_text("<i>Hello</i> <font color=\"red\">World</font>"), "<i>Hello</i> World");
+        assert_eq!(
+            clean_cue_text("<i>Hello</i> <font color=\"red\">World</font>"),
+            "<i>Hello</i> World"
+        );
         assert_eq!(clean_cue_text("{\\an8}{\\b1}Bold and top"), "Bold and top");
     }
 
@@ -276,7 +305,10 @@ mod tests {
     fn test_skip_malformed_blocks() {
         let srt = "Invalid block without timing\nJust some random text\n\n1\n00:00:01,000 --> 00:00:02,000\nValid cue\n";
         let vtt = srt_to_webvtt(srt);
-        assert_eq!(vtt, "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nValid cue\n");
+        assert_eq!(
+            vtt,
+            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nValid cue\n"
+        );
     }
 
     #[test]
@@ -285,6 +317,9 @@ mod tests {
         let mut out = Vec::new();
         srt_to_webvtt_stream(std::io::BufReader::new(srt.as_bytes()), &mut out).unwrap();
         let res = String::from_utf8(out).unwrap();
-        assert_eq!(res, "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nDirect streaming line\n");
+        assert_eq!(
+            res,
+            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nDirect streaming line\n"
+        );
     }
 }

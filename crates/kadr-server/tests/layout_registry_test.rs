@@ -252,7 +252,10 @@ fn test_register_screen_override_and_custom() {
     assert_eq!(screens.len(), 4);
     assert_eq!(
         screens[3],
-        (ScreenId::Custom("anime".to_string()), "Anime Zone".to_string())
+        (
+            ScreenId::Custom("anime".to_string()),
+            "Anime Zone".to_string()
+        )
     );
 
     // Non-existent screen returns None
@@ -292,7 +295,8 @@ fn test_load_overrides_from_dir() {
     // Write a valid TOML screen override for home screen
     let home_override = ScreenLayout::new(ScreenId::Home, "Welcome Home", vec![]);
     let home_toml = toml::to_string(&home_override).expect("Failed to serialize to TOML");
-    std::fs::write(temp_dir.path().join("home.toml"), home_toml).expect("Failed to write home.toml");
+    std::fs::write(temp_dir.path().join("home.toml"), home_toml)
+        .expect("Failed to write home.toml");
 
     // Write an invalid JSON file to verify it logs warning and continues without failing
     std::fs::write(temp_dir.path().join("broken.json"), "invalid json content")

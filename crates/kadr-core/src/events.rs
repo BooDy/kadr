@@ -19,10 +19,7 @@ pub enum SystemEvent {
         timestamp: i64,
     },
     #[serde(rename = "layout:changed")]
-    LayoutChanged {
-        screen_id: String,
-        timestamp: i64,
-    },
+    LayoutChanged { screen_id: String, timestamp: i64 },
     #[serde(rename = "subtitle:downloaded")]
     SubtitleDownloaded {
         item_id: i64,

@@ -94,7 +94,8 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
     std::fs::write(&movie_file, vec![0u8; 8192]).expect("Failed to write mock video file");
 
     let subtitle_cache_dir = dir.path().join("subtitles_cache");
-    std::fs::create_dir_all(&subtitle_cache_dir).expect("Failed to create subtitle cache directory");
+    std::fs::create_dir_all(&subtitle_cache_dir)
+        .expect("Failed to create subtitle cache directory");
 
     // Initialize repositories
     let lib_repo = LibraryRepository::new(pool.clone());
@@ -193,10 +194,16 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         event_bus.clone(),
     ));
 
-    let jwt_svc = JwtService::new("milestone-5a-integration-test-secret-at-least-32-bytes", 3600);
+    let jwt_svc = JwtService::new(
+        "milestone-5a-integration-test-secret-at-least-32-bytes",
+        3600,
+    );
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
         subtitle_cache_dir,
         subtitle_repo.clone(),
@@ -229,10 +236,22 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         .uri("/api/v1/events")
         .body(Body::empty())
         .unwrap();
-    let sse_resp = app.clone().oneshot(sse_req).await.expect("Failed to connect to /api/v1/events");
+    let sse_resp = app
+        .clone()
+        .oneshot(sse_req)
+        .await
+        .expect("Failed to connect to /api/v1/events");
     assert_eq!(sse_resp.status(), StatusCode::OK);
-    let ct = sse_resp.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
-    assert!(ct.contains("text/event-stream"), "Expected text/event-stream content-type");
+    let ct = sse_resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        ct.contains("text/event-stream"),
+        "Expected text/event-stream content-type"
+    );
     let mut sse_stream = sse_resp.into_body().into_data_stream();
 
     // -------------------------------------------------------------------------
@@ -252,9 +271,14 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         .unwrap();
     let auth_resp = app.clone().oneshot(auth_req).await.unwrap();
     assert_eq!(auth_resp.status(), StatusCode::OK);
-    let auth_bytes = axum::body::to_bytes(auth_resp.into_body(), 4096).await.unwrap();
+    let auth_bytes = axum::body::to_bytes(auth_resp.into_body(), 4096)
+        .await
+        .unwrap();
     let auth_json: Value = serde_json::from_slice(&auth_bytes).unwrap();
-    let admin_token = auth_json["token"].as_str().expect("Expected JWT token string").to_string();
+    let admin_token = auth_json["token"]
+        .as_str()
+        .expect("Expected JWT token string")
+        .to_string();
     assert!(!admin_token.is_empty(), "Token must not be empty");
 
     // -------------------------------------------------------------------------
@@ -270,7 +294,9 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
     assert_eq!(unauth_resp.status(), StatusCode::UNAUTHORIZED);
 
     // 5b. Standard viewer token must return 403 Forbidden
-    let viewer_token = jwt_svc.generate_token(&viewer_user).expect("Generate viewer token");
+    let viewer_token = jwt_svc
+        .generate_token(&viewer_user)
+        .expect("Generate viewer token");
     let forbidden_req = Request::builder()
         .method("GET")
         .uri("/api/v1/system/telemetry")
@@ -289,10 +315,18 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         .unwrap();
     let telem_resp = app.clone().oneshot(telem_req).await.unwrap();
     assert_eq!(telem_resp.status(), StatusCode::OK);
-    let telem_bytes = axum::body::to_bytes(telem_resp.into_body(), 4096).await.unwrap();
+    let telem_bytes = axum::body::to_bytes(telem_resp.into_body(), 4096)
+        .await
+        .unwrap();
     let snapshot: TelemetrySnapshot = serde_json::from_slice(&telem_bytes).unwrap();
-    assert_eq!(snapshot.active_sessions_count, 0, "No active sessions initially");
-    assert!(snapshot.timestamp > 0, "Timestamp must be a valid positive epoch");
+    assert_eq!(
+        snapshot.active_sessions_count, 0,
+        "No active sessions initially"
+    );
+    assert!(
+        snapshot.timestamp > 0,
+        "Timestamp must be a valid positive epoch"
+    );
 
     // -------------------------------------------------------------------------
     // Step 6: Create playback session & send progress heartbeat -> verify session:synced on SSE
@@ -311,9 +345,14 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         .unwrap();
     let session_resp = app.clone().oneshot(session_req).await.unwrap();
     assert_eq!(session_resp.status(), StatusCode::CREATED);
-    let session_bytes = axum::body::to_bytes(session_resp.into_body(), 4096).await.unwrap();
+    let session_bytes = axum::body::to_bytes(session_resp.into_body(), 4096)
+        .await
+        .unwrap();
     let session_json: Value = serde_json::from_slice(&session_bytes).unwrap();
-    let session_id = session_json["session_id"].as_str().expect("Session ID").to_string();
+    let session_id = session_json["session_id"]
+        .as_str()
+        .expect("Session ID")
+        .to_string();
 
     // Send progress heartbeat
     let heartbeat_req = Request::builder()
@@ -332,7 +371,8 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
     assert_eq!(heartbeat_resp.status(), StatusCode::OK);
 
     // Verify session:synced event received on SSE stream
-    let (ev_type, ev_data) = recv_sse_event_matching(&mut sse_stream, "session:synced", Duration::from_secs(5)).await;
+    let (ev_type, ev_data) =
+        recv_sse_event_matching(&mut sse_stream, "session:synced", Duration::from_secs(5)).await;
     assert_eq!(ev_type, "session:synced");
     assert_eq!(ev_data["type"], "session:synced");
     assert_eq!(ev_data["payload"]["session_id"], session_id);
@@ -355,7 +395,8 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
     }
 
     // Verify library:updated event received on SSE stream
-    let (ev_type, ev_data) = recv_sse_event_matching(&mut sse_stream, "library:updated", Duration::from_secs(5)).await;
+    let (ev_type, ev_data) =
+        recv_sse_event_matching(&mut sse_stream, "library:updated", Duration::from_secs(5)).await;
     assert_eq!(ev_type, "library:updated");
     assert_eq!(ev_data["type"], "library:updated");
     assert_eq!(ev_data["payload"]["library_id"], "lib-movies");
@@ -369,7 +410,8 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         .spawn_periodic_broadcaster(Duration::from_millis(50));
 
     // Verify system:telemetry event received on SSE stream
-    let (ev_type, ev_data) = recv_sse_event_matching(&mut sse_stream, "system:telemetry", Duration::from_secs(5)).await;
+    let (ev_type, ev_data) =
+        recv_sse_event_matching(&mut sse_stream, "system:telemetry", Duration::from_secs(5)).await;
     assert_eq!(ev_type, "system:telemetry");
     assert_eq!(ev_data["type"], "system:telemetry");
     let telem_payload = &ev_data["payload"];
@@ -388,7 +430,9 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         .unwrap();
     let telem_resp2 = app.clone().oneshot(telem_req2).await.unwrap();
     assert_eq!(telem_resp2.status(), StatusCode::OK);
-    let telem_bytes2 = axum::body::to_bytes(telem_resp2.into_body(), 4096).await.unwrap();
+    let telem_bytes2 = axum::body::to_bytes(telem_resp2.into_body(), 4096)
+        .await
+        .unwrap();
     let snapshot2: TelemetrySnapshot = serde_json::from_slice(&telem_bytes2).unwrap();
     assert_eq!(snapshot2.active_sessions_count, 1);
 

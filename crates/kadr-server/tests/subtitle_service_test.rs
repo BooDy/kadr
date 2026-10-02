@@ -12,7 +12,7 @@ async fn setup_test_context() -> (
     SubtitleDeliveryService,
     SubtitleRepository,
     MediaItemRepository,
-    i64, // media_item_id
+    i64,               // media_item_id
     tempfile::TempDir, // cache_dir
     tempfile::TempDir, // media_dir
 ) {
@@ -79,7 +79,14 @@ async fn setup_test_context() -> (
         media_repo.clone(),
     );
 
-    (service, subtitle_repo, media_repo, media_item_id, cache_dir, media_dir)
+    (
+        service,
+        subtitle_repo,
+        media_repo,
+        media_item_id,
+        cache_dir,
+        media_dir,
+    )
 }
 
 #[tokio::test]
@@ -288,7 +295,10 @@ async fn test_clean_error_when_subtitle_id_or_disk_file_is_missing() {
 
     let err_missing_file = service.get_webvtt_path(track_missing_disk).await;
     assert!(
-        matches!(err_missing_file, Err(SubtitleServiceError::SourceFileNotFound)),
+        matches!(
+            err_missing_file,
+            Err(SubtitleServiceError::SourceFileNotFound)
+        ),
         "Expected SubtitleServiceError::SourceFileNotFound for missing file, got {:?}",
         err_missing_file
     );
@@ -422,7 +432,11 @@ async fn test_delete_track_cleans_db_cache_and_downloaded_source() {
     assert!(deleted_sidecar);
 
     // Verify removed from DB
-    assert!(subtitle_repo.find_by_id(sidecar_id).await.unwrap().is_none());
+    assert!(subtitle_repo
+        .find_by_id(sidecar_id)
+        .await
+        .unwrap()
+        .is_none());
 
     // Verify cache file removed
     let sidecar_cache_path = cache_dir.path().join(format!("{}.vtt", sidecar_id));

@@ -32,21 +32,33 @@ fn test_find_subtitles_alongside_media() {
     // Sort by format for stable assertions
     subs.sort_by_key(|s| s.format.as_str());
 
-    let ass_sub = subs.iter().find(|s| s.format == SubtitleFormat::Ass).unwrap();
+    let ass_sub = subs
+        .iter()
+        .find(|s| s.format == SubtitleFormat::Ass)
+        .unwrap();
     assert_eq!(ass_sub.source, SubtitleSource::Sidecar);
     assert_eq!(ass_sub.language, "ara");
     assert_eq!(ass_sub.title.as_deref(), Some("Arabic"));
     assert!(!ass_sub.is_forced);
     assert!(!ass_sub.is_default);
 
-    let srt_sub = subs.iter().find(|s| s.format == SubtitleFormat::Srt).unwrap();
+    let srt_sub = subs
+        .iter()
+        .find(|s| s.format == SubtitleFormat::Srt)
+        .unwrap();
     assert_eq!(srt_sub.language, "und");
 
-    let sub_sub = subs.iter().find(|s| s.format == SubtitleFormat::Sub).unwrap();
+    let sub_sub = subs
+        .iter()
+        .find(|s| s.format == SubtitleFormat::Sub)
+        .unwrap();
     assert_eq!(sub_sub.language, "fre");
     assert_eq!(sub_sub.title.as_deref(), Some("French"));
 
-    let vtt_sub = subs.iter().find(|s| s.format == SubtitleFormat::Vtt).unwrap();
+    let vtt_sub = subs
+        .iter()
+        .find(|s| s.format == SubtitleFormat::Vtt)
+        .unwrap();
     assert_eq!(vtt_sub.language, "eng");
     assert_eq!(vtt_sub.title.as_deref(), Some("English"));
 }
@@ -88,11 +100,22 @@ fn test_language_tag_extraction() {
         File::create(&sub_path).unwrap();
 
         let subs = find_subtitles_for_media(&movie);
-        let found = subs.iter().find(|s| s.file_path.as_deref() == Some(&sub_path));
-        assert!(found.is_some(), "Expected to find subtitle for {}", filename);
+        let found = subs
+            .iter()
+            .find(|s| s.file_path.as_deref() == Some(&sub_path));
+        assert!(
+            found.is_some(),
+            "Expected to find subtitle for {}",
+            filename
+        );
         let s = found.unwrap();
         assert_eq!(s.language, expected_lang, "Mismatch for {}", filename);
-        assert_eq!(s.title.as_deref(), Some(expected_title), "Mismatch title for {}", filename);
+        assert_eq!(
+            s.title.as_deref(),
+            Some(expected_title),
+            "Mismatch title for {}",
+            filename
+        );
 
         let _ = fs::remove_file(&sub_path);
     }
@@ -117,18 +140,30 @@ fn test_flag_extraction() {
     let subs = find_subtitles_for_media(&movie);
     assert_eq!(subs.len(), 4);
 
-    let forced = subs.iter().find(|s| s.file_path.as_deref() == Some(&forced_path)).unwrap();
+    let forced = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&forced_path))
+        .unwrap();
     assert!(forced.is_forced);
     assert!(!forced.is_default);
 
-    let def = subs.iter().find(|s| s.file_path.as_deref() == Some(&default_path)).unwrap();
+    let def = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&default_path))
+        .unwrap();
     assert!(!def.is_forced);
     assert!(def.is_default);
 
-    let sdh = subs.iter().find(|s| s.file_path.as_deref() == Some(&sdh_path)).unwrap();
+    let sdh = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&sdh_path))
+        .unwrap();
     assert_eq!(sdh.title.as_deref(), Some("English [SDH]"));
 
-    let combo = subs.iter().find(|s| s.file_path.as_deref() == Some(&combo_path)).unwrap();
+    let combo = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&combo_path))
+        .unwrap();
     assert!(combo.is_forced);
     assert!(combo.is_default);
     assert_eq!(combo.title.as_deref(), Some("French [SDH]"));
@@ -159,16 +194,25 @@ fn test_scanning_subs_and_subtitles_subfolder() {
     let subs = find_subtitles_for_media(&movie);
     assert_eq!(subs.len(), 3);
 
-    let found_sub1 = subs.iter().find(|s| s.file_path.as_deref() == Some(&sub1)).unwrap();
+    let found_sub1 = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&sub1))
+        .unwrap();
     assert_eq!(found_sub1.language, "eng");
     assert_eq!(found_sub1.format, SubtitleFormat::Srt);
 
-    let found_sub2 = subs.iter().find(|s| s.file_path.as_deref() == Some(&sub2)).unwrap();
+    let found_sub2 = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&sub2))
+        .unwrap();
     assert_eq!(found_sub2.language, "ara");
     assert!(found_sub2.is_forced);
     assert_eq!(found_sub2.format, SubtitleFormat::Vtt);
 
-    let found_sub3 = subs.iter().find(|s| s.file_path.as_deref() == Some(&sub3)).unwrap();
+    let found_sub3 = subs
+        .iter()
+        .find(|s| s.file_path.as_deref() == Some(&sub3))
+        .unwrap();
     assert_eq!(found_sub3.language, "spa");
     assert_eq!(found_sub3.format, SubtitleFormat::Ass);
 }
@@ -263,7 +307,9 @@ async fn test_ingest_worker_persists_subtitles() {
         },
     ];
 
-    tx.send(IngestMessage::Upsert(item.clone(), discovered_subs)).await.unwrap();
+    tx.send(IngestMessage::Upsert(item.clone(), discovered_subs))
+        .await
+        .unwrap();
 
     // Allow worker to flush via 100ms timeout
     sleep(Duration::from_millis(200)).await;

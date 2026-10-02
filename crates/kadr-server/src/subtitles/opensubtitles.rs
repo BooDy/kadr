@@ -169,7 +169,9 @@ impl OpenSubtitlesClient {
         }
 
         let search_resp: SearchResponse = resp.json().await.map_err(|e| {
-            OpenSubtitlesError::Parse(format!("Failed to parse OpenSubtitles search response: {e}"))
+            OpenSubtitlesError::Parse(format!(
+                "Failed to parse OpenSubtitles search response: {e}"
+            ))
         })?;
 
         let matches = search_resp
@@ -219,9 +221,9 @@ impl OpenSubtitlesClient {
             None => return Err(OpenSubtitlesError::NotConfigured),
         };
 
-        let numeric_id = file_id.parse::<u64>().map_err(|e| {
-            OpenSubtitlesError::Parse(format!("Invalid file_id '{file_id}': {e}"))
-        })?;
+        let numeric_id = file_id
+            .parse::<u64>()
+            .map_err(|e| OpenSubtitlesError::Parse(format!("Invalid file_id '{file_id}': {e}")))?;
 
         let url = format!("{}/download", self.base_url);
         let request_body = DownloadRequest {

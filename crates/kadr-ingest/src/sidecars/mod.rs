@@ -2,9 +2,9 @@ pub mod artwork;
 pub mod nfo;
 pub mod subtitles;
 
-use std::path::Path;
 pub use artwork::ArtworkPaths;
 pub use nfo::NfoData;
+use std::path::Path;
 pub use subtitles::{find_subtitles_for_media, DiscoveredSubtitle};
 
 #[derive(Default, Debug, Clone)]
@@ -19,7 +19,10 @@ impl SidecarScanner {
         nfo::parse_nfo(path)
     }
 
-    pub fn find_nfo_for_media<P: AsRef<Path>>(&self, media_path: P) -> crate::error::Result<Option<NfoData>> {
+    pub fn find_nfo_for_media<P: AsRef<Path>>(
+        &self,
+        media_path: P,
+    ) -> crate::error::Result<Option<NfoData>> {
         let p = media_path.as_ref();
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let parent = match p.parent() {

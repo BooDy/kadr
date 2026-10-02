@@ -114,7 +114,10 @@ async fn test_http_206_range_streaming() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(res.headers().get("content-range").unwrap(), "bytes 100-199/1000");
+    assert_eq!(
+        res.headers().get("content-range").unwrap(),
+        "bytes 100-199/1000"
+    );
     assert_eq!(res.headers().get("content-length").unwrap(), "100");
 
     let body_bytes = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
@@ -213,9 +216,15 @@ async fn test_range_edge_cases_and_416() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(res.headers().get("content-range").unwrap(), "bytes 900-999/1000");
+    assert_eq!(
+        res.headers().get("content-range").unwrap(),
+        "bytes 900-999/1000"
+    );
     assert_eq!(res.headers().get("content-length").unwrap(), "100");
-    assert_eq!(res.headers().get("content-type").unwrap(), "video/x-matroska");
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "video/x-matroska"
+    );
     let body_bytes = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     assert_eq!(&body_bytes[..], &dummy_data[900..1000]);
 
@@ -228,7 +237,10 @@ async fn test_range_edge_cases_and_416() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(res.headers().get("content-range").unwrap(), "bytes 950-999/1000");
+    assert_eq!(
+        res.headers().get("content-range").unwrap(),
+        "bytes 950-999/1000"
+    );
     assert_eq!(res.headers().get("content-length").unwrap(), "50");
     let body_bytes = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     assert_eq!(&body_bytes[..], &dummy_data[950..1000]);

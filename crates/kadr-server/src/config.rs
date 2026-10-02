@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use kadr_core::models::MediaType;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
@@ -48,13 +48,27 @@ pub struct AppConfig {
     pub libraries: Vec<LibraryConfig>,
 }
 
-fn default_host() -> String { "0.0.0.0".to_string() }
-fn default_port() -> u16 { 8096 }
-fn default_data_dir() -> PathBuf { PathBuf::from("./data") }
-fn default_db_path() -> PathBuf { PathBuf::from("./data/kadr.db") }
-fn default_max_readers() -> usize { 4 }
-fn default_debounce() -> u64 { 500 }
-fn default_ffprobe() -> bool { true }
+fn default_host() -> String {
+    "0.0.0.0".to_string()
+}
+fn default_port() -> u16 {
+    8096
+}
+fn default_data_dir() -> PathBuf {
+    PathBuf::from("./data")
+}
+fn default_db_path() -> PathBuf {
+    PathBuf::from("./data/kadr.db")
+}
+fn default_max_readers() -> usize {
+    4
+}
+fn default_debounce() -> u64 {
+    500
+}
+fn default_ffprobe() -> bool {
+    true
+}
 
 impl Default for ServerSettings {
     fn default() -> Self {
@@ -85,7 +99,9 @@ impl Default for ScannerSettings {
 }
 
 impl AppConfig {
-    pub fn load_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_from_file<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         let config: AppConfig = toml::from_str(&content)?;
         Ok(config)

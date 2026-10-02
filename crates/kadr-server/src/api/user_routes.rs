@@ -1,15 +1,15 @@
+use crate::auth::jwt::RequireAdmin;
+use crate::auth::pin::hash_pin;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
     response::IntoResponse,
 };
+use kadr_core::models::{User, UserRole};
+use kadr_storage::repos::UserRepository;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
-use kadr_core::models::{User, UserRole};
-use crate::auth::jwt::RequireAdmin;
-use crate::auth::pin::hash_pin;
-use kadr_storage::repos::UserRepository;
 
 #[derive(Serialize)]
 pub struct ProfileCard {
@@ -41,7 +41,8 @@ pub async fn list_profiles(Extension(user_repo): Extension<UserRepository>) -> i
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": "Failed to list profiles" })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -55,7 +56,8 @@ pub async fn create_user(
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": "Username cannot be empty or whitespace only" })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let pin_hash = match hash_pin(&payload.pin) {
@@ -64,7 +66,8 @@ pub async fn create_user(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({ "error": e.to_string() })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -88,10 +91,12 @@ pub async fn create_user(
                 username: new_user.username,
                 role: new_user.role,
             }),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }

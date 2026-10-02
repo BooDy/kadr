@@ -1,7 +1,7 @@
+use kadr_core::models::PlaybackSession;
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use kadr_core::models::PlaybackSession;
 
 #[derive(Debug, Clone)]
 pub struct ActiveSession {
@@ -37,10 +37,17 @@ impl SessionRegistry {
         read.get(session_id).map(|s| s.session.clone())
     }
 
-    pub async fn update_progress(&self, session_id: &str, position: i64) -> Option<PlaybackSession> {
+    pub async fn update_progress(
+        &self,
+        session_id: &str,
+        position: i64,
+    ) -> Option<PlaybackSession> {
         let mut write = self.sessions.write().await;
         if let Some(active) = write.get_mut(session_id) {
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
             active.session.current_position_seconds = position;
             active.session.last_heartbeat_at = now;
             active.last_heartbeat_instant = Instant::now();

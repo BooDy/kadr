@@ -45,7 +45,8 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
     let app_js = "console.log('kadr client initialized');";
     let app_css = "body { margin: 0; background: #000; }";
 
-    std::fs::write(test_web_dir.join("index.html"), index_html).expect("Failed to write index.html");
+    std::fs::write(test_web_dir.join("index.html"), index_html)
+        .expect("Failed to write index.html");
     std::fs::write(assets_dir.join("app.js"), app_js).expect("Failed to write app.js");
     std::fs::write(assets_dir.join("style.css"), app_css).expect("Failed to write style.css");
 
@@ -65,16 +66,23 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         role: UserRole::Admin,
         created_at: 1_700_000_000,
     };
-    user_repo.create(&admin_user).await.expect("Failed to create admin user");
+    user_repo
+        .create(&admin_user)
+        .await
+        .expect("Failed to create admin user");
 
     let jwt_svc = JwtService::new("milestone-5-e2e-secret-key-at-least-32-bytes", 3600);
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let subtitle_cache_dir = temp_dir.path().join("subtitles_cache");
-    std::fs::create_dir_all(&subtitle_cache_dir).expect("Failed to create subtitle cache directory");
+    std::fs::create_dir_all(&subtitle_cache_dir)
+        .expect("Failed to create subtitle cache directory");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
         subtitle_cache_dir,
         subtitle_repo,
@@ -115,7 +123,11 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         .uri("/")
         .body(Body::empty())
         .expect("Failed to build GET / request");
-    let res = app.clone().oneshot(req).await.expect("Failed to execute GET /");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("Failed to execute GET /");
     assert_eq!(res.status(), StatusCode::OK);
     let content_type = res
         .headers()
@@ -200,7 +212,11 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         .uri("/browse")
         .body(Body::empty())
         .expect("Failed to build GET /browse request");
-    let res = app.clone().oneshot(req).await.expect("Failed to execute GET /browse");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("Failed to execute GET /browse");
     assert_eq!(res.status(), StatusCode::OK);
     let content_type = res
         .headers()
@@ -229,7 +245,11 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         .uri("/api/v1/screens")
         .body(Body::empty())
         .expect("Failed to build unauthenticated GET /api/v1/screens request");
-    let res = app.clone().oneshot(req).await.expect("Failed to execute GET /api/v1/screens");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("Failed to execute GET /api/v1/screens");
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
     // -------------------------------------------------------------------------
@@ -245,12 +265,17 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&auth_payload).unwrap()))
         .expect("Failed to build auth request");
-    let auth_res = app.clone().oneshot(auth_req).await.expect("Failed to execute auth request");
+    let auth_res = app
+        .clone()
+        .oneshot(auth_req)
+        .await
+        .expect("Failed to execute auth request");
     assert_eq!(auth_res.status(), StatusCode::OK);
     let auth_bytes = axum::body::to_bytes(auth_res.into_body(), usize::MAX)
         .await
         .expect("Failed to read auth response body");
-    let auth_json: serde_json::Value = serde_json::from_slice(&auth_bytes).expect("Invalid JSON in auth response");
+    let auth_json: serde_json::Value =
+        serde_json::from_slice(&auth_bytes).expect("Invalid JSON in auth response");
     let token = auth_json["token"]
         .as_str()
         .expect("Missing token string in auth response")
@@ -262,7 +287,11 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .expect("Failed to build authenticated GET /api/v1/screens request");
-    let screens_res = app.clone().oneshot(screens_req).await.expect("Failed to execute screens request");
+    let screens_res = app
+        .clone()
+        .oneshot(screens_req)
+        .await
+        .expect("Failed to execute screens request");
     assert_eq!(screens_res.status(), StatusCode::OK);
     let screens_bytes = axum::body::to_bytes(screens_res.into_body(), usize::MAX)
         .await
@@ -282,7 +311,11 @@ async fn test_milestone_5_web_serving_and_api_integration_e2e() {
         .uri("/api/v1/events")
         .body(Body::empty())
         .expect("Failed to build GET /api/v1/events request");
-    let sse_res = app.clone().oneshot(sse_req).await.expect("Failed to connect to /api/v1/events");
+    let sse_res = app
+        .clone()
+        .oneshot(sse_req)
+        .await
+        .expect("Failed to connect to /api/v1/events");
     assert_eq!(sse_res.status(), StatusCode::OK);
     let sse_ct = sse_res
         .headers()
@@ -342,7 +375,10 @@ async fn test_web_serving_graceful_when_dir_does_not_exist() {
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let subtitle_cache_dir = temp_dir.path().join("subtitles_cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -382,7 +418,11 @@ async fn test_web_serving_graceful_when_dir_does_not_exist() {
         .uri("/unknown-route")
         .body(Body::empty())
         .expect("Failed to build request");
-    let res = app.clone().oneshot(req).await.expect("Failed to execute request");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("Failed to execute request");
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 
     // API route still works
@@ -391,6 +431,10 @@ async fn test_web_serving_graceful_when_dir_does_not_exist() {
         .uri("/api/v1/screens")
         .body(Body::empty())
         .expect("Failed to build request");
-    let res = app.clone().oneshot(req).await.expect("Failed to execute request");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("Failed to execute request");
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }

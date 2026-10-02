@@ -37,7 +37,9 @@ struct TestContext {
 
 async fn setup_test_app() -> TestContext {
     let pool = create_in_memory_pool().expect("failed to create in-memory pool");
-    initialize_database(&pool).await.expect("failed to run migrations");
+    initialize_database(&pool)
+        .await
+        .expect("failed to run migrations");
 
     let lib_repo = LibraryRepository::new(pool.clone());
     let media_repo = MediaItemRepository::new(pool.clone());
@@ -221,7 +223,10 @@ async fn setup_test_app() -> TestContext {
         });
     }
 
-    media_repo.upsert_batch(&items).await.expect("upsert failed");
+    media_repo
+        .upsert_batch(&items)
+        .await
+        .expect("upsert failed");
 
     let spotlight = media_repo
         .find_spotlight_candidate()
@@ -248,7 +253,10 @@ async fn setup_test_app() -> TestContext {
     let token = jwt_svc.generate_token(&user).unwrap();
 
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let session_registry = Arc::new(SessionRegistry::new());
     let limiter = RateLimiter::new(10, Duration::from_secs(60), Duration::from_secs(60));
 
@@ -313,7 +321,9 @@ async fn test_get_screens_summary_list() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&bytes).unwrap();
     assert!(json.is_array());
 
@@ -343,7 +353,9 @@ async fn test_get_screen_hydrated_and_unhydrated() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let layout: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
 
     assert_eq!(layout.id, ScreenId::Home);
@@ -423,7 +435,9 @@ async fn test_get_widget_data_pagination() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 32).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 32)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&bytes).unwrap();
 
     assert_eq!(json["widget_id"], "recently_added");
@@ -449,7 +463,9 @@ async fn test_get_widget_data_pagination() {
     let res_page2 = ctx.app.clone().oneshot(req_page2).await.unwrap();
     assert_eq!(res_page2.status(), StatusCode::OK);
 
-    let bytes_page2 = axum::body::to_bytes(res_page2.into_body(), 1024 * 32).await.unwrap();
+    let bytes_page2 = axum::body::to_bytes(res_page2.into_body(), 1024 * 32)
+        .await
+        .unwrap();
     let json_page2: Value = serde_json::from_slice(&bytes_page2).unwrap();
     let items_page2 = json_page2["items"].as_array().expect("items array page 2");
     assert_eq!(items_page2.len(), 5);
@@ -475,7 +491,9 @@ async fn test_get_item_details_movie_and_show() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let details: ItemDetailsPayload = serde_json::from_slice(&bytes).unwrap();
 
     assert_eq!(details.card.id, ctx.spotlight_id);
@@ -508,7 +526,9 @@ async fn test_get_item_details_movie_and_show() {
     let res_show = ctx.app.clone().oneshot(req_show).await.unwrap();
     assert_eq!(res_show.status(), StatusCode::OK);
 
-    let bytes_show = axum::body::to_bytes(res_show.into_body(), 1024 * 16).await.unwrap();
+    let bytes_show = axum::body::to_bytes(res_show.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let show_details: ItemDetailsPayload = serde_json::from_slice(&bytes_show).unwrap();
 
     assert_eq!(show_details.card.id, ctx.show_id);

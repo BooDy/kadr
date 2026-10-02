@@ -1,8 +1,8 @@
-use std::path::PathBuf;
-use deadpool_sqlite::Pool;
-use rusqlite::params;
-use kadr_core::models::{Library, MediaType};
 use crate::error::Result;
+use deadpool_sqlite::Pool;
+use kadr_core::models::{Library, MediaType};
+use rusqlite::params;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct LibraryRepository {
@@ -29,26 +29,32 @@ impl LibraryRepository {
                     lib.id,
                     lib.name,
                     lib.path.to_string_lossy().into_owned(),
-                    serde_json::to_string(&lib.media_type).unwrap_or_default().trim_matches('"'),
+                    serde_json::to_string(&lib.media_type)
+                        .unwrap_or_default()
+                        .trim_matches('"'),
                     lib.created_at,
                 ],
             )?;
             Ok(())
-        }).await?
+        })
+        .await?
     }
 
     pub async fn get_all(&self) -> Result<Vec<Library>> {
         let conn = self.pool.get().await?;
         conn.interact(|c| {
-            let mut stmt = c.prepare("SELECT id, name, path, media_type, created_at FROM libraries ORDER BY name ASC")?;
+            let mut stmt = c.prepare(
+                "SELECT id, name, path, media_type, created_at FROM libraries ORDER BY name ASC",
+            )?;
             let rows = stmt.query_map([], |row| {
                 let id: String = row.get(0)?;
                 let name: String = row.get(1)?;
                 let path: String = row.get(2)?;
                 let media_type_str: String = row.get(3)?;
                 let created_at: i64 = row.get(4)?;
-                let media_type: MediaType = serde_json::from_str(&format!("\"{}\"", media_type_str))
-                    .unwrap_or(MediaType::Unknown);
+                let media_type: MediaType =
+                    serde_json::from_str(&format!("\"{}\"", media_type_str))
+                        .unwrap_or(MediaType::Unknown);
 
                 Ok(Library {
                     id,
@@ -64,14 +70,17 @@ impl LibraryRepository {
                 result.push(row?);
             }
             Ok(result)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<Option<Library>> {
         let id = id.to_string();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let mut stmt = c.prepare("SELECT id, name, path, media_type, created_at FROM libraries WHERE id = ?1")?;
+            let mut stmt = c.prepare(
+                "SELECT id, name, path, media_type, created_at FROM libraries WHERE id = ?1",
+            )?;
             let mut rows = stmt.query(params![id])?;
             if let Some(row) = rows.next()? {
                 let id: String = row.get(0)?;
@@ -79,8 +88,9 @@ impl LibraryRepository {
                 let path: String = row.get(2)?;
                 let media_type_str: String = row.get(3)?;
                 let created_at: i64 = row.get(4)?;
-                let media_type: MediaType = serde_json::from_str(&format!("\"{}\"", media_type_str))
-                    .unwrap_or(MediaType::Unknown);
+                let media_type: MediaType =
+                    serde_json::from_str(&format!("\"{}\"", media_type_str))
+                        .unwrap_or(MediaType::Unknown);
 
                 Ok(Some(Library {
                     id,
@@ -92,7 +102,8 @@ impl LibraryRepository {
             } else {
                 Ok(None)
             }
-        }).await?
+        })
+        .await?
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
@@ -101,6 +112,7 @@ impl LibraryRepository {
         conn.interact(move |c| {
             let rows = c.execute("DELETE FROM libraries WHERE id = ?1", params![id])?;
             Ok(rows > 0)
-        }).await?
+        })
+        .await?
     }
 }

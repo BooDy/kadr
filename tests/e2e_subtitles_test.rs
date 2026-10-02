@@ -50,7 +50,8 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
     std::fs::write(&srt_file, srt_content).expect("Failed to write mock srt subtitle file");
 
     let subtitle_cache_dir = dir.path().join("subtitles_cache");
-    std::fs::create_dir_all(&subtitle_cache_dir).expect("Failed to create subtitle cache directory");
+    std::fs::create_dir_all(&subtitle_cache_dir)
+        .expect("Failed to create subtitle cache directory");
 
     // Initialize repositories
     let lib_repo = LibraryRepository::new(pool.clone());
@@ -76,7 +77,8 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
     // Run IngestWorker with subtitles enabled to index media & sidecars
     // -------------------------------------------------------------------------
     let (ingest_tx, ingest_rx) = tokio::sync::mpsc::channel(200);
-    let worker = IngestWorker::new(ingest_rx, media_repo.clone()).with_subtitles(subtitle_repo.clone());
+    let worker =
+        IngestWorker::new(ingest_rx, media_repo.clone()).with_subtitles(subtitle_repo.clone());
     let worker_handle = tokio::spawn(worker.run());
 
     let pipeline = Arc::new(IngestPipeline::new(false));
@@ -118,14 +120,13 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         .expect("Failed to create admin user");
 
     let jwt_svc = JwtService::new("test-secret-must-be-at-least-32-chars-long", 3600);
-    let rate_limiter = RateLimiter::new(
-        5,
-        Duration::from_secs(300),
-        Duration::from_secs(300),
-    );
+    let rate_limiter = RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
         subtitle_cache_dir.clone(),
         subtitle_repo.clone(),
@@ -162,7 +163,9 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         StatusCode::OK,
         "POST /api/v1/auth/pin should succeed"
     );
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let auth_data: Value = serde_json::from_slice(&body).unwrap();
     let token = auth_data["token"]
         .as_str()
@@ -184,9 +187,13 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         "GET /api/v1/items/:id/subtitles should succeed"
     );
 
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let tracks: Value = serde_json::from_slice(&body).unwrap();
-    let list = tracks.as_array().expect("Expected array of subtitle tracks");
+    let list = tracks
+        .as_array()
+        .expect("Expected array of subtitle tracks");
     assert_eq!(list.len(), 1, "Expected exactly 1 sidecar subtitle track");
 
     let track = &list[0];
@@ -237,7 +244,9 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         .unwrap();
     assert_eq!(cache_control, "public, max-age=86400");
 
-    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let vtt_str = String::from_utf8(body_bytes.to_vec()).expect("VTT output should be valid UTF-8");
     assert!(
         vtt_str.starts_with("WEBVTT"),
@@ -300,7 +309,9 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         "GET /api/v1/subtitles/:id/search should return 200 OK"
     );
 
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let search_json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         search_json["configured"], false,
@@ -330,7 +341,9 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         "DELETE /api/v1/subtitles/:id should return 200 OK"
     );
 
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let del_json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         del_json["deleted"], true,
@@ -346,7 +359,9 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let remaining_tracks: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         remaining_tracks.as_array().unwrap().len(),

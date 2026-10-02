@@ -1,9 +1,9 @@
+use crate::error::Result;
+use deadpool_sqlite::Pool;
+use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
+use rusqlite::params;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use deadpool_sqlite::Pool;
-use rusqlite::params;
-use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
-use crate::error::Result;
 
 #[derive(Clone)]
 pub struct MediaItemRepository {
@@ -90,9 +90,13 @@ impl MediaItemRepository {
         let path_str = path.as_ref().to_string_lossy().into_owned();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let rows = c.execute("DELETE FROM media_items WHERE file_path = ?1", params![path_str])?;
+            let rows = c.execute(
+                "DELETE FROM media_items WHERE file_path = ?1",
+                params![path_str],
+            )?;
             Ok(rows > 0)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_by_path<P: AsRef<Path>>(&self, path: P) -> Result<Option<MediaItem>> {
@@ -107,7 +111,8 @@ impl MediaItemRepository {
             } else {
                 Ok(None)
             }
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_by_paths(
@@ -125,19 +130,25 @@ impl MediaItemRepository {
 
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let placeholders = path_strings.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let placeholders = path_strings
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
             let sql = format!(
                 "SELECT {SELECT_COLUMNS} FROM media_items WHERE file_path IN ({placeholders})"
             );
             let mut stmt = c.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(path_strings), map_media_item_row)?;
+            let rows =
+                stmt.query_map(rusqlite::params_from_iter(path_strings), map_media_item_row)?;
             let mut map = std::collections::HashMap::new();
             for row in rows {
                 let item = row?;
                 map.insert(item.file_path.clone(), item);
             }
             Ok(map)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_by_id(&self, id: i64) -> Result<Option<MediaItem>> {
@@ -160,7 +171,8 @@ impl MediaItemRepository {
             } else {
                 Ok(None)
             }
-        }).await?
+        })
+        .await?
     }
 
     pub async fn get_by_ids(&self, item_ids: &[i64]) -> Result<HashMap<i64, MediaItem>> {
@@ -172,9 +184,8 @@ impl MediaItemRepository {
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
             let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            let sql = format!(
-                "SELECT {SELECT_COLUMNS} FROM media_items WHERE id IN ({placeholders})"
-            );
+            let sql =
+                format!("SELECT {SELECT_COLUMNS} FROM media_items WHERE id IN ({placeholders})");
             let mut stmt = c.prepare(&sql)?;
             let rows = stmt.query_map(rusqlite::params_from_iter(item_ids), map_media_item_row)?;
             let mut map = HashMap::new();
@@ -185,11 +196,16 @@ impl MediaItemRepository {
                 }
             }
             Ok(map)
-        }).await?
+        })
+        .await?
     }
 
-
-    pub async fn list_by_library(&self, library_id: &str, limit: usize, offset: usize) -> Result<Vec<MediaItem>> {
+    pub async fn list_by_library(
+        &self,
+        library_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<MediaItem>> {
         let lib_id = library_id.to_string();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
@@ -200,17 +216,21 @@ impl MediaItemRepository {
                  FROM media_items
                  WHERE library_id = ?1
                  ORDER BY title ASC
-                 LIMIT ?2 OFFSET ?3"
+                 LIMIT ?2 OFFSET ?3",
             )?;
 
-            let rows = stmt.query_map(params![lib_id, limit as i64, offset as i64], map_media_item_row)?;
+            let rows = stmt.query_map(
+                params![lib_id, limit as i64, offset as i64],
+                map_media_item_row,
+            )?;
 
             let mut result = Vec::new();
             for row in rows {
                 result.push(row?);
             }
             Ok(result)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn count_by_library(&self, library_id: &str) -> Result<usize> {
@@ -223,7 +243,8 @@ impl MediaItemRepository {
                 |row| row.get(0),
             )?;
             Ok(count as usize)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_recently_added(
@@ -244,7 +265,10 @@ impl MediaItemRepository {
                      LIMIT ?2 OFFSET ?3"
                 );
                 let mut stmt = c.prepare(&sql)?;
-                let rows = stmt.query_map(params![lid, limit as i64, offset as i64], map_media_item_row)?;
+                let rows = stmt.query_map(
+                    params![lid, limit as i64, offset as i64],
+                    map_media_item_row,
+                )?;
                 for row in rows {
                     result.push(row?);
                 }
@@ -255,13 +279,15 @@ impl MediaItemRepository {
                      LIMIT ?1 OFFSET ?2"
                 );
                 let mut stmt = c.prepare(&sql)?;
-                let rows = stmt.query_map(params![limit as i64, offset as i64], map_media_item_row)?;
+                let rows =
+                    stmt.query_map(params![limit as i64, offset as i64], map_media_item_row)?;
                 for row in rows {
                     result.push(row?);
                 }
             }
             Ok(result)
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_top_rated(&self, limit: u32, offset: u32) -> Result<Vec<MediaItem>> {
@@ -280,10 +306,16 @@ impl MediaItemRepository {
                 result.push(row?);
             }
             Ok(result)
-        }).await?
+        })
+        .await?
     }
 
-    pub async fn find_by_genre(&self, genre: &str, limit: u32, offset: u32) -> Result<Vec<MediaItem>> {
+    pub async fn find_by_genre(
+        &self,
+        genre: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<MediaItem>> {
         let genre = genre.to_string();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
@@ -320,12 +352,22 @@ impl MediaItemRepository {
         let lib_id = library_id.to_string();
         let order_clause = match sort_by.map(|s| s.trim().to_lowercase()).as_deref() {
             Some("title:desc") | Some("title_desc") => "title DESC, id DESC",
-            Some("release_year:asc") | Some("release_year_asc") | Some("year:asc") | Some("year_asc") => "release_year ASC NULLS LAST, id ASC",
-            Some("release_year:desc") | Some("release_year_desc") | Some("year:desc") | Some("year_desc") => "release_year DESC NULLS LAST, id DESC",
+            Some("release_year:asc")
+            | Some("release_year_asc")
+            | Some("year:asc")
+            | Some("year_asc") => "release_year ASC NULLS LAST, id ASC",
+            Some("release_year:desc")
+            | Some("release_year_desc")
+            | Some("year:desc")
+            | Some("year_desc") => "release_year DESC NULLS LAST, id DESC",
             Some("added_at:asc") | Some("added_at_asc") => "added_at ASC, id ASC",
             Some("added_at:desc") | Some("added_at_desc") => "added_at DESC, id DESC",
-            Some("rating:desc") | Some("rating_desc") => "CAST(json_extract(metadata, '$.rating') AS REAL) DESC NULLS LAST, id DESC",
-            Some("rating:asc") | Some("rating_asc") => "CAST(json_extract(metadata, '$.rating') AS REAL) ASC NULLS LAST, id ASC",
+            Some("rating:desc") | Some("rating_desc") => {
+                "CAST(json_extract(metadata, '$.rating') AS REAL) DESC NULLS LAST, id DESC"
+            }
+            Some("rating:asc") | Some("rating_asc") => {
+                "CAST(json_extract(metadata, '$.rating') AS REAL) ASC NULLS LAST, id ASC"
+            }
             _ => "title ASC, id ASC",
         };
 
@@ -344,13 +386,17 @@ impl MediaItemRepository {
                  LIMIT ?2 OFFSET ?3"
             );
             let mut stmt = c.prepare(&sql)?;
-            let rows = stmt.query_map(params![lib_id, limit as i64, offset as i64], map_media_item_row)?;
+            let rows = stmt.query_map(
+                params![lib_id, limit as i64, offset as i64],
+                map_media_item_row,
+            )?;
             let mut result = Vec::new();
             for row in rows {
                 result.push(row?);
             }
             Ok((result, count as u64))
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_spotlight_candidate(&self) -> Result<Option<MediaItem>> {
@@ -383,7 +429,8 @@ impl MediaItemRepository {
             } else {
                 Ok(None)
             }
-        }).await?
+        })
+        .await?
     }
 
     pub async fn find_episodes_by_series(&self, series_title: &str) -> Result<Vec<MediaItem>> {
@@ -437,10 +484,9 @@ fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
     let container: Option<String> = row.get(15)?;
     let metadata_str: String = row.get(16)?;
 
-    let item_type: MediaType = serde_json::from_str(&format!("\"{}\"", item_type_str))
-        .unwrap_or(MediaType::Unknown);
-    let metadata: MediaMetadata = serde_json::from_str(&metadata_str)
-        .unwrap_or_default();
+    let item_type: MediaType =
+        serde_json::from_str(&format!("\"{}\"", item_type_str)).unwrap_or(MediaType::Unknown);
+    let metadata: MediaMetadata = serde_json::from_str(&metadata_str).unwrap_or_default();
 
     Ok(MediaItem {
         id: Some(id),
@@ -464,4 +510,3 @@ fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
         metadata,
     })
 }
-

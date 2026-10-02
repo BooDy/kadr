@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,9 +54,17 @@ pub struct MediaMetadata {
     pub genres: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series_title: Option<String>,
-    #[serde(default, alias = "season_number", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "season_number",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub season: Option<u32>,
-    #[serde(default, alias = "episode_number", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "episode_number",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub episode: Option<u32>,
     #[serde(flatten, default)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,

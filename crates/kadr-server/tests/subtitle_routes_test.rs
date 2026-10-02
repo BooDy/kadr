@@ -10,7 +10,9 @@ use axum::extract::Query;
 use axum::http::{header, HeaderMap, Request, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo, User, UserRole};
+use kadr_core::models::{
+    Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo, User, UserRole,
+};
 use kadr_core::subtitles::{SubtitleFormat, SubtitleSource, SubtitleTrack};
 use kadr_server::api::create_router_with_subtitles;
 use kadr_server::auth::jwt::JwtService;
@@ -51,7 +53,9 @@ struct TestContext {
 
 async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
     let pool = create_in_memory_pool().expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -141,12 +145,18 @@ async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
     );
 
     let opensubtitles_client = match mock_base_url {
-        Some(url) => Arc::new(OpenSubtitlesClient::new(Some("test-api-key".to_string()), Some(url))),
+        Some(url) => Arc::new(OpenSubtitlesClient::new(
+            Some("test-api-key".to_string()),
+            Some(url),
+        )),
         None => Arc::new(OpenSubtitlesClient::new(None, None)),
     };
 
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let limiter = RateLimiter::new(100, Duration::from_secs(300), Duration::from_secs(300));
     let session_registry = Arc::new(SessionRegistry::new());
 
@@ -195,7 +205,9 @@ async fn test_list_subtitles_authenticated() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let err_json: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(err_json["error"], "Media item not found");
 
@@ -207,7 +219,9 @@ async fn test_list_subtitles_authenticated() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let tracks: Value = serde_json::from_slice(&bytes).unwrap();
     let list = tracks.as_array().expect("expected array");
     assert_eq!(list.len(), 1);
@@ -231,7 +245,10 @@ async fn test_stream_webvtt_public_and_headers() {
 
     // 1. Public streaming without Authorization header -> 200 OK
     let req = Request::builder()
-        .uri(format!("/api/v1/subtitles/{}/stream.vtt", ctx.sidecar_subtitle_id))
+        .uri(format!(
+            "/api/v1/subtitles/{}/stream.vtt",
+            ctx.sidecar_subtitle_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -263,7 +280,9 @@ async fn test_stream_webvtt_public_and_headers() {
     assert_eq!(accept_ranges, "bytes");
 
     // Verify converted WebVTT body content
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let vtt_text = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(vtt_text.starts_with("WEBVTT"));
     assert!(vtt_text.contains("00:00:01.000 --> 00:00:04.000"));
@@ -276,7 +295,9 @@ async fn test_stream_webvtt_public_and_headers() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let err_json: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(err_json["error"], "Subtitle not found");
 }
@@ -304,13 +325,18 @@ async fn test_search_unconfigured() {
 
     // Unconfigured -> 200 with configured: false, matches: []
     let req = Request::builder()
-        .uri(format!("/api/v1/subtitles/{}/search?languages=en,ar", ctx.media_item_id))
+        .uri(format!(
+            "/api/v1/subtitles/{}/search?languages=en,ar",
+            ctx.media_item_id
+        ))
         .header("authorization", format!("Bearer {}", ctx.token))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let val: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(val["configured"], false);
     assert_eq!(val["matches"].as_array().unwrap().len(), 0);
@@ -350,8 +376,7 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .route(
             "/subtitles",
             get(
-                move |headers: HeaderMap,
-                      Query(params): Query<MockSearchQuery>| {
+                move |headers: HeaderMap, Query(params): Query<MockSearchQuery>| {
                     let st = state_for_router.clone();
                     async move {
                         assert_eq!(headers.get("Api-Key").unwrap(), "test-api-key");
@@ -421,7 +446,9 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let local_addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        axum::serve(listener, mock_app.into_make_service()).await.unwrap();
+        axum::serve(listener, mock_app.into_make_service())
+            .await
+            .unwrap();
     });
 
     let mock_base_url = format!("http://{}", local_addr);
@@ -429,13 +456,18 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
 
     // 1. Search with configured mock client -> 200 with matches
     let req = Request::builder()
-        .uri(format!("/api/v1/subtitles/{}/search?languages=en,ar", ctx.media_item_id))
+        .uri(format!(
+            "/api/v1/subtitles/{}/search?languages=en,ar",
+            ctx.media_item_id
+        ))
         .header("authorization", format!("Bearer {}", ctx.token))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let val: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(val["configured"], true);
     let matches = val["matches"].as_array().unwrap();
@@ -450,16 +482,21 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .uri(format!("/api/v1/subtitles/{}/download", ctx.media_item_id))
         .header("authorization", format!("Bearer {}", ctx.token))
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "file_id": "98765",
-            "language": "en",
-            "title": "Inception English Downloaded",
-            "is_forced": false
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "file_id": "98765",
+                "language": "en",
+                "title": "Inception English Downloaded",
+                "is_forced": false
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let downloaded_track: Value = serde_json::from_slice(&bytes).unwrap();
     let new_track_id = downloaded_track["id"].as_i64().expect("expected track id");
     assert_eq!(downloaded_track["media_item_id"], ctx.media_item_id);
@@ -480,7 +517,9 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .join(ctx.media_item_id.to_string())
         .join("98765.srt");
     assert!(expected_saved_path.exists());
-    let saved_content = tokio::fs::read_to_string(&expected_saved_path).await.unwrap();
+    let saved_content = tokio::fs::read_to_string(&expected_saved_path)
+        .await
+        .unwrap();
     assert_eq!(saved_content, SAMPLE_SRT);
 
     // 3. Stream the newly downloaded subtitle via GET /api/v1/subtitles/:id/stream.vtt
@@ -490,7 +529,9 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let vtt = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(vtt.starts_with("WEBVTT"));
     assert!(vtt.contains("Hello, world!"));
@@ -503,7 +544,9 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let tracks: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(tracks.as_array().unwrap().len(), 2);
 
@@ -516,7 +559,9 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let del_json: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(del_json["deleted"], true);
 
@@ -541,7 +586,9 @@ async fn test_search_and_download_flow_with_mock_opensubtitles() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let tracks: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(tracks.as_array().unwrap().len(), 1);
 }
@@ -555,14 +602,19 @@ async fn test_download_unconfigured_fails_with_bad_request() {
         .uri(format!("/api/v1/subtitles/{}/download", ctx.media_item_id))
         .header("authorization", format!("Bearer {}", ctx.token))
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "file_id": "12345",
-            "language": "en"
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "file_id": "12345",
+                "language": "en"
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let val: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(val["error"], "OpenSubtitles integration is not configured");
 }

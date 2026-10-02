@@ -1,12 +1,14 @@
 // crates/kadr-storage/tests/widget_queries_test.rs
-use std::path::PathBuf;
 use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
+use std::path::PathBuf;
 
 async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
     let pool = create_in_memory_pool().expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let lib_repo = LibraryRepository::new(pool.clone());
     let media_repo = MediaItemRepository::new(pool.clone());
@@ -192,7 +194,10 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
         },
     ];
 
-    media_repo.upsert_batch(&items).await.expect("upsert failed");
+    media_repo
+        .upsert_batch(&items)
+        .await
+        .expect("upsert failed");
     (media_repo, lib_repo)
 }
 
@@ -230,11 +235,17 @@ async fn test_find_recently_added() {
     // Offset test
     let global_recent_page2 = media_repo.find_recently_added(None, 2, 3).await.unwrap();
     assert_eq!(global_recent_page2.len(), 2);
-    assert_eq!(global_recent_page2[0].title, "Severance - S01E01 - Good News About Hell"); // added_at 4900
+    assert_eq!(
+        global_recent_page2[0].title,
+        "Severance - S01E01 - Good News About Hell"
+    ); // added_at 4900
     assert_eq!(global_recent_page2[1].title, "The Prestige"); // added_at 4000
 
     // 2. With library filter
-    let movie_recent = media_repo.find_recently_added(Some("movies"), 2, 0).await.unwrap();
+    let movie_recent = media_repo
+        .find_recently_added(Some("movies"), 2, 0)
+        .await
+        .unwrap();
     assert_eq!(movie_recent.len(), 2);
     assert_eq!(movie_recent[0].title, "Primer"); // added_at 7000
     assert_eq!(movie_recent[1].title, "The Prestige"); // added_at 4000
@@ -333,9 +344,15 @@ async fn test_find_spotlight_candidate() {
 async fn test_find_episodes_by_series() {
     let (media_repo, _) = setup_test_data().await;
 
-    let episodes = media_repo.find_episodes_by_series("Severance").await.unwrap();
+    let episodes = media_repo
+        .find_episodes_by_series("Severance")
+        .await
+        .unwrap();
     assert_eq!(episodes.len(), 3);
-    assert_eq!(episodes[0].title, "Severance - S01E01 - Good News About Hell");
+    assert_eq!(
+        episodes[0].title,
+        "Severance - S01E01 - Good News About Hell"
+    );
     assert_eq!(episodes[1].title, "Severance - S01E02 - Half Loop");
     assert_eq!(episodes[2].title, "Severance - S02E01 - Hello Lumon");
 }

@@ -59,8 +59,14 @@ fn test_card_normalization_movie_and_episode() {
     assert_eq!(card_4k.title, "Interstellar");
     assert_eq!(card_4k.subtitle.as_deref(), Some("2014 • 4K UHD"));
     assert_eq!(card_4k.media_type, "movie");
-    assert_eq!(card_4k.poster_url.as_deref(), Some("/api/v1/artwork/10/poster"));
-    assert_eq!(card_4k.backdrop_url.as_deref(), Some("/api/v1/artwork/10/backdrop"));
+    assert_eq!(
+        card_4k.poster_url.as_deref(),
+        Some("/api/v1/artwork/10/poster")
+    );
+    assert_eq!(
+        card_4k.backdrop_url.as_deref(),
+        Some("/api/v1/artwork/10/backdrop")
+    );
     assert_eq!(card_4k.rating, Some(8.7));
     assert_eq!(card_4k.release_year, Some(2014));
     assert_eq!(card_4k.badge.as_deref(), Some("4K"));
@@ -155,9 +161,18 @@ fn test_card_normalization_movie_and_episode() {
     assert_eq!(card_ep2.subtitle.as_deref(), Some("S01E02"));
 }
 
-async fn setup_test_environment() -> (WidgetResolver, MediaItemRepository, PlaybackRepository, i64, i64, i64) {
+async fn setup_test_environment() -> (
+    WidgetResolver,
+    MediaItemRepository,
+    PlaybackRepository,
+    i64,
+    i64,
+    i64,
+) {
     let pool = create_in_memory_pool().expect("failed to create in-memory pool");
-    initialize_database(&pool).await.expect("failed to run migrations");
+    initialize_database(&pool)
+        .await
+        .expect("failed to run migrations");
 
     let lib_repo = LibraryRepository::new(pool.clone());
     let media_repo = MediaItemRepository::new(pool.clone());
@@ -329,9 +344,16 @@ async fn setup_test_environment() -> (WidgetResolver, MediaItemRepository, Playb
         },
     ];
 
-    media_repo.upsert_batch(&items).await.expect("upsert failed");
+    media_repo
+        .upsert_batch(&items)
+        .await
+        .expect("upsert failed");
 
-    let spotlight = media_repo.find_spotlight_candidate().await.unwrap().expect("spotlight item");
+    let spotlight = media_repo
+        .find_spotlight_candidate()
+        .await
+        .unwrap()
+        .expect("spotlight item");
     let spotlight_id = spotlight.id.unwrap();
 
     let cont_movie = media_repo
@@ -355,7 +377,14 @@ async fn setup_test_environment() -> (WidgetResolver, MediaItemRepository, Playb
         .expect("upsert progress failed");
 
     let resolver = WidgetResolver::new(media_repo.clone(), playback_repo.clone());
-    (resolver, media_repo, playback_repo, spotlight_id, cont_movie_id, show_id)
+    (
+        resolver,
+        media_repo,
+        playback_repo,
+        spotlight_id,
+        cont_movie_id,
+        show_id,
+    )
 }
 
 #[tokio::test]
@@ -391,10 +420,15 @@ async fn test_concurrent_home_screen_resolution() {
     }
 
     // 2. Verify Continue Watching carousel
-    let cont = resolved.widgets.iter().find(|w| w.id() == "continue_watching");
+    let cont = resolved
+        .widgets
+        .iter()
+        .find(|w| w.id() == "continue_watching");
     assert!(cont.is_some(), "Continue watching carousel missing");
     if let Some(WidgetNode::Carousel { items, .. }) = cont {
-        let cards = items.as_ref().expect("continue watching items not populated");
+        let cards = items
+            .as_ref()
+            .expect("continue watching items not populated");
         assert_eq!(cards.len(), 1);
         assert_eq!(cards[0].id, cont_movie_id);
         assert_eq!(cards[0].title, "Continue Movie");
@@ -479,14 +513,25 @@ async fn test_resolve_item_details_movie_and_show() {
 
     assert_eq!(movie_details.card.id, spotlight_id);
     assert_eq!(movie_details.card.title, "Spotlight Movie");
-    assert_eq!(movie_details.overview.as_deref(), Some("A breathtaking spotlight film."));
+    assert_eq!(
+        movie_details.overview.as_deref(),
+        Some("A breathtaking spotlight film.")
+    );
     assert_eq!(movie_details.genres, vec!["Sci-Fi", "Action"]);
     assert_eq!(movie_details.duration_seconds, Some(7200));
-    assert_eq!(movie_details.stream_url, format!("/api/v1/stream/{spotlight_id}"));
+    assert_eq!(
+        movie_details.stream_url,
+        format!("/api/v1/stream/{spotlight_id}")
+    );
     assert_eq!(movie_details.episodes, None);
     assert!(movie_details.technical.is_some());
     assert_eq!(
-        movie_details.technical.as_ref().unwrap().resolution.as_deref(),
+        movie_details
+            .technical
+            .as_ref()
+            .unwrap()
+            .resolution
+            .as_deref(),
         Some("4K")
     );
 
@@ -503,8 +548,14 @@ async fn test_resolve_item_details_movie_and_show() {
 
     let episodes = show_details.episodes.expect("missing episodes");
     assert_eq!(episodes.len(), 2);
-    assert_eq!(episodes[0].subtitle.as_deref(), Some("S01E01 - Dark Matter"));
-    assert_eq!(episodes[1].subtitle.as_deref(), Some("S01E02 - Dark Matter"));
+    assert_eq!(
+        episodes[0].subtitle.as_deref(),
+        Some("S01E01 - Dark Matter")
+    );
+    assert_eq!(
+        episodes[1].subtitle.as_deref(),
+        Some("S01E02 - Dark Matter")
+    );
 
     // 3. Resolve non-existent item -> None
     let missing = resolver

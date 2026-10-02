@@ -26,7 +26,10 @@ impl JwtService {
     }
 
     pub fn generate_token(&self, user: &User) -> Result<String, jsonwebtoken::errors::Error> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
         let claims = AuthClaims {
             sub: user.id.clone(),
             username: user.username.clone(),

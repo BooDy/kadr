@@ -129,10 +129,7 @@ impl SubtitleRepository {
         .await?
     }
 
-    pub async fn find_by_media_item(
-        &self,
-        media_item_id: i64,
-    ) -> Result<Vec<SubtitleTrack>> {
+    pub async fn find_by_media_item(&self, media_item_id: i64) -> Result<Vec<SubtitleTrack>> {
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
             let mut stmt = c.prepare(

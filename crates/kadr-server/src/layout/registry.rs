@@ -41,7 +41,11 @@ impl LayoutRegistry {
     pub fn list_screens(&self) -> Vec<(ScreenId, String)> {
         self.order
             .iter()
-            .filter_map(|id| self.screens.get(id).map(|s| (s.id.clone(), s.title.clone())))
+            .filter_map(|id| {
+                self.screens
+                    .get(id)
+                    .map(|s| (s.id.clone(), s.title.clone()))
+            })
             .collect()
     }
 

@@ -13,7 +13,10 @@ pub fn find_artwork<P: AsRef<Path>>(media_file: P) -> ArtworkPaths {
         None => return ArtworkPaths::default(),
     };
 
-    let stem = media_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let stem = media_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
 
     let mut poster_candidates = Vec::new();
     if !stem.is_empty() {

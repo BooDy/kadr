@@ -57,9 +57,10 @@ async fn test_auth_user_extractor_bearer_header() {
     let token = service.generate_token(&user).unwrap();
 
     let app = Router::new()
-        .route("/protected", get(|user: AuthUser| async move {
-            format!("hello {}", user.username)
-        }))
+        .route(
+            "/protected",
+            get(|user: AuthUser| async move { format!("hello {}", user.username) }),
+        )
         .layer(Extension(service));
 
     let req = Request::builder()
@@ -85,9 +86,10 @@ async fn test_auth_user_extractor_query_param() {
     let token = service.generate_token(&user).unwrap();
 
     let app = Router::new()
-        .route("/stream", get(|user: AuthUser| async move {
-            format!("stream for {}", user.id)
-        }))
+        .route(
+            "/stream",
+            get(|user: AuthUser| async move { format!("stream for {}", user.id) }),
+        )
         .layer(Extension(service));
 
     let req = Request::builder()
@@ -155,11 +157,15 @@ async fn test_require_admin_extractor() {
     let admin_token = service.generate_token(&admin_user).unwrap();
     let standard_token = service.generate_token(&standard_user).unwrap();
 
-    let app = Router::new()
-        .route("/admin", get(|RequireAdmin(user): RequireAdmin| async move {
-            format!("admin {}", user.username)
-        }))
-        .layer(Extension(service));
+    let app =
+        Router::new()
+            .route(
+                "/admin",
+                get(|RequireAdmin(user): RequireAdmin| async move {
+                    format!("admin {}", user.username)
+                }),
+            )
+            .layer(Extension(service));
 
     // Admin should succeed
     let req = Request::builder()
@@ -235,7 +241,10 @@ async fn test_auth_user_extractor_query_param_with_non_bearer_header() {
     let token = service.generate_token(&user).unwrap();
 
     let app = Router::new()
-        .route("/stream", get(|user: AuthUser| async move { user.username }))
+        .route(
+            "/stream",
+            get(|user: AuthUser| async move { user.username }),
+        )
         .layer(Extension(service));
 
     // Request has non-Bearer auth header AND valid query token
@@ -248,4 +257,3 @@ async fn test_auth_user_extractor_query_param_with_non_bearer_header() {
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
-

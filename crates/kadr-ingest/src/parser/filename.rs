@@ -38,7 +38,9 @@ impl FilenameParser {
         ).unwrap();
 
         let res_regex = Regex::new(r"(?i)\b(2160p|4k|1080p|1080i|720p|576p|480p)\b").unwrap();
-        let source_regex = Regex::new(r"(?i)\b(bluray|blu-ray|web-dl|webdl|web-rip|webrip|hdtv|bdrip|dvdrip)\b").unwrap();
+        let source_regex =
+            Regex::new(r"(?i)\b(bluray|blu-ray|web-dl|webdl|web-rip|webrip|hdtv|bdrip|dvdrip)\b")
+                .unwrap();
         let codec_regex = Regex::new(r"(?i)\b(x264|x265|hevc|av1|h\.?264|h\.?265)\b").unwrap();
 
         Self {
@@ -62,13 +64,21 @@ impl FilenameParser {
             if clean_title.is_empty() {
                 return None;
             }
-            let year = caps.name("year").and_then(|m| m.as_str().parse::<i32>().ok());
+            let year = caps
+                .name("year")
+                .and_then(|m| m.as_str().parse::<i32>().ok());
             let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
             let clean_rest = rest.replace('_', " ");
 
-            let resolution = self.res_regex.find(&clean_rest).map(|m| m.as_str().to_lowercase());
+            let resolution = self
+                .res_regex
+                .find(&clean_rest)
+                .map(|m| m.as_str().to_lowercase());
             let source = self.extract_source(&clean_rest);
-            let video_codec = self.codec_regex.find(&clean_rest).map(|m| m.as_str().to_lowercase());
+            let video_codec = self
+                .codec_regex
+                .find(&clean_rest)
+                .map(|m| m.as_str().to_lowercase());
             let release_group = Self::extract_release_group(rest);
 
             return Some(ParsedFilename {
@@ -88,13 +98,21 @@ impl FilenameParser {
             if clean_title.is_empty() {
                 return None;
             }
-            let year = caps.name("year").and_then(|m| m.as_str().parse::<i32>().ok());
+            let year = caps
+                .name("year")
+                .and_then(|m| m.as_str().parse::<i32>().ok());
             let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
             let clean_rest = rest.replace('_', " ");
 
-            let resolution = self.res_regex.find(&clean_rest).map(|m| m.as_str().to_lowercase());
+            let resolution = self
+                .res_regex
+                .find(&clean_rest)
+                .map(|m| m.as_str().to_lowercase());
             let source = self.extract_source(&clean_rest);
-            let video_codec = self.codec_regex.find(&clean_rest).map(|m| m.as_str().to_lowercase());
+            let video_codec = self
+                .codec_regex
+                .find(&clean_rest)
+                .map(|m| m.as_str().to_lowercase());
             let release_group = Self::extract_release_group(rest);
 
             return Some(ParsedFilename {
@@ -162,9 +180,8 @@ impl FilenameParser {
         // Reject if candidate matches known source suffix, codec, or resolution
         let lower = candidate.to_ascii_lowercase();
         const REJECTED_TOKENS: &[&str] = &[
-            "ray", "rip", "dl", "bdrip", "webrip", "bluray", "hdtv", "dvdrip",
-            "x264", "x265", "hevc", "av1", "h264", "h265",
-            "2160p", "4k", "1080p", "1080i", "720p", "576p", "480p",
+            "ray", "rip", "dl", "bdrip", "webrip", "bluray", "hdtv", "dvdrip", "x264", "x265",
+            "hevc", "av1", "h264", "h265", "2160p", "4k", "1080p", "1080i", "720p", "576p", "480p",
         ];
         if REJECTED_TOKENS.contains(&lower.as_str()) {
             return None;

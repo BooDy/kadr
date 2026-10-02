@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use deadpool_sqlite::Pool;
-use rusqlite::params;
-use kadr_core::models::{PlaybackState, WatchState};
 use crate::error::Result;
+use deadpool_sqlite::Pool;
+use kadr_core::models::{PlaybackState, WatchState};
+use rusqlite::params;
 
 #[derive(Clone)]
 pub struct PlaybackRepository {
@@ -75,7 +75,11 @@ impl PlaybackRepository {
         }).await?
     }
 
-    pub async fn get_state(&self, user_id: &str, media_item_id: i64) -> Result<Option<PlaybackState>> {
+    pub async fn get_state(
+        &self,
+        user_id: &str,
+        media_item_id: i64,
+    ) -> Result<Option<PlaybackState>> {
         let user_id = user_id.to_string();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
@@ -139,7 +143,8 @@ impl PlaybackRepository {
     }
 
     pub async fn get_continue_watching(&self, user_id: &str) -> Result<Vec<PlaybackState>> {
-        self.list_user_states(user_id, Some(WatchState::InProgress), 50).await
+        self.list_user_states(user_id, Some(WatchState::InProgress), 50)
+            .await
     }
 
     pub async fn get_states_for_items(
@@ -177,4 +182,3 @@ impl PlaybackRepository {
         }).await?
     }
 }
-

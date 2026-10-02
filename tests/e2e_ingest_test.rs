@@ -1,13 +1,13 @@
+use kadr_core::models::{Library, MediaType};
+use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
+use kadr_storage::pool::{create_in_memory_pool, initialize_database};
+use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 use std::fs::File;
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::tempdir;
 use tokio::time::sleep;
-use kadr_core::models::{Library, MediaType};
-use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
-use kadr_storage::pool::{create_in_memory_pool, initialize_database};
-use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 
 #[tokio::test]
 async fn test_end_to_end_library_scan_and_reactive_ingest() {
@@ -28,7 +28,9 @@ async fn test_end_to_end_library_scan_and_reactive_ingest() {
     lib_repo.create(&library).await.unwrap();
 
     // 1. Pre-create a file before watcher starts
-    let movie1 = dir.path().join("The.Flirtation.of.Girls.1949.1080p.BluRay.x264-Scene.mkv");
+    let movie1 = dir
+        .path()
+        .join("The.Flirtation.of.Girls.1949.1080p.BluRay.x264-Scene.mkv");
     let mut f1 = File::create(&movie1).unwrap();
     f1.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00]).unwrap();
 
@@ -42,7 +44,9 @@ async fn test_end_to_end_library_scan_and_reactive_ingest() {
         pipeline.clone(),
         tx.clone(),
         Duration::from_millis(100),
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     // Wait for initial scan to flush to DB
     sleep(Duration::from_millis(500)).await;
@@ -61,7 +65,11 @@ async fn test_end_to_end_library_scan_and_reactive_ingest() {
     f2.write_all(&[0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00]).unwrap();
 
     let mut n2 = File::create(&nfo2).unwrap();
-    n2.write_all(r#"<movie><director>Sherif Arafa</director><actor><name>Adel Emam</name></actor></movie>"#.as_bytes()).unwrap();
+    n2.write_all(
+        r#"<movie><director>Sherif Arafa</director><actor><name>Adel Emam</name></actor></movie>"#
+            .as_bytes(),
+    )
+    .unwrap();
 
     // Wait for debouncer (100ms) + batch flush (100ms)
     sleep(Duration::from_millis(600)).await;
@@ -69,8 +77,14 @@ async fn test_end_to_end_library_scan_and_reactive_ingest() {
     let all_items = media_repo.list_by_library("classics", 10, 0).await.unwrap();
     assert_eq!(all_items.len(), 2);
 
-    let second_item = all_items.iter().find(|i| i.title == "Terror and Kebab").expect("item not found");
+    let second_item = all_items
+        .iter()
+        .find(|i| i.title == "Terror and Kebab")
+        .expect("item not found");
     assert_eq!(second_item.release_year, Some(1992));
-    assert_eq!(second_item.metadata.director.as_deref(), Some("Sherif Arafa"));
+    assert_eq!(
+        second_item.metadata.director.as_deref(),
+        Some("Sherif Arafa")
+    );
     assert_eq!(second_item.metadata.actors, vec!["Adel Emam"]);
 }

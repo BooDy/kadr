@@ -1,14 +1,14 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
-use notify::event::{ModifyKind, RenameMode};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tokio::sync::mpsc;
-use tracing::{info, warn};
-use kadr_core::models::Library;
 use crate::watcher::debouncer::DebounceQueue;
 use crate::watcher::pipeline::IngestPipeline;
 use crate::watcher::worker::IngestMessage;
+use kadr_core::models::Library;
+use notify::event::{ModifyKind, RenameMode};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tracing::{info, warn};
 
 pub fn scan_directory_recursive<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     let mut files = Vec::new();

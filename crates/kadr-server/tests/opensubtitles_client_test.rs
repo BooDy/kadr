@@ -28,7 +28,10 @@ async fn test_unconfigured_client_behavior() {
         assert_eq!(search_res.unwrap(), Vec::<OnlineSubtitleMatch>::new());
 
         let download_res = client.download("19542031").await;
-        assert!(matches!(download_res, Err(OpenSubtitlesError::NotConfigured)));
+        assert!(matches!(
+            download_res,
+            Err(OpenSubtitlesError::NotConfigured)
+        ));
     }
 }
 
@@ -72,7 +75,10 @@ async fn test_configured_client_search_and_download() {
                  Query(params): Query<SearchQueryParams>,
                  State(st): State<MockState>| async move {
                     assert_eq!(headers.get("Api-Key").unwrap(), "test-api-key");
-                    assert_eq!(headers.get("User-Agent").unwrap(), "Kadr Media Server v0.1.0");
+                    assert_eq!(
+                        headers.get("User-Agent").unwrap(),
+                        "Kadr Media Server v0.1.0"
+                    );
                     assert_eq!(headers.get("Accept").unwrap(), "application/json");
 
                     assert_eq!(params.query, "Inception");
@@ -134,7 +140,10 @@ async fn test_configured_client_search_and_download() {
                  State(st): State<MockState>,
                  Json(body): Json<DownloadReqBody>| async move {
                     assert_eq!(headers.get("Api-Key").unwrap(), "test-api-key");
-                    assert_eq!(headers.get("User-Agent").unwrap(), "Kadr Media Server v0.1.0");
+                    assert_eq!(
+                        headers.get("User-Agent").unwrap(),
+                        "Kadr Media Server v0.1.0"
+                    );
                     assert_eq!(headers.get("Accept").unwrap(), "application/json");
                     assert_eq!(body.file_id, 19542031);
 
@@ -239,10 +248,7 @@ async fn test_configured_client_api_error() {
     });
 
     let client = OpenSubtitlesClient::new(Some("bad-key".to_string()), Some(base_url));
-    let err = client
-        .search("Inception", None, &[])
-        .await
-        .unwrap_err();
+    let err = client.search("Inception", None, &[]).await.unwrap_err();
 
     match err {
         OpenSubtitlesError::Api { status, message } => {
