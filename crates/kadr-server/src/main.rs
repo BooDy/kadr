@@ -85,15 +85,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             AppConfig::load_from_file(path)?
         }
         None => {
-            let default_path = std::path::Path::new("kadr.toml");
-            if default_path.exists() {
-                AppConfig::load_from_file(default_path)?
+            let env_config = std::env::var("KADR_CONFIG").ok().map(PathBuf::from);
+            let local_toml = std::path::Path::new("kadr.toml");
+            let sys_toml = std::path::Path::new("/etc/kadr/kadr.toml");
+
+            if let Some(ref path) = env_config.filter(|p| p.exists()) {
+                info!(path = ?path, "Loading configuration from KADR_CONFIG environment variable");
+                AppConfig::load_from_file(path)?
+            } else if local_toml.exists() {
+                info!(path = ?local_toml, "Loading configuration from local kadr.toml");
+                AppConfig::load_from_file(local_toml)?
+            } else if sys_toml.exists() {
+                info!(path = ?sys_toml, "Loading configuration from /etc/kadr/kadr.toml");
+                AppConfig::load_from_file(sys_toml)?
             } else {
-                info!("Config file not found, using defaults");
+                info!("Config file not found (checked KADR_CONFIG, ./kadr.toml, /etc/kadr/kadr.toml), using defaults");
                 AppConfig::default()
             }
         }
     };
+
+    let mut config = config;
+    if let Ok(port_str) = std::env::var("KADR_PORT") {
+        if let Ok(port) = port_str.parse::<u16>() {
+            config.server.port = port;
+        }
+    }
+    if let Ok(host) = std::env::var("KADR_HOST") {
+        config.server.host = host;
+    }
+    if let Ok(data_dir) = std::env::var("KADR_DATA_DIR") {
+        config.server.data_dir = PathBuf::from(data_dir);
+    }
 
     if let Some(parent) = config.storage.database_path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -302,7 +325,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         opensubtitles_client,
         event_bus,
         telemetry_collector,
-    );
+    )
+    .layer(axum::extract::Extension(ingest_tx.clone()))
+    .layer(axum::extract::Extension(pipeline.clone()))
+    .layer(axum::extract::Extension(Arc::new(
+        tokio::sync::RwLock::new(config.clone()),
+    )));
 
     // Mount static web SPA serving if assets exist
     let env_web = std::env::var("KADR_WEB_DIR")

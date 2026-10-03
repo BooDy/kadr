@@ -221,3 +221,49 @@ export type SystemEvent =
       type: 'system:telemetry';
       payload: TelemetrySnapshot;
     };
+
+// Library Management Types
+export interface Library {
+  id: string;
+  name: string;
+  path: string;
+  media_type: 'Movie' | 'Episode' | 'Show' | 'Music' | 'Other';
+  created_at: number;
+}
+
+export interface CreateLibraryPayload {
+  name: string;
+  path: string;
+  media_type: 'Movie' | 'Episode';
+}
+
+export interface ScanResultResponse {
+  library_id: string;
+  files_scanned: number;
+  queued: boolean;
+}
+
+// System Configuration Types
+export interface SystemConfig {
+  host: string;
+  port: number;
+  data_dir: string;
+  web_dir?: string;
+  database_path: string;
+  max_readers: number;
+  debounce_millis: number;
+  use_ffprobe: boolean;
+}
+
+export interface UpdateConfigPayload {
+  host?: string;
+  port?: number;
+  debounce_millis?: number;
+  use_ffprobe?: boolean;
+}
+
+export interface CreateUserPayload {
+  username: string;
+  pin: string;
+  role: UserRole;
+}

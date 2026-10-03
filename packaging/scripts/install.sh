@@ -109,6 +109,6 @@ if [ -n "${SERVICE_SRC}" ] && [ -d /etc/systemd/system ]; then
 fi
 
 echo -e "${GREEN}=== Kadr installed successfully! ===${NC}"
-echo "Default Web Interface: http://localhost:8096"
+echo "Default Web Interface: http://localhost:8492"
 echo "Data Directory:        /var/lib/kadr"
 echo "Config Directory:      /etc/kadr"

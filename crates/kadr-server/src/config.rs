@@ -54,7 +54,7 @@ fn default_host() -> String {
     "0.0.0.0".to_string()
 }
 fn default_port() -> u16 {
-    8096
+    8492
 }
 fn default_data_dir() -> PathBuf {
     PathBuf::from("./data")

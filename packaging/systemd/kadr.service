@@ -9,7 +9,7 @@ User=kadr
 Group=kadr
 WorkingDirectory=/var/lib/kadr
 EnvironmentFile=-/etc/kadr/kadr.env
-ExecStart=/usr/bin/kadr
+ExecStart=/usr/bin/kadr --config /etc/kadr/kadr.toml
 Restart=on-failure
 RestartSec=5s
 

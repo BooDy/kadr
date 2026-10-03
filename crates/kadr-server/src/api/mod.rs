@@ -1,7 +1,9 @@
 pub mod artwork_routes;
 pub mod auth_routes;
+pub mod config_routes;
 pub mod events_routes;
 pub mod item_routes;
+pub mod library_routes;
 pub mod playback;
 pub mod screen_routes;
 pub mod subtitle_routes;
@@ -17,7 +19,7 @@ use crate::resolver::WidgetResolver;
 use crate::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
 use crate::telemetry::TelemetryCollector;
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Extension, Router,
 };
 use kadr_storage::repos::{
@@ -128,6 +130,20 @@ pub fn create_router_with_events(
             "/api/v1/system/telemetry",
             get(events_routes::get_telemetry),
         )
+        // Library management routes
+        .route("/api/v1/libraries", get(library_routes::list_libraries))
+        .route("/api/v1/libraries", post(library_routes::create_library))
+        .route(
+            "/api/v1/libraries/{id}",
+            delete(library_routes::delete_library),
+        )
+        .route(
+            "/api/v1/libraries/{id}/scan",
+            post(library_routes::scan_library),
+        )
+        // System configuration routes
+        .route("/api/v1/system/config", get(config_routes::get_config))
+        .route("/api/v1/system/config", put(config_routes::update_config))
         .layer(Extension(user_repo))
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
@@ -141,7 +157,16 @@ pub fn create_router_with_events(
         .layer(Extension(opensubtitles_client))
         .layer(Extension(event_bus.clone()))
         .layer(Extension((*event_bus).clone()))
-        .layer(Extension(telemetry_collector));
+        .layer(Extension(telemetry_collector))
+        .layer(Extension(
+            tokio::sync::mpsc::channel::<kadr_ingest::watcher::IngestMessage>(1).0,
+        ))
+        .layer(Extension(Arc::new(
+            kadr_ingest::watcher::IngestPipeline::new(false),
+        )))
+        .layer(Extension(Arc::new(tokio::sync::RwLock::new(
+            crate::config::AppConfig::default(),
+        ))));
 
     mount_web_serving(router, std::path::Path::new("web/dist"))
 }

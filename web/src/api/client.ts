@@ -1,14 +1,20 @@
 import type {
   CardViewModel,
+  CreateLibraryPayload,
+  CreateUserPayload,
   DownloadSubtitleRequest,
   ItemDetailsPayload,
+  Library,
   OnlineSubtitleSearchResponse,
   PlaybackSessionResponse,
   PlaybackState,
+  ScanResultResponse,
   ScreenLayout,
   ScreenSummary,
   SubtitleTrack,
+  SystemConfig,
   TelemetrySnapshot,
+  UpdateConfigPayload,
   User,
   WidgetDataResponse,
 } from '../types';
@@ -317,6 +323,55 @@ export class ApiClient {
   // System Telemetry
   public async getTelemetry(): Promise<TelemetrySnapshot> {
     return this.request<TelemetrySnapshot>('/api/v1/system/telemetry');
+  }
+
+  // Libraries Management
+  public async getLibraries(): Promise<Library[]> {
+    return this.request<Library[]>('/api/v1/libraries');
+  }
+
+  public async createLibrary(payload: CreateLibraryPayload): Promise<Library> {
+    return this.request<Library>('/api/v1/libraries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async deleteLibrary(id: string): Promise<void> {
+    await this.request<void>(`/api/v1/libraries/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async scanLibrary(id: string): Promise<ScanResultResponse> {
+    return this.request<ScanResultResponse>(
+      `/api/v1/libraries/${encodeURIComponent(id)}/scan`,
+      {
+        method: 'POST',
+      }
+    );
+  }
+
+  // System Configuration
+  public async getSystemConfig(): Promise<SystemConfig> {
+    return this.request<SystemConfig>('/api/v1/system/config');
+  }
+
+  public async updateSystemConfig(
+    payload: UpdateConfigPayload
+  ): Promise<SystemConfig> {
+    return this.request<SystemConfig>('/api/v1/system/config', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // User Management
+  public async createUser(payload: CreateUserPayload): Promise<User> {
+    return this.request<User>('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 }
 

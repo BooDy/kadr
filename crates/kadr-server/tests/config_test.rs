@@ -48,7 +48,7 @@ fn test_config_parsing_from_str() {
 fn test_config_defaults() {
     let config = AppConfig::default();
     assert_eq!(config.server.host, "0.0.0.0");
-    assert_eq!(config.server.port, 8096);
+    assert_eq!(config.server.port, 8492);
     assert_eq!(config.server.data_dir, PathBuf::from("./data"));
     assert_eq!(
         config.storage.database_path,
@@ -64,7 +64,7 @@ fn test_config_defaults() {
 fn test_empty_toml_uses_defaults() {
     let config: AppConfig = toml::from_str("").unwrap();
     assert_eq!(config.server.host, "0.0.0.0");
-    assert_eq!(config.server.port, 8096);
+    assert_eq!(config.server.port, 8492);
     assert_eq!(config.storage.max_readers, 4);
     assert!(config.scanner.use_ffprobe);
     assert!(config.libraries.is_empty());
@@ -75,7 +75,7 @@ fn test_load_from_file_and_root_kadr_toml() {
     let root_toml = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../kadr.toml");
     let config = AppConfig::load_from_file(&root_toml).expect("should load root kadr.toml");
     assert_eq!(config.server.host, "0.0.0.0");
-    assert_eq!(config.server.port, 8096);
+    assert_eq!(config.server.port, 8492);
     assert_eq!(
         config.storage.database_path,
         PathBuf::from("./data/kadr.db")

@@ -7,6 +7,7 @@ import {
   Activity,
   LogOut,
   Users,
+  Settings,
 } from 'lucide-react';
 import { api } from './api/client';
 import type { User } from './types';
@@ -15,8 +16,9 @@ import { BrowseScreen } from './components/browse/BrowseScreen';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
 import { LayoutStudio } from './components/studio/LayoutStudio';
 import { TelemetryDashboard } from './components/telemetry/TelemetryDashboard';
+import { AdminDashboard } from './components/admin/AdminDashboard';
 
-export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'player';
+export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'admin' | 'player';
 
 export const App: FC = () => {
   const [currentView, setCurrentView] = useState<NavView>('home');
@@ -126,6 +128,19 @@ export const App: FC = () => {
                 <Activity className="h-4 w-4" />
                 Telemetry
               </button>
+              {currentUser?.role === 'admin' && (
+                <button
+                  onClick={() => setCurrentView('admin')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+                    currentView === 'admin'
+                      ? 'text-white bg-zinc-800/90 font-semibold'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                  }`}
+                >
+                  <Settings className="h-4 w-4" />
+                  Admin
+                </button>
+              )}
             </nav>
           </div>
 
@@ -208,6 +223,10 @@ export const App: FC = () => {
 
             {currentView === 'telemetry' && (
               <TelemetryDashboard />
+            )}
+
+            {currentView === 'admin' && currentUser?.role === 'admin' && (
+              <AdminDashboard />
             )}
           </>
         )}

@@ -137,7 +137,7 @@ sudo systemctl enable --now kadr
 
 ### First-Time Access & Usage
 
-1. **Access Web App**: Open your browser and navigate to `http://localhost:8096` (or `http://<server-ip>:8096`).
+1. **Access Web App**: Open your browser and navigate to `http://localhost:8492` (or `http://<server-ip>:8492`).
 2. **Default Login**:
    - Username: `admin`
    - Default PIN: `1234`
@@ -218,7 +218,7 @@ Create or edit `kadr.toml`:
 ```toml
 [server]
 host = "0.0.0.0"
-port = 8096
+port = 8492
 data_dir = "./data"
 
 [storage]
@@ -259,13 +259,13 @@ cargo build --release
 ./target/release/kadr
 ```
 
-The server will start at `http://localhost:8096` (or configured host/port).
+The server will start at `http://localhost:8492` (or configured host/port).
 
 ---
 
 ### 4. Access the Web Client & Initial Login
 
-1. Open your browser to `http://localhost:8096`.
+1. Open your browser to `http://localhost:8492`.
 2. Select the **Admin** user profile.
 3. Enter the initial default PIN: `1234`.
 4. You are now logged in and can browse media, play videos, configure layouts in the Layout Studio, and inspect real-time telemetry!
@@ -311,7 +311,7 @@ cd web
 npm run dev
 ```
 
-The Vite dev server runs at `http://localhost:5173` and automatically proxies `/api` and `/api/v1` to the backend on `http://localhost:8096`.
+The Vite dev server runs at `http://localhost:5173` and automatically proxies `/api` and `/api/v1` to the backend on `http://localhost:8492`.
 
 ---
 
