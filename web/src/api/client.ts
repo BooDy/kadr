@@ -1,6 +1,7 @@
 import type {
   CardViewModel,
   CreateLibraryPayload,
+  CreateScreenPayload,
   CreateUserPayload,
   DownloadSubtitleRequest,
   FsBrowseResponse,
@@ -320,6 +321,33 @@ export class ApiClient {
   public async getScreen(screenId: string): Promise<ScreenLayout> {
     return this.request<ScreenLayout>(`/api/v1/screens/${encodeURIComponent(screenId)}`);
   }
+
+  public async saveScreen(id: string, layout: ScreenLayout): Promise<ScreenLayout> {
+    return this.request<ScreenLayout>(`/api/v1/screens/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(layout),
+    });
+  }
+
+  public async createScreen(payload: CreateScreenPayload): Promise<ScreenLayout> {
+    return this.request<ScreenLayout>('/api/v1/screens', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async resetScreen(id: string): Promise<ScreenLayout> {
+    return this.request<ScreenLayout>(`/api/v1/screens/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async deleteScreen(id: string): Promise<void> {
+    return this.request<void>(`/api/v1/screens/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
 
   public async getWidgetData(
     widgetId: string,

@@ -15,11 +15,28 @@ export interface AuthResponse {
   role: UserRole;
 }
 
+// Media Types
+export type MediaType =
+  | 'movie'
+  | 'show'
+  | 'anime'
+  | 'music'
+  | 'home_videos'
+  | 'audiobook'
+  | 'unknown';
+
 // Layout & AST Types
 export interface ScreenSummary {
   id: string;
   title: string;
 }
+
+export interface CreateScreenPayload {
+  id: string;
+  title: string;
+  description?: string;
+}
+
 
 export interface CardViewModel {
   id: number;
@@ -246,7 +263,7 @@ export interface Library {
   name: string;
   path: string;
   paths?: string[];
-  media_type: 'Movie' | 'Episode' | 'Show' | 'Music' | 'Other';
+  media_type: MediaType | 'Movie' | 'Episode' | 'Show' | 'Music' | 'Other' | string;
   is_private: boolean;
   created_at: number;
 }
@@ -255,10 +272,11 @@ export interface CreateLibraryPayload {
   name: string;
   path?: string;
   paths?: string[];
-  media_type: 'Movie' | 'Episode';
+  media_type: MediaType | 'Movie' | 'Episode' | string;
   is_private?: boolean;
   pin?: string;
 }
+
 
 export interface UnlockLibraryResponse {
   library_id: string;

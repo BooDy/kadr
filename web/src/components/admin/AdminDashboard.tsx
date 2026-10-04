@@ -17,7 +17,7 @@ import {
   Folder,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import type { Library, SystemConfig, User } from '../../types';
+import type { Library, MediaType, SystemConfig, User } from '../../types';
 import { FolderPickerModal } from './FolderPickerModal';
 
 interface AdminDashboardProps {
@@ -38,7 +38,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   const [libPaths, setLibPaths] = useState<string[]>([]);
   const [isAddLibPickerOpen, setIsAddLibPickerOpen] = useState(false);
   const [cardPickerLib, setCardPickerLib] = useState<Library | null>(null);
-  const [libMediaType, setLibMediaType] = useState<'Movie' | 'Episode'>('Movie');
+  const [libMediaType, setLibMediaType] = useState<MediaType>('movie');
+
   const [isPrivate, setIsPrivate] = useState(false);
   const [libPin, setLibPin] = useState('');
   const [isSubmittingLib, setIsSubmittingLib] = useState(false);
@@ -113,6 +114,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
       setIsAddLibOpen(false);
       setLibName('');
       setLibPaths([]);
+      setLibMediaType('movie');
       setIsPrivate(false);
       setLibPin('');
       showStatus('success', `Library "${created.name}" created and queued for initial scan.`);
@@ -367,13 +369,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        {lib.media_type === 'Movie' ? (
+                        {lib.media_type === 'Movie' || lib.media_type === 'movie' ? (
                           <Film className="w-5 h-5 text-accent" />
                         ) : (
                           <Tv className="w-5 h-5 text-accent" />
                         )}
                         <h3 className="font-semibold text-lg text-text-main">{lib.name}</h3>
                       </div>
+
                       <div className="flex items-center gap-2">
                         {lib.is_private && (
                           <span className="flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-highlight/15 text-highlight border border-highlight/30">
@@ -665,13 +668,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                 <label className="block text-xs font-medium text-text-main mb-1">Media Type</label>
                 <select
                   value={libMediaType}
-                  onChange={(e) => setLibMediaType(e.target.value as 'Movie' | 'Episode')}
+                  onChange={(e) => setLibMediaType(e.target.value as MediaType)}
                   className="w-full bg-canvas border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-main focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
                 >
-                  <option value="Movie">Movies</option>
-                  <option value="Episode">TV Shows / Episodes</option>
+                  <option value="movie">Movies (Feature films)</option>
+                  <option value="show">TV Shows (Episodic series)</option>
+                  <option value="anime">Anime (Anime series & films)</option>
+                  <option value="music">Music & Concerts (Audio albums & live concerts)</option>
+                  <option value="home_videos">Home Videos & Clips (Personal recordings)</option>
+                  <option value="audiobook">Audiobooks & Podcasts (Spoken word content)</option>
                 </select>
               </div>
+
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">

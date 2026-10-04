@@ -156,7 +156,7 @@ export const App: FC = () => {
                       ) : (
                         <Lock className="h-4 w-4 text-highlight" />
                       )
-                    ) : lib.media_type === 'Movie' ? (
+                    ) : lib.media_type === 'Movie' || lib.media_type === 'movie' ? (
                       <Film className="h-4 w-4" />
                     ) : (
                       <Tv className="h-4 w-4" />

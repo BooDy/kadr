@@ -168,6 +168,75 @@ describe('ApiClient', () => {
       expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/screens/home');
     });
 
+    it('calls saveScreen with PUT and serializes layout', async () => {
+      client.setToken('tok');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ id: 'home', title: 'Home', widgets: [] }),
+      });
+
+      const layout = await client.saveScreen('home', { id: 'home', title: 'Home', widgets: [] });
+      expect(layout.id).toBe('home');
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/screens/home');
+      expect(mockFetch.mock.calls[0][1]?.method).toBe('PUT');
+      expect(JSON.parse(mockFetch.mock.calls[0][1]?.body as string)).toEqual({
+        id: 'home',
+        title: 'Home',
+        widgets: [],
+      });
+    });
+
+    it('calls createScreen with POST and payload', async () => {
+      client.setToken('tok');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ id: 'custom_1', title: 'Custom', widgets: [] }),
+      });
+
+      const res = await client.createScreen({ id: 'custom_1', title: 'Custom', description: 'desc' });
+      expect(res.id).toBe('custom_1');
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/screens');
+      expect(mockFetch.mock.calls[0][1]?.method).toBe('POST');
+      expect(JSON.parse(mockFetch.mock.calls[0][1]?.body as string)).toEqual({
+        id: 'custom_1',
+        title: 'Custom',
+        description: 'desc',
+      });
+    });
+
+    it('calls resetScreen with DELETE', async () => {
+      client.setToken('tok');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ message: 'Screen reset to defaults' }),
+      });
+
+      const res = await client.resetScreen('home');
+      expect(res).toBeDefined();
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/screens/home');
+      expect(mockFetch.mock.calls[0][1]?.method).toBe('DELETE');
+    });
+
+    it('calls deleteScreen with DELETE', async () => {
+      client.setToken('tok');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ message: 'Custom screen deleted' }),
+      });
+
+      await client.deleteScreen('custom_1');
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/screens/custom_1');
+      expect(mockFetch.mock.calls[0][1]?.method).toBe('DELETE');
+    });
+
     it('calls getWidgetData and extracts items', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

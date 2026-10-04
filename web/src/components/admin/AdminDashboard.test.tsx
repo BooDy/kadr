@@ -151,7 +151,7 @@ describe('AdminDashboard Component', () => {
       expect(api.createLibrary).toHaveBeenCalledWith({
         name: 'Documentaries',
         paths: ['/media/docs'],
-        media_type: 'Movie',
+        media_type: 'movie',
         is_private: false,
         pin: undefined,
       });
@@ -229,7 +229,7 @@ describe('AdminDashboard Component', () => {
       expect(api.createLibrary).toHaveBeenCalledWith({
         name: 'Secret Vault',
         paths: ['/media/docs'],
-        media_type: 'Movie',
+        media_type: 'movie',
         is_private: true,
         pin: '5678',
       });
@@ -394,4 +394,27 @@ describe('AdminDashboard Component', () => {
       expect(screen.getByRole('heading', { name: 'viewer' })).toBeDefined();
     });
   });
+
+  it('renders all expanded media type options in Add Library modal and allows selecting anime', async () => {
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Featured Movies')).toBeDefined();
+    });
+
+    const addBtn = screen.getByRole('button', { name: /Add Library/i });
+    fireEvent.click(addBtn);
+
+    expect(screen.getByRole('option', { name: /Movies \(Feature films\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /TV Shows \(Episodic series\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Anime \(Anime series & films\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Music & Concerts \(Audio albums & live concerts\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Home Videos & Clips \(Personal recordings\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Audiobooks & Podcasts \(Spoken word content\)/i })).toBeInTheDocument();
+
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'anime' } });
+    expect(select.value).toBe('anime');
+  });
 });
+
