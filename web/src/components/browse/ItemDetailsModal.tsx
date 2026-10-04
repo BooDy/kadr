@@ -156,32 +156,32 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl flex flex-col my-auto"
+        className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-panel border border-border-subtle shadow-2xl flex flex-col my-auto text-text-main"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Close Button */}
         <button
           onClick={onClose}
           aria-label="Close modal"
-          className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-zinc-950/80 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800/80 transition-colors cursor-pointer"
+          className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-canvas/60 hover:bg-panel text-muted hover:text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
         >
           <X className="w-5 h-5" />
         </button>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center min-h-[380px] p-12 text-zinc-400">
-            <Loader2 className="w-10 h-10 animate-spin text-rose-500 mb-4" />
+          <div className="flex flex-col items-center justify-center min-h-[380px] p-12 text-muted">
+            <Loader2 className="w-10 h-10 animate-spin text-cta mb-4" />
             <p className="text-sm">Loading media information...</p>
           </div>
         ) : !details ? (
-          <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-zinc-400">
-            <Film className="w-12 h-12 text-zinc-600 mb-3" />
-            <p className="text-base text-zinc-300">Media information unavailable</p>
+          <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-muted">
+            <Film className="w-12 h-12 text-muted mb-3" />
+            <p className="text-base text-text-main">Media information unavailable</p>
           </div>
         ) : (
           <>
             {/* Header Hero Area with Backdrop */}
-            <div className="relative min-h-[220px] sm:min-h-[280px] w-full overflow-hidden bg-zinc-900 border-b border-zinc-800/80 flex items-end">
+            <div className="relative min-h-[220px] sm:min-h-[280px] w-full overflow-hidden bg-canvas border-b border-border-subtle flex items-end">
               {!backdropFailed && backdropUrl ? (
                 <img
                   src={backdropUrl}
@@ -190,17 +190,17 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                   className="absolute inset-0 w-full h-full object-cover filter brightness-[0.7]"
                 />
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-rose-950/20" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-canvas via-panel to-canvas" />
               )}
 
               {/* Gradient Vignette Overlays */}
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/80 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-panel via-panel/80 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-panel/90 to-transparent" />
 
               {/* Poster and Title Info */}
               <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-end gap-5 p-6 sm:p-8 w-full">
                 {/* Poster Artwork with Placeholder */}
-                <div className="flex-shrink-0 w-28 sm:w-36 aspect-[2/3] rounded-xl overflow-hidden bg-zinc-900 border border-zinc-700/80 shadow-xl hidden sm:block">
+                <div className="flex-shrink-0 w-28 sm:w-36 aspect-[2/3] rounded-xl overflow-hidden bg-canvas border border-border-subtle shadow-xl hidden sm:block">
                   {!posterFailed && posterUrl ? (
                     <img
                       src={posterUrl}
@@ -209,9 +209,9 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full bg-zinc-800 flex flex-col items-center justify-center p-2 text-center">
-                      <Film className="w-8 h-8 text-zinc-500 mb-1" />
-                      <span className="text-[10px] text-zinc-400 font-medium">
+                    <div className="w-full h-full bg-canvas flex flex-col items-center justify-center p-2 text-center">
+                      <Film className="w-8 h-8 text-muted mb-1" />
+                      <span className="text-[10px] text-muted font-medium">
                         {card?.title}
                       </span>
                     </div>
@@ -222,22 +222,22 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                 <div className="space-y-2 flex-1 text-center sm:text-left">
                   <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs font-semibold">
                     {card?.release_year && (
-                      <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+                      <span className="px-2 py-0.5 rounded bg-canvas/60 text-text-main border border-border-subtle">
                         {card.release_year}
                       </span>
                     )}
                     {duration && (
-                      <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+                      <span className="px-2 py-0.5 rounded bg-canvas/60 text-text-main border border-border-subtle">
                         {formatDuration(duration)}
                       </span>
                     )}
                     {details.technical?.resolution && (
-                      <span className="px-2 py-0.5 rounded bg-rose-600/90 text-white font-bold">
+                      <span className="px-2 py-0.5 rounded bg-highlight/20 text-highlight border border-highlight/40 font-bold">
                         {details.technical.resolution}
                       </span>
                     )}
                     {card?.badge && (
-                      <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      <span className="px-2 py-0.5 rounded bg-accent/20 text-accent border border-accent/40">
                         {card.badge}
                       </span>
                     )}
@@ -245,13 +245,13 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
 
                   <h1
                     id="item-modal-title"
-                    className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight"
+                    className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-text-main tracking-tight"
                   >
                     {card?.title}
                   </h1>
 
                   {card?.subtitle && (
-                    <p className="text-xs sm:text-sm text-zinc-400 italic">
+                    <p className="text-xs sm:text-sm text-muted italic">
                       {card.subtitle}
                     </p>
                   )}
@@ -264,7 +264,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                       onPlay(itemId);
                       onClose();
                     }}
-                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg shadow-rose-950/50 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-lg shadow-cta/25 hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
                   >
                     <Play className="w-4 h-4 fill-white text-white" />
                     Play
@@ -274,13 +274,13 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex items-center border-b border-zinc-800 px-6 sm:px-8 bg-zinc-950">
+            <div className="flex items-center border-b border-border-subtle px-6 sm:px-8 bg-panel">
               <button
                 onClick={() => setActiveTab('details')}
                 className={`py-3.5 px-4 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
                   activeTab === 'details'
-                    ? 'border-rose-500 text-rose-400'
-                    : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                    ? 'border-accent text-accent'
+                    : 'border-transparent text-muted hover:text-text-main'
                 }`}
               >
                 Overview
@@ -289,8 +289,8 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                 onClick={() => setActiveTab('subtitles')}
                 className={`py-3.5 px-4 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
                   activeTab === 'subtitles'
-                    ? 'border-rose-500 text-rose-400'
-                    : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                    ? 'border-accent text-accent'
+                    : 'border-transparent text-muted hover:text-text-main'
                 }`}
               >
                 Subtitles ({subtitles.length})
@@ -303,10 +303,10 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                 <div className="space-y-6">
                   {/* Synopsis / Overview */}
                   <div className="space-y-2">
-                    <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                    <h3 className="text-xs font-bold tracking-wider text-muted uppercase">
                       Synopsis
                     </h3>
-                    <p className="text-sm sm:text-base text-zinc-300 leading-relaxed">
+                    <p className="text-sm sm:text-base text-text-main leading-relaxed">
                       {details.overview || card?.subtitle || 'No overview available for this title.'}
                     </p>
                   </div>
@@ -314,14 +314,14 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                   {/* Genres */}
                   {details.genres && details.genres.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                      <h3 className="text-xs font-bold tracking-wider text-muted uppercase">
                         Genres
                       </h3>
                       <div className="flex flex-wrap gap-2">
                         {details.genres.map((genre) => (
                           <span
                             key={genre}
-                            className="px-3 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-300"
+                            className="px-3 py-1 rounded-lg bg-canvas/60 border border-border-subtle text-xs font-medium text-text-main"
                           >
                             {genre}
                           </span>
@@ -331,34 +331,34 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                   )}
 
                   {/* Technical Information Grid */}
-                  <div className="space-y-3 pt-2 border-t border-zinc-800/80">
-                    <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                  <div className="space-y-3 pt-2 border-t border-border-subtle">
+                    <h3 className="text-xs font-bold tracking-wider text-muted uppercase">
                       Technical Specifications
                     </h3>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                       {details.technical?.resolution && (
-                        <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                          <span className="text-zinc-500 block mb-1">Resolution</span>
-                          <span className="font-semibold text-zinc-200">
+                        <div className="p-3 rounded-xl bg-canvas/40 border border-border-subtle flex flex-col gap-1.5">
+                          <span className="text-muted text-[11px] block">Resolution</span>
+                          <span className="font-mono text-xs text-text-main bg-canvas/60 px-2.5 py-1 rounded-lg border border-border-subtle w-fit">
                             {details.technical.resolution}
                           </span>
                         </div>
                       )}
 
                       {details.technical?.video_codec && (
-                        <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                          <span className="text-zinc-500 block mb-1">Video Codec</span>
-                          <span className="font-semibold text-zinc-200">
+                        <div className="p-3 rounded-xl bg-canvas/40 border border-border-subtle flex flex-col gap-1.5">
+                          <span className="text-muted text-[11px] block">Video Codec</span>
+                          <span className="font-mono text-xs text-text-main bg-canvas/60 px-2.5 py-1 rounded-lg border border-border-subtle w-fit">
                             {details.technical.video_codec}
                           </span>
                         </div>
                       )}
 
                       {details.technical?.audio_codec && (
-                        <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                          <span className="text-zinc-500 block mb-1">Audio Codec</span>
-                          <span className="font-semibold text-zinc-200">
+                        <div className="p-3 rounded-xl bg-canvas/40 border border-border-subtle flex flex-col gap-1.5">
+                          <span className="text-muted text-[11px] block">Audio Codec</span>
+                          <span className="font-mono text-xs text-text-main bg-canvas/60 px-2.5 py-1 rounded-lg border border-border-subtle w-fit">
                             {details.technical.audio_codec}
                             {details.technical.audio_channels
                               ? ` (${details.technical.audio_channels}ch)`
@@ -368,9 +368,9 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                       )}
 
                       {details.technical?.container && (
-                        <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                          <span className="text-zinc-500 block mb-1">Container</span>
-                          <span className="font-semibold text-zinc-200 uppercase">
+                        <div className="p-3 rounded-xl bg-canvas/40 border border-border-subtle flex flex-col gap-1.5">
+                          <span className="text-muted text-[11px] block">Container</span>
+                          <span className="font-mono text-xs text-text-main bg-canvas/60 px-2.5 py-1 rounded-lg border border-border-subtle w-fit uppercase">
                             {details.technical.container}
                           </span>
                         </div>
@@ -383,12 +383,12 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                 <div className="space-y-6">
                   {/* Current Tracks Section */}
                   <div className="space-y-3">
-                    <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                    <h3 className="text-xs font-bold tracking-wider text-muted uppercase">
                       Current Subtitle Tracks
                     </h3>
 
                     {subtitles.length === 0 ? (
-                      <p className="text-sm text-zinc-500 italic p-3 rounded-xl bg-zinc-900/40 border border-zinc-850">
+                      <p className="text-sm text-muted italic p-3 rounded-xl bg-canvas/50 border border-border-subtle">
                         No subtitle tracks currently installed.
                       </p>
                     ) : (
@@ -396,27 +396,27 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                         {subtitles.map((track) => (
                           <div
                             key={track.id}
-                            className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700/80 transition-colors"
+                            className="flex items-center justify-between p-3.5 rounded-xl bg-canvas/50 border border-border-subtle hover:bg-canvas transition-colors"
                           >
                             <div className="flex items-center gap-3">
-                              <span className="font-semibold text-sm text-zinc-200">
+                              <span className="font-semibold text-sm text-text-main">
                                 {track.title || track.language}
                               </span>
-                              <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700/50 uppercase">
+                              <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-canvas text-muted border border-border-subtle uppercase">
                                 {track.format}
                               </span>
                               {track.source === 'downloaded' && (
-                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-highlight/20 text-highlight border border-highlight/40">
                                   Downloaded
                                 </span>
                               )}
                               {track.source === 'embedded' && (
-                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-accent/20 text-accent border border-accent/40">
                                   Embedded
                                 </span>
                               )}
                               {track.is_default && (
-                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-cta/20 text-cta border border-cta/40">
                                   Default
                                 </span>
                               )}
@@ -428,9 +428,9 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                   </div>
 
                   {/* Online Search Section */}
-                  <div className="space-y-4 pt-4 border-t border-zinc-800">
-                    <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase flex items-center gap-2">
-                      <Search className="w-4 h-4 text-rose-500" />
+                  <div className="space-y-4 pt-4 border-t border-border-subtle">
+                    <h3 className="text-xs font-bold tracking-wider text-muted uppercase flex items-center gap-2">
+                      <Search className="w-4 h-4 text-accent" />
                       Search OpenSubtitles
                     </h3>
 
@@ -446,16 +446,16 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                             handleSearchSubtitles();
                           }
                         }}
-                        className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-sm focus:outline-none focus:border-rose-500/70"
+                        className="flex-1 px-4 py-2.5 rounded-xl bg-canvas/60 border border-border-subtle text-text-main placeholder-muted text-sm focus:outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
                       />
                       <button
                         onClick={handleSearchSubtitles}
                         disabled={searching}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm transition-colors disabled:opacity-50 cursor-pointer"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cta hover:bg-cta-hover text-white font-semibold text-sm transition-colors disabled:opacity-50 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
                       >
                         {searching ? (
                           <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin text-white" />
                             Searching...
                           </>
                         ) : (
@@ -465,14 +465,14 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                     </div>
 
                     {downloadSuccessMsg && (
-                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm flex items-center gap-2">
-                        <Check className="w-4 h-4" />
+                      <div className="p-3 rounded-xl bg-highlight/15 border border-highlight/40 text-highlight text-sm flex items-center gap-2">
+                        <Check className="w-4 h-4 text-highlight" />
                         {downloadSuccessMsg}
                       </div>
                     )}
 
                     {searchError && (
-                      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
+                      <div className="p-3 rounded-xl bg-cta/15 border border-cta/40 text-cta text-sm">
                         {searchError}
                       </div>
                     )}
@@ -480,20 +480,20 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                     {/* Search Results List */}
                     {searchResults.length > 0 && (
                       <div className="space-y-2 pt-2">
-                        <h4 className="text-xs font-semibold text-zinc-400">
+                        <h4 className="text-xs font-semibold text-muted">
                           Found {searchResults.length} online match{searchResults.length === 1 ? '' : 'es'}:
                         </h4>
                         <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                           {searchResults.map((match) => (
                             <div
                               key={match.id}
-                              className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700/80 transition-colors"
+                              className="flex items-center justify-between p-3.5 rounded-xl bg-canvas/50 border border-border-subtle hover:bg-canvas transition-colors"
                             >
                               <div className="space-y-1 flex-1 pr-4">
-                                <div className="text-sm font-semibold text-zinc-200">
+                                <div className="text-sm font-semibold text-text-main font-mono">
                                   {match.release_name || `${match.language} Subtitle`}
                                 </div>
-                                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                                <div className="flex items-center gap-2 text-xs text-muted">
                                   <span>{match.language}</span>
                                   <span>•</span>
                                   <span className="uppercase">{match.format}</span>
@@ -502,7 +502,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                                   {match.rating && (
                                     <>
                                       <span>•</span>
-                                      <span>★ {match.rating}</span>
+                                      <span className="text-highlight">★ {match.rating}</span>
                                     </>
                                   )}
                                 </div>
@@ -511,7 +511,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                               <button
                                 onClick={() => handleDownloadSubtitle(match)}
                                 disabled={downloadingId === match.id}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-rose-600 text-zinc-200 hover:text-white text-xs font-semibold border border-zinc-700/60 transition-colors disabled:opacity-50 cursor-pointer"
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cta hover:bg-cta-hover text-white text-xs font-semibold shadow-md transition-colors disabled:opacity-50 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
                               >
                                 {downloadingId === match.id ? (
                                   <>

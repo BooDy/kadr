@@ -74,20 +74,20 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
   }, [fetchScreen]);
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="min-h-screen bg-canvas text-text-main space-y-8 pb-12">
       {/* Loading State Skeleton */}
       {loading && (
         <div className="space-y-8 animate-pulse">
-          <div className="w-full h-96 rounded-3xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+          <div className="w-full h-96 rounded-3xl bg-panel border border-border-subtle flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-cta" />
           </div>
           <div className="space-y-3">
-            <div className="h-6 w-48 bg-zinc-800 rounded-md" />
+            <div className="h-6 w-48 bg-panel border border-border-subtle rounded-md" />
             <div className="flex gap-4 overflow-hidden">
               {[1, 2, 3, 4, 5].map((i) => (
                 <div
                   key={i}
-                  className="w-48 aspect-[2/3] rounded-2xl bg-zinc-900 border border-zinc-800/80 flex-shrink-0"
+                  className="w-48 aspect-[2/3] rounded-2xl bg-panel border border-border-subtle flex-shrink-0"
                 />
               ))}
             </div>
@@ -97,13 +97,13 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
 
       {/* Error State with Retry */}
       {!loading && error && (
-        <div className="p-8 rounded-3xl bg-zinc-900/60 border border-rose-900/40 text-center space-y-4 max-w-lg mx-auto">
-          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
-          <h3 className="text-lg font-bold text-white">Error Loading Content</h3>
-          <p className="text-sm text-zinc-400">{error}</p>
+        <div className="p-8 rounded-3xl bg-panel border border-border-subtle text-center space-y-4 max-w-lg mx-auto">
+          <AlertCircle className="w-12 h-12 text-cta mx-auto" />
+          <h3 className="text-lg font-bold text-text-main">Error Loading Content</h3>
+          <p className="text-sm text-muted">{error}</p>
           <button
             onClick={() => fetchScreen()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold shadow-md transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cta hover:bg-cta-hover text-white text-sm font-semibold shadow-md transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
           >
             <RotateCcw className="w-4 h-4" />
             Retry

@@ -29,7 +29,7 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
   return (
     <section
       aria-label={`Spotlight: ${item.title}`}
-      className="relative w-full rounded-3xl overflow-hidden min-h-[460px] sm:min-h-[520px] flex items-end border border-zinc-800/80 shadow-2xl bg-zinc-950"
+      className="relative w-full rounded-3xl overflow-hidden min-h-[460px] sm:min-h-[520px] flex items-end border border-border-subtle shadow-2xl bg-canvas"
     >
       {/* Background Artwork or Fallback Cinema Gradient */}
       <div className="absolute inset-0 z-0">
@@ -41,14 +41,14 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
             className="w-full h-full object-cover object-center filter brightness-[0.85]"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-tr from-zinc-950 via-zinc-900 to-rose-950/20 flex items-center justify-end pr-16 opacity-40">
-            <Clapperboard className="w-96 h-96 text-zinc-800/40 select-none stroke-[1]" />
+          <div className="w-full h-full bg-gradient-to-tr from-canvas via-panel to-canvas flex items-center justify-end pr-16 opacity-40">
+            <Clapperboard className="w-96 h-96 text-muted/40 select-none stroke-[1]" />
           </div>
         )}
 
-        {/* Cinematic Vignette & Gradient Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/60 to-transparent w-full md:w-3/4" />
+        {/* Cinematic Vignette & Gradient Overlays: Dark fade to canvas */}
+        <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/60 to-transparent w-full md:w-3/4" />
       </div>
 
       {/* Hero Content Details */}
@@ -57,43 +57,43 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 text-xs font-semibold">
           {/* Status Badge (RESUME or NEW) */}
           {isResume && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider text-[11px] font-bold">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-accent/20 text-accent border border-accent/40 uppercase tracking-wider text-[11px] font-bold">
               RESUME
             </span>
           )}
           {isNewRelease && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-400 border border-rose-500/30 uppercase tracking-wider text-[11px] font-bold">
-              <Sparkles className="w-3 h-3 text-rose-400" />
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-highlight/20 text-highlight border border-highlight/40 uppercase tracking-wider text-[11px] font-bold">
+              <Sparkles className="w-3 h-3 text-highlight" />
               NEW
             </span>
           )}
 
-          {/* Quality Badge */}
-          <span className="px-2.5 py-1 rounded-md bg-zinc-800/90 text-zinc-200 border border-zinc-700/60 tracking-wider text-[11px] font-bold">
+          {/* Rating / Quality Badge */}
+          <span className="px-2.5 py-1 rounded-md bg-highlight/20 text-highlight border border-highlight/40 tracking-wider text-[11px] font-bold">
             {qualityBadge}
           </span>
 
           {/* Release Year */}
           {item.release_year && (
-            <span className="px-2.5 py-1 rounded-md bg-zinc-900/80 text-zinc-300 border border-zinc-800 tracking-wider text-[11px]">
+            <span className="px-2.5 py-1 rounded-md bg-panel/80 text-text-main border border-border-subtle tracking-wider text-[11px]">
               {item.release_year}
             </span>
           )}
 
           {/* Media Type */}
-          <span className="px-2.5 py-1 rounded-md bg-zinc-900/80 text-zinc-400 border border-zinc-800 uppercase tracking-wider text-[10px]">
+          <span className="px-2.5 py-1 rounded-md bg-panel/80 text-muted border border-border-subtle uppercase tracking-wider text-[10px]">
             {item.media_type}
           </span>
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white drop-shadow-md">
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-text-main drop-shadow-md">
           {item.title}
         </h1>
 
         {/* Synopsis / Subtitle */}
         {item.subtitle && (
-          <p className="text-sm sm:text-base text-zinc-300 line-clamp-3 leading-relaxed max-w-2xl drop-shadow">
+          <p className="text-sm sm:text-base text-muted line-clamp-3 leading-relaxed max-w-2xl drop-shadow">
             {item.subtitle}
           </p>
         )}
@@ -102,7 +102,7 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
         <div className="flex flex-wrap items-center gap-3 pt-3">
           <button
             onClick={() => onPlay(item.id)}
-            className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm shadow-lg shadow-rose-950/50 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+            className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-semibold text-sm shadow-lg shadow-cta/25 focus-visible:ring-3 focus-visible:ring-highlight hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
           >
             <Play className="h-4 w-4 fill-white text-white" />
             Play Now
@@ -110,9 +110,9 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
 
           <button
             onClick={() => onMoreInfo(item.id)}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 hover:text-white font-semibold text-sm border border-zinc-700/70 backdrop-blur-md hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-panel/80 hover:bg-panel text-text-main border border-border-subtle font-semibold text-sm backdrop-blur-md focus-visible:ring-3 focus-visible:ring-highlight hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
           >
-            <Info className="h-4 w-4 text-zinc-400 group-hover:text-white" />
+            <Info className="h-4 w-4 text-muted group-hover:text-text-main" />
             More Info
           </button>
         </div>
