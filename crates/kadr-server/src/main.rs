@@ -7,7 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use kadr_core::models::{Library, User, UserRole};
 use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
-use kadr_server::api::{create_full_router, mount_web_serving};
+use kadr_server::api::{create_router_with_ingest, mount_web_serving};
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
@@ -170,8 +170,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut watchers = Vec::new();
 
     for lib in active_libraries {
-        if lib.path.exists() {
-            info!(library = %lib.name, path = ?lib.path, "Starting filesystem watcher");
+        let has_existing_path = lib.paths.iter().any(|p| p.exists()) || lib.path.exists();
+        if has_existing_path {
+            info!(library = %lib.name, path = ?lib.path, paths = ?lib.paths, "Starting filesystem watcher");
             let watcher = start_library_watcher(
                 lib,
                 pipeline.clone(),
@@ -312,7 +313,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .spawn_periodic_broadcaster(Duration::from_secs(5));
 
     // Assemble Axum HTTP router
-    let mut app = create_full_router(
+    let mut app = create_router_with_ingest(
         user_repo,
         playback_repo,
         media_repo,
@@ -326,12 +327,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         opensubtitles_client,
         event_bus,
         telemetry_collector,
-    )
-    .layer(axum::extract::Extension(ingest_tx.clone()))
-    .layer(axum::extract::Extension(pipeline.clone()))
-    .layer(axum::extract::Extension(Arc::new(
-        tokio::sync::RwLock::new(config.clone()),
-    )));
+        ingest_tx.clone(),
+        pipeline.clone(),
+        Arc::new(tokio::sync::RwLock::new(config.clone())),
+    );
 
     // Mount static web SPA serving if assets exist
     let env_web = std::env::var("KADR_WEB_DIR")

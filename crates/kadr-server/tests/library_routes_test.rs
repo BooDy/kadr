@@ -268,3 +268,110 @@ async fn test_system_config_routes() {
     assert_eq!(updated["debounce_millis"], 1000);
     assert!(!updated["use_ffprobe"].as_bool().unwrap());
 }
+
+#[tokio::test]
+async fn test_scan_library_routes_to_ingest_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.db");
+    let pool = kadr_storage::pool::create_pool(&db_path, 2).unwrap();
+    kadr_storage::pool::initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+
+    let admin_user = kadr_core::models::User {
+        id: "admin-scan".to_string(),
+        username: "admin".to_string(),
+        pin_hash: kadr_server::auth::pin::hash_pin("1234").expect("hash pin"),
+        role: kadr_core::models::UserRole::Admin,
+        created_at: 1_700_000_000,
+    };
+    user_repo.create(&admin_user).await.expect("create admin");
+    let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
+    let admin_token = jwt_svc.generate_token(&admin_user).expect("admin token");
+    let rate_limiter = RateLimiter::new(10, Duration::from_secs(60), Duration::from_secs(60));
+    let session_registry = Arc::new(SessionRegistry::new());
+    let layout_registry = LayoutRegistry::new();
+    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let temp_cache = dir.path().join("subtitles-cache");
+    let subtitle_service = Arc::new(SubtitleDeliveryService::new(
+        temp_cache,
+        SubtitleRepository::new(pool.clone()),
+        media_repo.clone(),
+    ));
+    let opensubtitles_client = Arc::new(OpenSubtitlesClient::new(None, None));
+    let event_bus = Arc::new(EventBus::default_bus());
+    let telemetry_collector = Arc::new(TelemetryCollector::new(
+        db_path,
+        session_registry.clone(),
+        event_bus.clone(),
+    ));
+
+    // Create a real channel and pipeline
+    let (ingest_tx, mut ingest_rx) = tokio::sync::mpsc::channel(10);
+    let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false));
+    let config = Arc::new(RwLock::new(AppConfig::default()));
+
+    let app = kadr_server::api::create_router_with_ingest(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo.clone(),
+        jwt_svc,
+        rate_limiter,
+        session_registry,
+        layout_registry,
+        widget_resolver,
+        subtitle_service,
+        opensubtitles_client,
+        event_bus,
+        telemetry_collector,
+        ingest_tx,
+        pipeline,
+        config,
+    );
+
+    // Create a media directory with a dummy movie file
+    let media_dir = dir.path().join("movies");
+    std::fs::create_dir_all(&media_dir).unwrap();
+    let movie_file = media_dir.join("Inception (2010).mkv");
+    std::fs::write(&movie_file, b"fake video content").unwrap();
+
+    let lib = lib_repo
+        .create_with_paths(
+            "test-lib-scan",
+            "Movies",
+            &[media_dir],
+            kadr_core::models::MediaType::Movie,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+    // Trigger scan
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/libraries/{}/scan", lib.id))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::ACCEPTED);
+
+    // Assert that the ingest worker channel receives the message
+    let msg = tokio::time::timeout(Duration::from_secs(3), ingest_rx.recv())
+        .await
+        .expect("Timeout waiting for IngestMessage")
+        .expect("Channel closed");
+
+    match msg {
+        kadr_ingest::watcher::IngestMessage::Upsert(item, _) => {
+            assert_eq!(item.title, "Inception");
+            assert_eq!(item.release_year, Some(2010));
+        }
+        _ => panic!("Expected Upsert message"),
+    }
+}

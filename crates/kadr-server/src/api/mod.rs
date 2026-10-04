@@ -33,7 +33,7 @@ use kadr_storage::repos::{
 use std::sync::Arc;
 
 #[allow(clippy::too_many_arguments)]
-pub fn create_router_with_events(
+pub fn create_router_with_ingest(
     user_repo: UserRepository,
     playback_repo: PlaybackRepository,
     media_repo: MediaItemRepository,
@@ -47,6 +47,9 @@ pub fn create_router_with_events(
     opensubtitles_client: Arc<OpenSubtitlesClient>,
     event_bus: Arc<EventBus>,
     telemetry_collector: Arc<TelemetryCollector>,
+    ingest_tx: tokio::sync::mpsc::Sender<kadr_ingest::watcher::IngestMessage>,
+    pipeline: Arc<kadr_ingest::watcher::IngestPipeline>,
+    config: Arc<tokio::sync::RwLock<crate::config::AppConfig>>,
 ) -> Router {
     let router = Router::new()
         // Public profile list & auth
@@ -178,17 +181,50 @@ pub fn create_router_with_events(
         .layer(Extension(event_bus.clone()))
         .layer(Extension((*event_bus).clone()))
         .layer(Extension(telemetry_collector))
-        .layer(Extension(
-            tokio::sync::mpsc::channel::<kadr_ingest::watcher::IngestMessage>(1).0,
-        ))
-        .layer(Extension(Arc::new(
-            kadr_ingest::watcher::IngestPipeline::new(false),
-        )))
-        .layer(Extension(Arc::new(tokio::sync::RwLock::new(
-            crate::config::AppConfig::default(),
-        ))));
+        .layer(Extension(ingest_tx))
+        .layer(Extension(pipeline))
+        .layer(Extension(config));
 
     mount_web_serving(router, std::path::Path::new("web/dist"))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_router_with_events(
+    user_repo: UserRepository,
+    playback_repo: PlaybackRepository,
+    media_repo: MediaItemRepository,
+    lib_repo: LibraryRepository,
+    jwt_svc: JwtService,
+    limiter: RateLimiter,
+    session_registry: Arc<SessionRegistry>,
+    layout_registry: LayoutRegistry,
+    widget_resolver: Arc<WidgetResolver>,
+    subtitle_service: Arc<SubtitleDeliveryService>,
+    opensubtitles_client: Arc<OpenSubtitlesClient>,
+    event_bus: Arc<EventBus>,
+    telemetry_collector: Arc<TelemetryCollector>,
+) -> Router {
+    let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
+    let dummy_pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false));
+    let default_config = Arc::new(tokio::sync::RwLock::new(crate::config::AppConfig::default()));
+    create_router_with_ingest(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo,
+        jwt_svc,
+        limiter,
+        session_registry,
+        layout_registry,
+        widget_resolver,
+        subtitle_service,
+        opensubtitles_client,
+        event_bus,
+        telemetry_collector,
+        dummy_tx,
+        dummy_pipeline,
+        default_config,
+    )
 }
 
 use tower_http::services::{ServeDir, ServeFile};

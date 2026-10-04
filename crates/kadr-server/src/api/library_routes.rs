@@ -194,7 +194,9 @@ pub async fn create_library(
         );
         for file in all_files {
             if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
-                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+                if let Err(e) = tx_clone.send(IngestMessage::Upsert(item, subs)).await {
+                    error!(error = %e, "Failed to send IngestMessage to worker channel");
+                }
             }
         }
     });
@@ -370,7 +372,9 @@ pub async fn scan_library(
         );
         for file in files {
             if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
-                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+                if let Err(e) = tx_clone.send(IngestMessage::Upsert(item, subs)).await {
+                    error!(error = %e, "Failed to send IngestMessage to worker channel");
+                }
             }
         }
     });
@@ -450,7 +454,9 @@ pub async fn add_library_path(
         );
         for file in files {
             if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
-                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+                if let Err(e) = tx_clone.send(IngestMessage::Upsert(item, subs)).await {
+                    error!(error = %e, "Failed to send IngestMessage to worker channel");
+                }
             }
         }
     });
