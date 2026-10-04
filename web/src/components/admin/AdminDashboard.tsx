@@ -210,7 +210,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
               statusMessage.type === 'success'
                 ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-300'
-                : 'bg-rose-950/80 border border-rose-500/50 text-rose-300'
+                : 'bg-cta/15 border border-cta/30 text-cta'
             }`}
           >
             {statusMessage.type === 'success' ? (
@@ -227,7 +227,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
       <div className="flex space-x-2 mt-6 border-b border-border-subtle pb-2">
         <button
           onClick={() => setActiveTab('libraries')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
             activeTab === 'libraries'
               ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
               : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
@@ -238,7 +238,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
         </button>
         <button
           onClick={() => setActiveTab('config')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
             activeTab === 'config'
               ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
               : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
@@ -249,7 +249,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
         </button>
         <button
           onClick={() => setActiveTab('users')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
             activeTab === 'users'
               ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
               : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
@@ -338,7 +338,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                       <button
                         onClick={() => handleScanLibrary(lib.id, lib.name)}
                         title="Re-scan directory for new media"
-                        className="flex items-center gap-1 px-3 py-1.5 bg-canvas/80 hover:bg-canvas text-text-main border border-border-subtle rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                        className="flex items-center gap-1 px-3 py-1.5 bg-canvas/80 hover:bg-canvas text-text-main border border-border-subtle rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                         Scan Now
@@ -346,7 +346,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                       <button
                         onClick={() => handleDeleteLibrary(lib.id, lib.name)}
                         title="Remove library"
-                        className="p-1.5 text-muted hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                        className="p-1.5 text-muted hover:text-cta hover:bg-cta/10 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -536,7 +536,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
               </h3>
               <button
                 onClick={() => setIsAddLibOpen(false)}
-                className="p-1 text-muted hover:text-text-main rounded-lg cursor-pointer"
+                className="p-1 text-muted hover:text-text-main rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -637,7 +637,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                     setIsPrivate(false);
                     setLibPin('');
                   }}
-                  className="px-4 py-2 bg-panel-hover hover:bg-canvas text-text-main border border-border-subtle rounded-xl text-sm font-medium transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-panel-hover hover:bg-canvas text-text-main border border-border-subtle rounded-xl text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
                 >
                   Cancel
                 </button>
@@ -665,7 +665,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
               </h3>
               <button
                 onClick={() => setIsAddUserOpen(false)}
-                className="p-1 text-muted hover:text-text-main rounded-lg cursor-pointer"
+                className="p-1 text-muted hover:text-text-main rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -714,7 +714,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddUserOpen(false)}
-                  className="px-4 py-2 bg-panel-hover hover:bg-canvas text-text-main border border-border-subtle rounded-xl text-sm font-medium transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-panel-hover hover:bg-canvas text-text-main border border-border-subtle rounded-xl text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
                 >
                   Cancel
                 </button>

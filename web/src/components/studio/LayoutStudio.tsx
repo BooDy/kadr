@@ -158,7 +158,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
         <div className="flex items-center gap-1.5 p-1 rounded-xl bg-panel border border-border-subtle self-start md:self-auto">
           <button
             onClick={() => setViewport('tv')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
               viewport === 'tv'
                 ? 'bg-accent text-canvas font-semibold shadow-sm'
                 : 'text-muted hover:text-text-main hover:bg-panel-hover'
@@ -169,7 +169,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
           </button>
           <button
             onClick={() => setViewport('tablet')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
               viewport === 'tablet'
                 ? 'bg-accent text-canvas font-semibold shadow-sm'
                 : 'text-muted hover:text-text-main hover:bg-panel-hover'
@@ -180,7 +180,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
           </button>
           <button
             onClick={() => setViewport('mobile')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
               viewport === 'mobile'
                 ? 'bg-accent text-canvas font-semibold shadow-sm'
                 : 'text-muted hover:text-text-main hover:bg-panel-hover'
@@ -201,7 +201,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
           <button
             key={s.id}
             onClick={() => setSelectedScreenId(s.id)}
-            className={`px-4 py-2 rounded-xl text-sm transition-all cursor-pointer ${
+            className={`px-4 py-2 rounded-xl text-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
               selectedScreenId === s.id
                 ? 'bg-panel text-accent font-semibold border border-border-subtle rounded-xl shadow-md'
                 : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl border border-transparent'
