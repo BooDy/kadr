@@ -40,12 +40,13 @@ async fn setup_test_context() -> (
     let lib_repo = LibraryRepository::new(pool.clone());
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Movies".to_string(),
             path: PathBuf::from("/tmp/movies"),
             media_type: MediaType::Movie,
             created_at: 1000,
+            ..Default::default()
         })
         .await
         .unwrap();

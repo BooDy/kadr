@@ -73,9 +73,10 @@ pub async fn create_library(
         path: payload.path,
         media_type: payload.media_type,
         created_at: now,
+        ..Default::default()
     };
 
-    if let Err(e) = lib_repo.create(&library).await {
+    if let Err(e) = lib_repo.insert(&library).await {
         error!(error = %e, "Failed to create library in database");
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }

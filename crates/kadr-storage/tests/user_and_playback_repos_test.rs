@@ -49,12 +49,13 @@ async fn test_user_and_playback_repositories() {
 
     // 2. Setup library and media item for foreign key reference
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Films".to_string(),
             path: PathBuf::from("/media"),
             media_type: MediaType::Movie,
             created_at: 1700000000,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -178,12 +179,13 @@ async fn test_get_states_for_items_batch() {
 
     // 3. Setup library & media items
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Films".to_string(),
             path: PathBuf::from("/media"),
             media_type: MediaType::Movie,
             created_at: 1700000000,
+            ..Default::default()
         })
         .await
         .unwrap();

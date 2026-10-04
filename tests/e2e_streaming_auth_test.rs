@@ -41,12 +41,13 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
     file.write_all(&sample_bytes).unwrap();
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Movies".to_string(),
             path: dir.path().to_path_buf(),
             media_type: MediaType::Movie,
             created_at: 1000,
+            ..Default::default()
         })
         .await
         .unwrap();

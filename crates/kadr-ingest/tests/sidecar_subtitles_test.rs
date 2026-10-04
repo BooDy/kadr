@@ -259,8 +259,9 @@ async fn test_ingest_worker_persists_subtitles() {
         path: PathBuf::from("/media"),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&library).await.unwrap();
+    lib_repo.insert(&library).await.unwrap();
 
     let media_repo = MediaItemRepository::new(pool.clone());
     let subtitle_repo = SubtitleRepository::new(pool.clone());

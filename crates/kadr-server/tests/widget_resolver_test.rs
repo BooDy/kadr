@@ -191,23 +191,25 @@ async fn setup_test_environment() -> (
         .unwrap();
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "movies".to_string(),
             name: "Movies".to_string(),
             path: PathBuf::from("/media/movies"),
             media_type: MediaType::Movie,
             created_at: 1000,
+            ..Default::default()
         })
         .await
         .unwrap();
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "shows".to_string(),
             name: "Shows".to_string(),
             path: PathBuf::from("/media/shows"),
             media_type: MediaType::Show,
             created_at: 1000,
+            ..Default::default()
         })
         .await
         .unwrap();

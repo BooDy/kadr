@@ -55,6 +55,8 @@ fn test_library_serialization_roundtrip() {
         name: "Movies".to_string(),
         path: PathBuf::from("/media/movies"),
         media_type: MediaType::Movie,
+        is_private: false,
+        pin_hash: None,
         created_at: 1700000000,
     };
 
@@ -62,6 +64,20 @@ fn test_library_serialization_roundtrip() {
     let deserialized: Library = serde_json::from_str(&serialized).expect("deserialization failed");
 
     assert_eq!(lib, deserialized);
+
+    // Verify pin_hash is skipped when serialized
+    let private_lib = Library {
+        id: "priv".to_string(),
+        name: "Private".to_string(),
+        path: PathBuf::from("/media/private"),
+        media_type: MediaType::Movie,
+        is_private: true,
+        pin_hash: Some("secret_hash".to_string()),
+        created_at: 1700000000,
+    };
+    let priv_json = serde_json::to_string(&private_lib).expect("serialize private");
+    assert!(!priv_json.contains("secret_hash"));
+    assert!(!priv_json.contains("pin_hash"));
 }
 
 #[test]

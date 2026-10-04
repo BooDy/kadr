@@ -36,6 +36,7 @@ async fn test_pipeline_processes_file_and_extracts_all_metadata() {
         path: dir.path().to_path_buf(),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
 
     let pipeline = IngestPipeline::new(false);
@@ -65,6 +66,7 @@ async fn test_pipeline_ignores_unparseable_or_non_media_files() {
         path: dir.path().to_path_buf(),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
 
     let pipeline = IngestPipeline::new(false);
@@ -114,8 +116,9 @@ async fn test_ingest_worker_upsert_and_delete() {
         path: std::path::PathBuf::from("/media"),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&library).await.unwrap();
+    lib_repo.insert(&library).await.unwrap();
 
     let repo = MediaItemRepository::new(pool.clone());
     let (tx, rx) = tokio::sync::mpsc::channel(10);
@@ -176,6 +179,7 @@ async fn test_start_library_watcher_initial_scan() {
         path: dir.path().to_path_buf(),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
 
     let pipeline = std::sync::Arc::new(IngestPipeline::new(false));
@@ -229,6 +233,7 @@ async fn test_pipeline_malformed_nfo_falls_back_to_filename_metadata() {
         path: dir.path().to_path_buf(),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
 
     let pipeline = IngestPipeline::new(false);
@@ -255,8 +260,9 @@ async fn test_ingest_worker_delete_purges_inflight_batch() {
         path: std::path::PathBuf::from("/media"),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&library).await.unwrap();
+    lib_repo.insert(&library).await.unwrap();
 
     let repo = MediaItemRepository::new(pool.clone());
     let (tx, rx) = tokio::sync::mpsc::channel(10);

@@ -86,12 +86,13 @@ async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
     let token = jwt_svc.generate_token(&user).expect("generate token");
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Movies".to_string(),
             path: PathBuf::from("/tmp/movies"),
             media_type: MediaType::Movie,
             created_at: 1000,
+            ..Default::default()
         })
         .await
         .expect("create library");

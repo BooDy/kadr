@@ -137,9 +137,10 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
         path: media_dir.clone(),
         media_type: MediaType::Movie,
         created_at: 1000,
+        ..Default::default()
     };
     lib_repo
-        .create(&library)
+        .insert(&library)
         .await
         .expect("Failed to register library");
 

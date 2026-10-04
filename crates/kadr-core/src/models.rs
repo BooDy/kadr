@@ -22,7 +22,25 @@ pub struct Library {
     pub name: String,
     pub path: PathBuf,
     pub media_type: MediaType,
+    #[serde(default)]
+    pub is_private: bool,
+    #[serde(default, skip_serializing)]
+    pub pin_hash: Option<String>,
     pub created_at: i64,
+}
+
+impl Default for Library {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            path: PathBuf::new(),
+            media_type: MediaType::Unknown,
+            is_private: false,
+            pin_hash: None,
+            created_at: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -19,6 +19,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
         path: PathBuf::from("/media/movies"),
         media_type: MediaType::Movie,
         created_at: 1000,
+        ..Default::default()
     };
     let shows_lib = Library {
         id: "shows".to_string(),
@@ -26,10 +27,11 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
         path: PathBuf::from("/media/shows"),
         media_type: MediaType::Show,
         created_at: 1000,
+        ..Default::default()
     };
 
-    lib_repo.create(&movies_lib).await.unwrap();
-    lib_repo.create(&shows_lib).await.unwrap();
+    lib_repo.insert(&movies_lib).await.unwrap();
+    lib_repo.insert(&shows_lib).await.unwrap();
 
     let items = vec![
         MediaItem {

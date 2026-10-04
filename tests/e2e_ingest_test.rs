@@ -24,8 +24,9 @@ async fn test_end_to_end_library_scan_and_reactive_ingest() {
         path: dir.path().to_path_buf(),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&library).await.unwrap();
+    lib_repo.insert(&library).await.unwrap();
 
     // 1. Pre-create a file before watcher starts
     let movie1 = dir

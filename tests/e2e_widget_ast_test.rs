@@ -75,23 +75,25 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
 
     // Register libraries
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib-movies".to_string(),
             name: "Movies".to_string(),
             path: temp_dir.path().join("movies"),
             media_type: MediaType::Movie,
             created_at: now - 1000,
+            ..Default::default()
         })
         .await
         .expect("Failed to create movies library");
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib-shows".to_string(),
             name: "Shows".to_string(),
             path: temp_dir.path().join("shows"),
             media_type: MediaType::Show,
             created_at: now - 1000,
+            ..Default::default()
         })
         .await
         .expect("Failed to create shows library");

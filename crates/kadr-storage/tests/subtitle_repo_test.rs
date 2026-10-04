@@ -54,12 +54,13 @@ async fn test_subtitle_migration_and_repository() {
     let sub_repo = SubtitleRepository::new(pool.clone());
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Movies".to_string(),
             path: PathBuf::from("/media/movies"),
             media_type: MediaType::Movie,
             created_at: 1700000000,
+            ..Default::default()
         })
         .await
         .expect("failed to create library");

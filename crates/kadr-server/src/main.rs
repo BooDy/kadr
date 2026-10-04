@@ -144,8 +144,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             created_at: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .as_secs() as i64,
+            ..Default::default()
         };
-        lib_repo.create(&lib).await?;
+        lib_repo.insert(&lib).await?;
     }
 
     let active_libraries = lib_repo.get_all().await?;

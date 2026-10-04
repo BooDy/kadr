@@ -18,8 +18,9 @@ async fn test_library_and_media_item_repositories() {
         path: PathBuf::from("/media/movies"),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&lib).await.unwrap();
+    lib_repo.insert(&lib).await.unwrap();
 
     let retrieved_lib = lib_repo
         .get_by_id("movies")
@@ -98,6 +99,7 @@ async fn test_library_repository_crud() {
         path: PathBuf::from("/media/series"),
         media_type: MediaType::Show,
         created_at: 1700000010,
+        ..Default::default()
     };
     let lib_a = Library {
         id: "anime".to_string(),
@@ -105,10 +107,11 @@ async fn test_library_repository_crud() {
         path: PathBuf::from("/media/anime"),
         media_type: MediaType::Show,
         created_at: 1700000020,
+        ..Default::default()
     };
 
-    lib_repo.create(&lib_b).await.unwrap();
-    lib_repo.create(&lib_a).await.unwrap();
+    lib_repo.insert(&lib_b).await.unwrap();
+    lib_repo.insert(&lib_a).await.unwrap();
 
     // get_all ordered by name ASC
     let all = lib_repo.get_all().await.unwrap();
@@ -119,7 +122,7 @@ async fn test_library_repository_crud() {
     // Upsert update
     let mut updated_b = lib_b.clone();
     updated_b.name = "Television Series".to_string();
-    lib_repo.create(&updated_b).await.unwrap();
+    lib_repo.insert(&updated_b).await.unwrap();
 
     let fetched_b = lib_repo.get_by_id("series").await.unwrap().expect("found");
     assert_eq!(fetched_b.name, "Television Series");
@@ -149,8 +152,9 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
         path: PathBuf::from("/media/classics"),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&lib).await.unwrap();
+    lib_repo.insert(&lib).await.unwrap();
 
     let items = (1..=5)
         .map(|i| MediaItem {
@@ -252,8 +256,9 @@ async fn test_media_item_get_by_ids_batch() {
         path: PathBuf::from("/media/test"),
         media_type: MediaType::Movie,
         created_at: 1700000000,
+        ..Default::default()
     };
-    lib_repo.create(&lib).await.unwrap();
+    lib_repo.insert(&lib).await.unwrap();
 
     let items = vec![
         MediaItem {
@@ -354,12 +359,13 @@ async fn test_media_item_find_by_paths_batch() {
     let media_repo = MediaItemRepository::new(pool.clone());
 
     lib_repo
-        .create(&Library {
+        .insert(&Library {
             id: "lib1".to_string(),
             name: "Lib 1".to_string(),
             path: PathBuf::from("/media/test"),
             media_type: MediaType::Movie,
             created_at: 1000,
+            ..Default::default()
         })
         .await
         .unwrap();
