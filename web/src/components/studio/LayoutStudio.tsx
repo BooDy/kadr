@@ -8,6 +8,15 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  Pencil,
+  Trash2,
+  Save,
+  RotateCcw,
+  Check,
+  X,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import type {
@@ -15,13 +24,17 @@ import type {
   ScreenSummary,
   WidgetNode,
   CardViewModel,
+  Library,
 } from '../../types';
 import { SpotlightWidget } from '../browse/SpotlightWidget';
 import { CarouselWidget } from '../browse/CarouselWidget';
 import { GridWidget } from '../browse/GridWidget';
 import { ItemDetailsModal } from '../browse/ItemDetailsModal';
+import { WidgetConfigModal } from './WidgetConfigModal';
 
 export type ViewportMode = 'tv' | 'tablet' | 'mobile';
+
+const DEFAULT_SCREENS = ['home', 'movies', 'shows'];
 
 export interface LayoutStudioProps {
   onPlayItem?: (itemId: number) => void;
@@ -56,13 +69,127 @@ const HydratedSpotlight: FC<{
     };
   }, [widget.id, widget.data]);
 
-  if (!item) return null;
+  const previewItem: CardViewModel = item || {
+    id: 9997,
+    title: 'Hero Spotlight Sample',
+    media_type: 'movie',
+    release_year: 2024,
+  };
 
   return (
     <SpotlightWidget
-      item={item}
+      item={previewItem}
       onPlay={(id) => onPlay?.(id)}
       onMoreInfo={onMoreInfo}
+    />
+  );
+};
+
+// Studio preview carousel wrapper providing fallback preview items
+const StudioCarousel: FC<{
+  widget: Extract<WidgetNode, { type: 'carousel' }>;
+  onSelectItem: (item: CardViewModel) => void;
+  onPlayItem?: (id: number) => void;
+}> = ({ widget, onSelectItem, onPlayItem }) => {
+  const [items, setItems] = useState<CardViewModel[]>(widget.items || []);
+
+  useEffect(() => {
+    if (widget.items && widget.items.length > 0) {
+      setItems(widget.items);
+      return;
+    }
+
+    let isMounted = true;
+    api
+      .getWidgetData(widget.id, 0, 10)
+      .then((data) => {
+        if (isMounted && data && data.length > 0) {
+          setItems(data);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [widget.id, widget.items]);
+
+  const previewItems: CardViewModel[] =
+    items.length > 0
+      ? items
+      : [
+          {
+            id: 9999,
+            title: `${widget.title || 'Widget'} Sample Item`,
+            media_type: 'movie',
+            release_year: 2024,
+          },
+        ];
+
+  return (
+    <CarouselWidget
+      key={widget.id}
+      widgetId={widget.id}
+      title={widget.title}
+      items={previewItems}
+      onSelectItem={onSelectItem}
+      onPlayItem={onPlayItem}
+    />
+  );
+};
+
+// Studio preview grid wrapper providing fallback preview items
+const StudioGrid: FC<{
+  widget: Extract<WidgetNode, { type: 'grid' }>;
+  onSelectItem: (item: CardViewModel) => void;
+  onPlayItem?: (id: number) => void;
+}> = ({ widget, onSelectItem, onPlayItem }) => {
+  const [items, setItems] = useState<CardViewModel[]>(widget.items || []);
+
+  useEffect(() => {
+    if (widget.items && widget.items.length > 0) {
+      setItems(widget.items);
+      return;
+    }
+
+    let isMounted = true;
+    api
+      .getWidgetData(widget.id, 0, 24)
+      .then((data) => {
+        if (isMounted && data && data.length > 0) {
+          setItems(data);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [widget.id, widget.items]);
+
+  const previewItems: CardViewModel[] =
+    items.length > 0
+      ? items
+      : [
+          {
+            id: 9998,
+            title: `${widget.title || 'Grid'} Sample Item`,
+            media_type: 'movie',
+            release_year: 2024,
+          },
+        ];
+
+  return (
+    <GridWidget
+      key={widget.id}
+      widgetId={widget.id}
+      title={widget.title}
+      columns={widget.columns}
+      items={previewItems}
+      totalCount={widget.total_count}
+      nextCursor={widget.next_cursor}
+      onSelectItem={onSelectItem}
+      onPlayItem={onPlayItem}
     />
   );
 };
@@ -81,20 +208,43 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
   const [error, setError] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
 
-  // Fetch available screens
+  // Studio mutation state
+  const [libraries, setLibraries] = useState<Library[]>([]);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
+  // Widget config modal state
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
+  const [editingWidgetIndex, setEditingWidgetIndex] = useState<number | null>(null);
+
+  // New screen creation modal state
+  const [isCreateScreenOpen, setIsCreateScreenOpen] = useState<boolean>(false);
+  const [newScreenId, setNewScreenId] = useState<string>('');
+  const [newScreenTitle, setNewScreenTitle] = useState<string>('');
+  const [createScreenError, setCreateScreenError] = useState<string | null>(null);
+
+  // Fetch libraries for widget config bindings
+  useEffect(() => {
+    api
+      .getLibraries()
+      .then((libs) => {
+        if (libs) setLibraries(libs);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch available screens on mount
   useEffect(() => {
     api
       .getScreens()
       .then((data) => {
         if (data && data.length > 0) {
           setScreens(data);
-          if (!data.some((s) => s.id === selectedScreenId)) {
-            setSelectedScreenId(data[0].id);
-          }
         }
       })
       .catch(() => {});
-  }, [selectedScreenId]);
+  }, []);
 
   // Fetch screen AST layout whenever selectedScreenId changes
   const fetchLayout = useCallback(async (screenId: string) => {
@@ -104,6 +254,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
       const data = await api.getScreen(screenId);
       setLayout(data);
       setDisabledWidgetIds(new Set());
+      setIsDirty(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to load screen layout: ${msg}`);
@@ -126,6 +277,140 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
       }
       return next;
     });
+  };
+
+  // Reorder widget in layout
+  const moveWidget = (index: number, direction: 'up' | 'down') => {
+    if (!layout) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= layout.widgets.length) return;
+
+    const newWidgets = [...layout.widgets];
+    const [moved] = newWidgets.splice(index, 1);
+    newWidgets.splice(targetIndex, 0, moved);
+
+    setLayout({
+      ...layout,
+      widgets: newWidgets,
+    });
+    setIsDirty(true);
+  };
+
+  // Delete widget from layout
+  const deleteWidget = (index: number) => {
+    if (!layout) return;
+    const newWidgets = layout.widgets.filter((_, i) => i !== index);
+    setLayout({
+      ...layout,
+      widgets: newWidgets,
+    });
+    setIsDirty(true);
+  };
+
+  // Save or update widget from modal
+  const handleSaveWidget = (savedWidget: WidgetNode) => {
+    if (!layout) return;
+
+    if (
+      editingWidgetIndex !== null &&
+      editingWidgetIndex >= 0 &&
+      editingWidgetIndex < layout.widgets.length
+    ) {
+      const updatedWidgets = [...layout.widgets];
+      updatedWidgets[editingWidgetIndex] = savedWidget;
+      setLayout({
+        ...layout,
+        widgets: updatedWidgets,
+      });
+    } else {
+      setLayout({
+        ...layout,
+        widgets: [...layout.widgets, savedWidget],
+      });
+    }
+    setIsDirty(true);
+    setIsConfigModalOpen(false);
+    setEditingWidgetIndex(null);
+  };
+
+  // Save layout persistence
+  const handleSaveLayout = async () => {
+    if (!layout) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      await api.saveScreen(layout.id, layout);
+      setIsDirty(false);
+      setSaveSuccess('Layout saved successfully');
+      setTimeout(() => setSaveSuccess(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to save screen layout: ${msg}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Reset default screen layout
+  const handleResetLayout = async () => {
+    const screenId = layout?.id || selectedScreenId;
+    if (!screenId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await api.resetScreen(screenId);
+      const refreshed = await api.getScreen(screenId);
+      setLayout(refreshed);
+      setIsDirty(false);
+      setDisabledWidgetIds(new Set());
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to reset screen layout: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete custom screen
+  const handleDeleteScreen = async () => {
+    const screenId = layout?.id || selectedScreenId;
+    if (!screenId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await api.deleteScreen(screenId);
+      setScreens((prev) => prev.filter((s) => s.id !== screenId));
+      setSelectedScreenId('home');
+      setIsDirty(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to delete screen: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create new custom screen
+  const handleCreateScreen = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedId = newScreenId.trim();
+    const trimmedTitle = newScreenTitle.trim();
+    if (!trimmedId || !trimmedTitle) return;
+
+    try {
+      const created = await api.createScreen({
+        id: trimmedId,
+        title: trimmedTitle,
+      });
+      setScreens((prev) => [...prev, { id: created.id, title: created.title }]);
+      setSelectedScreenId(created.id);
+      setLayout(created);
+      setIsDirty(false);
+      setIsCreateScreenOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setCreateScreenError(`Failed to create screen: ${msg}`);
+    }
   };
 
   const getViewportWrapperStyle = () => {
@@ -192,24 +477,91 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
         </div>
       </div>
 
-      {/* Screen Selector Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <span className="text-xs font-semibold text-muted uppercase tracking-wider mr-2">
-          Screens:
-        </span>
-        {screens.map((s) => (
+      {/* Screen Selector Tabs & Actions Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-subtle pb-4">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1 min-w-0">
+          <span className="text-xs font-semibold text-muted uppercase tracking-wider mr-1 flex-shrink-0">
+            Screens:
+          </span>
+          {screens.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSelectedScreenId(s.id)}
+              className={`px-4 py-2 rounded-xl text-sm transition-all cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
+                selectedScreenId === s.id
+                  ? 'bg-panel text-accent font-semibold border border-border-subtle rounded-xl shadow-md'
+                  : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl border border-transparent'
+              }`}
+            >
+              {s.title || s.id}
+            </button>
+          ))}
           <button
-            key={s.id}
-            onClick={() => setSelectedScreenId(s.id)}
-            className={`px-4 py-2 rounded-xl text-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
-              selectedScreenId === s.id
-                ? 'bg-panel text-accent font-semibold border border-border-subtle rounded-xl shadow-md'
-                : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl border border-transparent'
-            }`}
+            type="button"
+            onClick={() => {
+              setNewScreenId('');
+              setNewScreenTitle('');
+              setCreateScreenError(null);
+              setIsCreateScreenOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-accent hover:bg-accent/10 border border-accent/30 transition-colors cursor-pointer flex-shrink-0 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
           >
-            {s.title || s.id}
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ New Screen</span>
           </button>
-        ))}
+        </div>
+
+        {/* Top actions: Dirty indicator, Reset/Delete, Save Layout */}
+        <div className="flex items-center gap-2.5 flex-shrink-0 flex-wrap">
+          {isDirty && (
+            <span className="flex items-center gap-1.5 text-xs font-medium text-cta bg-cta/10 px-2.5 py-1 rounded-lg border border-cta/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-cta animate-pulse" />
+              Unsaved Changes
+            </span>
+          )}
+          {saveSuccess && (
+            <span className="flex items-center gap-1 text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+              <Check className="w-3.5 h-3.5" />
+              {saveSuccess}
+            </span>
+          )}
+
+          {DEFAULT_SCREENS.includes(selectedScreenId) ? (
+            <button
+              type="button"
+              onClick={handleResetLayout}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-muted hover:text-text-main hover:bg-panel-hover border border-border-subtle transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset to Default</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDeleteScreen}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/30 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Screen</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleSaveLayout}
+            disabled={!isDirty || isSaving || !layout}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold bg-cta hover:bg-cta-hover text-white shadow-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+          >
+            {isSaving ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
+            <span>Save Layout</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Studio Body: Widget Tree Inspector (Sidebar) & Live Preview */}
@@ -221,9 +573,22 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
               <Layers className="w-4 h-4 text-accent" />
               Widget Tree
             </h3>
-            <span className="text-[11px] font-mono text-muted bg-canvas px-2 py-0.5 rounded-md border border-border-subtle">
-              {layout?.widgets.length || 0} nodes
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-muted bg-canvas px-2 py-0.5 rounded-md border border-border-subtle">
+                {layout?.widgets.length || 0} nodes
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingWidgetIndex(null);
+                  setIsConfigModalOpen(true);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-accent hover:bg-accent/10 border border-accent/30 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ Add Widget</span>
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -248,6 +613,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                 return (
                   <div
                     key={widget.id}
+                    data-testid="widget-tree-item"
                     className={`font-mono text-xs text-text-main bg-canvas/80 p-3 rounded-xl border border-border-subtle transition-all ${
                       isEnabled
                         ? 'hover:border-border-subtle/80 hover:bg-canvas'
@@ -274,21 +640,60 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                         </span>
                       </div>
 
-                      {/* Enable/Disable Toggle */}
-                      <label className="flex items-center cursor-pointer p-1 rounded-lg hover:bg-panel-hover transition-colors">
-                        <input
-                          type="checkbox"
-                          aria-label={`Toggle ${widget.id}`}
-                          checked={isEnabled}
-                          onChange={() => toggleWidget(widget.id)}
-                          className="sr-only"
-                        />
-                        {isEnabled ? (
-                          <Eye className="w-4 h-4 text-accent" />
-                        ) : (
-                          <EyeOff className="w-4 h-4 text-muted" />
-                        )}
-                      </label>
+                      {/* Action buttons: Move Up, Move Down, Edit, Delete, Toggle */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          aria-label={`Move ${widget.id} up`}
+                          disabled={index === 0}
+                          onClick={() => moveWidget(index, 'up')}
+                          className="p-1 text-muted hover:text-text-main disabled:opacity-30 disabled:hover:text-muted rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Move ${widget.id} down`}
+                          disabled={index === layout.widgets.length - 1}
+                          onClick={() => moveWidget(index, 'down')}
+                          className="p-1 text-muted hover:text-text-main disabled:opacity-30 disabled:hover:text-muted rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Edit ${widget.id}`}
+                          onClick={() => {
+                            setEditingWidgetIndex(index);
+                            setIsConfigModalOpen(true);
+                          }}
+                          className="p-1 text-muted hover:text-accent rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${widget.id}`}
+                          onClick={() => deleteWidget(index)}
+                          className="p-1 text-muted hover:text-red-400 rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <label className="flex items-center cursor-pointer p-1 rounded-lg hover:bg-panel-hover transition-colors">
+                          <input
+                            type="checkbox"
+                            aria-label={`Toggle ${widget.id}`}
+                            checked={isEnabled}
+                            onChange={() => toggleWidget(widget.id)}
+                            className="sr-only"
+                          />
+                          {isEnabled ? (
+                            <Eye className="w-4 h-4 text-accent" />
+                          ) : (
+                            <EyeOff className="w-4 h-4 text-muted" />
+                          )}
+                        </label>
+                      </div>
                     </div>
                   </div>
                 );
@@ -300,8 +705,12 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
         {/* Live Interactive Preview Pane */}
         <div className="lg:col-span-3 space-y-4">
           <div className="flex items-center justify-between text-xs text-muted px-1">
-            <span>Viewport: <strong className="text-text-main capitalize">{viewport}</strong></span>
-            <span>Screen AST: <code className="text-accent">{selectedScreenId}</code></span>
+            <span>
+              Viewport: <strong className="text-text-main capitalize">{viewport}</strong>
+            </span>
+            <span>
+              Screen AST: <code className="text-accent">{selectedScreenId}</code>
+            </span>
           </div>
 
           <div
@@ -344,16 +753,10 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                   }
 
                   if (displayType === 'carousel' || widget.type === 'carousel') {
-                    const carouselWidget = widget as Extract<
-                      WidgetNode,
-                      { type: 'carousel' }
-                    >;
                     return (
-                      <CarouselWidget
-                        key={carouselWidget.id}
-                        widgetId={carouselWidget.id}
-                        title={carouselWidget.title}
-                        items={carouselWidget.items}
+                      <StudioCarousel
+                        key={widget.id}
+                        widget={widget as Extract<WidgetNode, { type: 'carousel' }>}
                         onSelectItem={(item) => setSelectedItemId(item.id)}
                         onPlayItem={(id) => onPlayItem?.(id)}
                       />
@@ -361,19 +764,10 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                   }
 
                   if (displayType === 'grid' || widget.type === 'grid') {
-                    const gridWidget = widget as Extract<
-                      WidgetNode,
-                      { type: 'grid' }
-                    >;
                     return (
-                      <GridWidget
-                        key={gridWidget.id}
-                        widgetId={gridWidget.id}
-                        title={gridWidget.title}
-                        columns={gridWidget.columns}
-                        items={gridWidget.items}
-                        totalCount={gridWidget.total_count}
-                        nextCursor={gridWidget.next_cursor}
+                      <StudioGrid
+                        key={widget.id}
+                        widget={widget as Extract<WidgetNode, { type: 'grid' }>}
                         onSelectItem={(item) => setSelectedItemId(item.id)}
                         onPlayItem={(id) => onPlayItem?.(id)}
                       />
@@ -387,6 +781,110 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
           </div>
         </div>
       </div>
+
+      {/* Widget Configuration Modal */}
+      <WidgetConfigModal
+        isOpen={isConfigModalOpen}
+        initialWidget={
+          editingWidgetIndex !== null && layout && layout.widgets[editingWidgetIndex]
+            ? layout.widgets[editingWidgetIndex]
+            : null
+        }
+        libraries={libraries}
+        onSave={handleSaveWidget}
+        onClose={() => {
+          setIsConfigModalOpen(false);
+          setEditingWidgetIndex(null);
+        }}
+      />
+
+      {/* New Screen Dialog */}
+      {isCreateScreenOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="New Screen"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="bg-panel border border-border-subtle rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
+              <h3 className="text-lg font-bold text-text-main flex items-center gap-2">
+                <Plus className="w-5 h-5 text-accent" />
+                Create New Screen
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsCreateScreenOpen(false)}
+                aria-label="Close modal"
+                className="p-1.5 text-muted hover:text-text-main hover:bg-panel-hover rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateScreen} className="space-y-4">
+              {createScreenError && (
+                <p className="text-xs text-cta">{createScreenError}</p>
+              )}
+
+              <div>
+                <label
+                  htmlFor="screen-id-input"
+                  className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+                >
+                  Screen ID
+                </label>
+                <input
+                  id="screen-id-input"
+                  aria-label="Screen ID"
+                  type="text"
+                  required
+                  value={newScreenId}
+                  onChange={(e) => setNewScreenId(e.target.value)}
+                  placeholder="e.g. anime, kids, live_tv"
+                  className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main placeholder:text-muted/60 transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="screen-title-input"
+                  className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+                >
+                  Screen Title
+                </label>
+                <input
+                  id="screen-title-input"
+                  aria-label="Screen Title"
+                  type="text"
+                  required
+                  value={newScreenTitle}
+                  onChange={(e) => setNewScreenTitle(e.target.value)}
+                  placeholder="e.g. Anime Hub, Kids Corner"
+                  className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main placeholder:text-muted/60 transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-border-subtle flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateScreenOpen(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-muted hover:text-text-main hover:bg-panel-hover transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-sm font-bold bg-cta hover:bg-cta-hover text-white shadow-md flex items-center gap-2 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Screen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Item Details Inspection Modal inside Studio */}
       <ItemDetailsModal

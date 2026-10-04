@@ -187,4 +187,245 @@ describe('LayoutStudio Component', () => {
 
     expect(onPlayItem).toHaveBeenCalledWith(101);
   });
+
+  it('reorders widgets up and down, updates tree order, and marks layout dirty', async () => {
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+      expect(screen.getByText('continue_watching_row')).toBeDefined();
+    });
+
+    const moveHeroDown = screen.getByRole('button', { name: /move hero_home down/i });
+    const moveHeroUp = screen.getByRole('button', { name: /move hero_home up/i });
+
+    expect((moveHeroUp as HTMLButtonElement).disabled).toBe(true);
+    expect((moveHeroDown as HTMLButtonElement).disabled).toBe(false);
+
+    // Save button should be disabled initially
+    const saveBtn = screen.getByRole('button', { name: /save layout/i });
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+
+    // Move hero_home down
+    fireEvent.click(moveHeroDown);
+
+    // Now continue_watching_row is first (#1) and hero_home is second (#2)
+    const widgetCards = screen.getAllByTestId('widget-tree-item');
+    expect(within(widgetCards[0]).getByText('continue_watching_row')).toBeDefined();
+    expect(within(widgetCards[1]).getByText('hero_home')).toBeDefined();
+
+    // Layout should be dirty
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/unsaved changes/i)).toBeDefined();
+
+    // Move hero_home back up
+    const newMoveHeroUp = screen.getByRole('button', { name: /move hero_home up/i });
+    fireEvent.click(newMoveHeroUp);
+
+    const reorderedCards = screen.getAllByTestId('widget-tree-item');
+    expect(within(reorderedCards[0]).getByText('hero_home')).toBeDefined();
+    expect(within(reorderedCards[1]).getByText('continue_watching_row')).toBeDefined();
+  });
+
+  it('adds a new widget via WidgetConfigModal and updates preview', async () => {
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    const addBtn = screen.getByRole('button', { name: /\+ add widget/i });
+    fireEvent.click(addBtn);
+
+    // Modal opens
+    expect(screen.getByRole('dialog', { name: /add widget/i })).toBeDefined();
+
+    // Fill in Title
+    const titleInput = screen.getByLabelText(/^title$/i);
+    fireEvent.change(titleInput, { target: { value: 'Trending Action' } });
+
+    // Submit modal
+    const saveWidgetBtn = screen.getByRole('button', { name: /save widget/i });
+    fireEvent.click(saveWidgetBtn);
+
+    // Modal closed
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /add widget/i })).toBeNull();
+    });
+
+    // Check widget tree and preview
+    const addMatches = screen.getAllByText('Trending Action');
+    expect(addMatches.length).toBeGreaterThanOrEqual(2);
+
+    // Check preview
+    const preview = screen.getByTestId('viewport-frame');
+    expect(within(preview).getByText('Trending Action')).toBeDefined();
+
+    // Save button enabled
+    const saveBtn = screen.getByRole('button', { name: /save layout/i });
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('edits an existing widget and updates preview', async () => {
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('continue_watching_row')).toBeDefined();
+    });
+
+    const editBtn = screen.getByRole('button', { name: /edit continue_watching_row/i });
+    fireEvent.click(editBtn);
+
+    expect(screen.getByRole('dialog', { name: /edit widget/i })).toBeDefined();
+
+    const titleInput = screen.getByLabelText(/^title$/i) as HTMLInputElement;
+    expect(titleInput.value).toBe('Continue Watching');
+
+    fireEvent.change(titleInput, { target: { value: 'Watch Next Queue' } });
+
+    const saveWidgetBtn = screen.getByRole('button', { name: /save widget/i });
+    fireEvent.click(saveWidgetBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /edit widget/i })).toBeNull();
+    });
+
+    const editMatches = screen.getAllByText('Watch Next Queue');
+    expect(editMatches.length).toBeGreaterThanOrEqual(2);
+    const preview = screen.getByTestId('viewport-frame');
+    expect(within(preview).getByText('Watch Next Queue')).toBeDefined();
+  });
+
+  it('deletes a widget from tree and preview', async () => {
+    render(<LayoutStudio />);
+
+    const preview = screen.getByTestId('viewport-frame');
+    await waitFor(() => {
+      expect(within(preview).getByText('Interstellar Cinema')).toBeDefined();
+    });
+
+    const deleteBtn = screen.getByRole('button', { name: /delete hero_home/i });
+    fireEvent.click(deleteBtn);
+
+    expect(screen.queryByText('hero_home')).toBeNull();
+    expect(within(preview).queryByText('Interstellar Cinema')).toBeNull();
+
+    const saveBtn = screen.getByRole('button', { name: /save layout/i });
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('saves modified layout via api.saveScreen and clears dirty state', async () => {
+    const saveSpy = vi.spyOn(api, 'saveScreen').mockResolvedValue(mockHomeLayout);
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    const moveHeroDown = screen.getByRole('button', { name: /move hero_home down/i });
+    fireEvent.click(moveHeroDown);
+
+    const saveBtn = screen.getByRole('button', { name: /save layout/i });
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(saveSpy).toHaveBeenCalledWith('home', expect.objectContaining({
+        id: 'home',
+        widgets: expect.arrayContaining([
+          expect.objectContaining({ id: 'continue_watching_row' }),
+          expect.objectContaining({ id: 'hero_home' }),
+        ]),
+      }));
+    });
+
+    await waitFor(() => {
+      expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByText(/unsaved changes/i)).toBeNull();
+    });
+  });
+
+  it('resets layout to default via api.resetScreen', async () => {
+    const resetSpy = vi.spyOn(api, 'resetScreen').mockResolvedValue(mockHomeLayout);
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    // Delete a widget to make it dirty
+    const deleteBtn = screen.getByRole('button', { name: /delete hero_home/i });
+    fireEvent.click(deleteBtn);
+    expect(screen.queryByText('hero_home')).toBeNull();
+
+    const resetBtn = screen.getByRole('button', { name: /reset to default/i });
+    fireEvent.click(resetBtn);
+
+    await waitFor(() => {
+      expect(resetSpy).toHaveBeenCalledWith('home');
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    const saveBtn = screen.getByRole('button', { name: /save layout/i });
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('creates a new screen and deletes a custom screen', async () => {
+    vi.spyOn(api, 'getScreen').mockImplementation(async (id: string) => {
+      if (id === 'anime') {
+        return { id: 'anime', title: 'Anime Channel', widgets: [] };
+      }
+      if (id === 'movies') return mockMoviesLayout;
+      return mockHomeLayout;
+    });
+
+    const createSpy = vi.spyOn(api, 'createScreen').mockResolvedValue({
+      id: 'anime',
+      title: 'Anime Channel',
+      widgets: [],
+    });
+    const deleteSpy = vi.spyOn(api, 'deleteScreen').mockResolvedValue(undefined);
+
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    const newScreenBtn = screen.getByRole('button', { name: /\+ new screen/i });
+    fireEvent.click(newScreenBtn);
+
+    const dialog = screen.getByRole('dialog', { name: /new screen/i });
+    expect(dialog).toBeDefined();
+
+    const idInput = screen.getByLabelText(/screen id/i);
+    const titleInput = screen.getByLabelText(/screen title/i);
+
+    fireEvent.change(idInput, { target: { value: 'anime' } });
+    fireEvent.change(titleInput, { target: { value: 'Anime Channel' } });
+
+    const submitBtn = screen.getByRole('button', { name: /create screen/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalledWith({
+        id: 'anime',
+        title: 'Anime Channel',
+      });
+      expect(screen.getByRole('button', { name: /^anime channel$/i })).toBeDefined();
+    });
+
+    // For custom screen 'anime', "Delete Screen" button is visible instead of "Reset to Default"
+    const deleteScreenBtn = screen.getByRole('button', { name: /delete screen/i });
+    expect(deleteScreenBtn).toBeDefined();
+    expect(screen.queryByRole('button', { name: /reset to default/i })).toBeNull();
+
+    fireEvent.click(deleteScreenBtn);
+
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith('anime');
+      expect(screen.queryByRole('button', { name: /^anime channel$/i })).toBeNull();
+    });
+  });
 });
