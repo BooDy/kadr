@@ -151,14 +151,19 @@ export interface SubtitleTrack {
   stream_url: string;
 }
 
-export interface OnlineSubtitleMatch {
+export interface SubtitleSearchResult {
   id: string;
   language: string;
-  release_name?: string;
-  hearing_impaired: boolean;
   format: string;
-  download_count: number;
+  release_name?: string;
+  hearing_impaired?: boolean;
+  download_count?: number;
   rating?: number;
+}
+
+export interface OnlineSubtitleMatch extends SubtitleSearchResult {
+  hearing_impaired: boolean;
+  download_count: number;
 }
 
 export interface OnlineSubtitleSearchResponse {
