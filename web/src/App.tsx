@@ -88,23 +88,30 @@ export const App: FC = () => {
     setCurrentView('player');
   };
 
+  const navItemClass = (isActive: boolean) =>
+    `flex items-center gap-2 px-3 py-2 rounded-xl transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+      isActive
+        ? 'text-accent bg-canvas/70 font-semibold border border-border-subtle'
+        : 'text-muted hover:text-text-main hover:bg-panel-hover border border-transparent'
+    }`;
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-rose-500 selection:text-white">
+    <div className="min-h-screen bg-canvas text-text-main flex flex-col font-sans selection:bg-accent selection:text-white">
       {/* Cinema App Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md">
+      <header className="sticky top-0 z-40 w-full border-b border-border-subtle bg-panel/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Logo & Brand */}
           <div className="flex items-center gap-8">
             <button
               onClick={() => setCurrentView('home')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none"
+              className="flex items-center gap-2.5 text-left group focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none rounded-xl"
             >
               <img
                 src="/kadr-logo-ui.png"
                 alt="KADR Logo"
                 className="h-9 w-9 object-contain drop-shadow group-hover:scale-105 transition-transform duration-200"
               />
-              <span className="text-xl font-bold tracking-tight text-white group-hover:text-amber-400 transition-colors">
+              <span className="text-xl font-bold tracking-tight text-text-main group-hover:text-accent transition-colors">
                 KADR
               </span>
             </button>
@@ -113,33 +120,21 @@ export const App: FC = () => {
             <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
               <button
                 onClick={() => handleNavigate('home')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                  currentView === 'home'
-                    ? 'text-white bg-zinc-800/90 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
+                className={navItemClass(currentView === 'home')}
               >
                 <Home className="h-4 w-4" />
                 Home
               </button>
               <button
                 onClick={() => handleNavigate('movies')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                  currentView === 'movies'
-                    ? 'text-white bg-zinc-800/90 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
+                className={navItemClass(currentView === 'movies')}
               >
                 <Film className="h-4 w-4" />
                 Movies
               </button>
               <button
                 onClick={() => handleNavigate('shows')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                  currentView === 'shows'
-                    ? 'text-white bg-zinc-800/90 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
+                className={navItemClass(currentView === 'shows')}
               >
                 <Tv className="h-4 w-4" />
                 Shows
@@ -153,17 +148,13 @@ export const App: FC = () => {
                   <button
                     key={lib.id}
                     onClick={() => handleSelectLibrary(lib)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                      isCurrent
-                        ? 'text-white bg-zinc-800/90 font-semibold'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                    }`}
+                    className={navItemClass(isCurrent)}
                   >
                     {lib.is_private ? (
                       isUnlocked ? (
-                        <Unlock className="h-4 w-4 text-emerald-400" />
+                        <Unlock className="h-4 w-4 text-accent" />
                       ) : (
-                        <Lock className="h-4 w-4 text-amber-400" />
+                        <Lock className="h-4 w-4 text-highlight" />
                       )
                     ) : lib.media_type === 'Movie' ? (
                       <Film className="h-4 w-4" />
@@ -173,10 +164,10 @@ export const App: FC = () => {
                     <span>{lib.name}</span>
                     {lib.is_private && (
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium border flex items-center gap-1 ${
+                        className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium border flex items-center gap-1 ${
                           isUnlocked
-                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
-                            : 'bg-amber-950/80 text-amber-300 border-amber-500/50'
+                            ? 'bg-panel text-accent border-border-subtle'
+                            : 'bg-panel text-highlight border-border-subtle'
                         }`}
                       >
                         {isUnlocked ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
@@ -189,22 +180,14 @@ export const App: FC = () => {
 
               <button
                 onClick={() => handleNavigate('studio')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                  currentView === 'studio'
-                    ? 'text-white bg-zinc-800/90 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
+                className={navItemClass(currentView === 'studio')}
               >
                 <Layout className="h-4 w-4" />
                 Studio
               </button>
               <button
                 onClick={() => handleNavigate('telemetry')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                  currentView === 'telemetry'
-                    ? 'text-white bg-zinc-800/90 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
+                className={navItemClass(currentView === 'telemetry')}
               >
                 <Activity className="h-4 w-4" />
                 Telemetry
@@ -212,11 +195,7 @@ export const App: FC = () => {
               {currentUser?.role === 'admin' && (
                 <button
                   onClick={() => handleNavigate('admin')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                    currentView === 'admin'
-                      ? 'text-white bg-zinc-800/90 font-semibold'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                  }`}
+                  className={navItemClass(currentView === 'admin')}
                 >
                   <Settings className="h-4 w-4" />
                   Admin
@@ -230,15 +209,15 @@ export const App: FC = () => {
             {currentUser ? (
               <div className="flex items-center gap-2 sm:gap-3">
                 {/* Active user avatar chip */}
-                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800">
-                  <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-rose-500 to-amber-500 flex items-center justify-center text-xs font-bold text-white uppercase">
+                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-panel border border-border-subtle">
+                  <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-accent to-highlight flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
                     {currentUser.username[0] || 'U'}
                   </div>
-                  <span className="text-xs font-medium text-zinc-300">
+                  <span className="text-xs font-medium text-text-main">
                     {currentUser.username}
                   </span>
                   {currentUser.role === 'admin' && (
-                    <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-rose-400 border border-rose-500/30">
+                    <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold text-accent border border-accent/30">
                       ADMIN
                     </span>
                   )}
@@ -248,9 +227,9 @@ export const App: FC = () => {
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
                   title="Switch Profile"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-300 hover:text-white bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-text-main hover:text-white bg-panel hover:bg-panel-hover border border-border-subtle transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                 >
-                  <Users className="h-3.5 w-3.5 text-zinc-400" />
+                  <Users className="h-3.5 w-3.5 text-muted" />
                   <span className="hidden sm:inline">Switch Profile</span>
                 </button>
 
@@ -258,7 +237,7 @@ export const App: FC = () => {
                 <button
                   onClick={handleLogout}
                   title="Sign out"
-                  className="p-2 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800/80 transition-colors"
+                  className="p-2 rounded-xl text-muted hover:text-accent hover:bg-panel-hover border border-transparent hover:border-border-subtle transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -319,7 +298,7 @@ export const App: FC = () => {
         {/* Switch Profile Modal (when already authenticated and user clicked Switch Profile) */}
         {currentUser && isAuthModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-2xl rounded-3xl border border-zinc-800 bg-zinc-950/95 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+            <div className="relative w-full max-w-2xl rounded-2xl border border-border-subtle bg-panel/95 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
               <ProfileSelect
                 currentUser={currentUser}
                 onSuccess={handleAuthSuccess}
@@ -333,7 +312,7 @@ export const App: FC = () => {
         {/* PinKeypad Modal for Private Library Unlock */}
         {libraryToUnlock && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950/95 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+            <div className="relative w-full max-w-md rounded-2xl border border-border-subtle bg-panel/95 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
               <PinKeypad
                 title={`Unlock ${libraryToUnlock.name}`}
                 subtitle="Enter 4-digit library PIN"
@@ -354,7 +333,7 @@ export const App: FC = () => {
       </main>
 
       {/* Cinema Footer */}
-      <footer className="border-t border-zinc-900 py-6 text-center text-xs text-zinc-600">
+      <footer className="border-t border-border-subtle py-6 text-center text-xs text-muted">
         <p>Kadr Cinema Server &copy; 2026. Built with Vite, React & Axum.</p>
       </footer>
     </div>
