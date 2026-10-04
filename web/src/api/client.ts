@@ -3,6 +3,7 @@ import type {
   CreateLibraryPayload,
   CreateUserPayload,
   DownloadSubtitleRequest,
+  FsBrowseResponse,
   ItemDetailsPayload,
   Library,
   OnlineSubtitleSearchResponse,
@@ -450,6 +451,28 @@ export class ApiClient {
         method: 'POST',
       }
     );
+  }
+
+  public async addLibraryPath(libraryId: string, path: string): Promise<void> {
+    await this.request<void>(`/api/v1/libraries/${encodeURIComponent(libraryId)}/paths`, {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    });
+  }
+
+  public async removeLibraryPath(libraryId: string, path: string): Promise<void> {
+    await this.request<void>(
+      `/api/v1/libraries/${encodeURIComponent(libraryId)}/paths?path=${encodeURIComponent(path)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  // Filesystem Browsing
+  public async browseFilesystem(path?: string): Promise<FsBrowseResponse> {
+    const query = path ? `?path=${encodeURIComponent(path)}` : '';
+    return this.request<FsBrowseResponse>(`/api/v1/system/fs${query}`);
   }
 
   // System Configuration

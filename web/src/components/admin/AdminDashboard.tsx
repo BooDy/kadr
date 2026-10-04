@@ -14,9 +14,11 @@ import {
   X,
   HardDrive,
   Lock,
+  Folder,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import type { Library, SystemConfig, User } from '../../types';
+import { FolderPickerModal } from './FolderPickerModal';
 
 interface AdminDashboardProps {
   onClose?: () => void;
@@ -33,7 +35,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   // Add Library Modal state
   const [isAddLibOpen, setIsAddLibOpen] = useState(false);
   const [libName, setLibName] = useState('');
-  const [libPath, setLibPath] = useState('');
+  const [libPaths, setLibPaths] = useState<string[]>([]);
+  const [isAddLibPickerOpen, setIsAddLibPickerOpen] = useState(false);
+  const [cardPickerLibId, setCardPickerLibId] = useState<string | null>(null);
   const [libMediaType, setLibMediaType] = useState<'Movie' | 'Episode'>('Movie');
   const [isPrivate, setIsPrivate] = useState(false);
   const [libPin, setLibPin] = useState('');
@@ -89,7 +93,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
 
   const handleCreateLibrary = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!libName.trim() || !libPath.trim()) return;
+    if (!libName.trim() || libPaths.length === 0) return;
 
     if (isPrivate && libPin.length !== 4) {
       showStatus('error', 'PIN must be exactly 4 digits.');
@@ -100,7 +104,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
     try {
       const created = await api.createLibrary({
         name: libName.trim(),
-        path: libPath.trim(),
+        paths: libPaths,
         media_type: libMediaType,
         is_private: isPrivate,
         pin: isPrivate ? libPin : undefined,
@@ -108,7 +112,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
       setLibraries((prev) => [...prev, created]);
       setIsAddLibOpen(false);
       setLibName('');
-      setLibPath('');
+      setLibPaths([]);
       setIsPrivate(false);
       setLibPin('');
       showStatus('success', `Library "${created.name}" created and queued for initial scan.`);
@@ -117,6 +121,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
       showStatus('error', msg);
     } finally {
       setIsSubmittingLib(false);
+    }
+  };
+
+  const handleAddPathToLibrary = async (libraryId: string, path: string) => {
+    try {
+      await api.addLibraryPath(libraryId, path);
+      setLibraries((prev) =>
+        prev.map((lib) => {
+          if (lib.id === libraryId) {
+            const currentPaths = lib.paths && lib.paths.length > 0 ? lib.paths : [lib.path];
+            if (!currentPaths.includes(path)) {
+              const updatedPaths = [...currentPaths, path];
+              return { ...lib, paths: updatedPaths, path: updatedPaths[0] };
+            }
+          }
+          return lib;
+        })
+      );
+      showStatus('success', `Path "${path}" added to library.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add folder path';
+      showStatus('error', msg);
+    }
+  };
+
+  const handleRemovePath = async (libraryId: string, path: string) => {
+    try {
+      await api.removeLibraryPath(libraryId, path);
+      setLibraries((prev) =>
+        prev.map((lib) => {
+          if (lib.id === libraryId) {
+            const currentPaths = lib.paths && lib.paths.length > 0 ? lib.paths : [lib.path];
+            const updatedPaths = currentPaths.filter((p) => p !== path);
+            return {
+              ...lib,
+              paths: updatedPaths,
+              path: updatedPaths[0] || '',
+            };
+          }
+          return lib;
+        })
+      );
+      showStatus('success', `Path "${path}" removed from library.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to remove folder path';
+      showStatus('error', msg);
     }
   };
 
@@ -325,8 +375,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                         </span>
                       </div>
                     </div>
-                    <div className="text-xs font-mono text-muted break-all bg-canvas/80 p-2.5 rounded-lg border border-border-subtle mb-4">
-                      {lib.path}
+                    {/* Monitored Folder Paths */}
+                    <div className="mb-4 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] uppercase tracking-wider text-muted font-semibold">
+                          Monitored Paths ({((lib.paths && lib.paths.length > 0) ? lib.paths : [lib.path]).length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCardPickerLibId(lib.id)}
+                          className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 font-medium cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight px-2 py-0.5 rounded-md hover:bg-accent/10 transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                          + Add Folder
+                        </button>
+                      </div>
+
+                      {((lib.paths && lib.paths.length > 0) ? lib.paths : [lib.path]).map((p) => {
+                        const allPaths = (lib.paths && lib.paths.length > 0) ? lib.paths : [lib.path];
+                        const isOnlyPath = allPaths.length <= 1;
+                        return (
+                          <div
+                            key={p}
+                            className="flex items-center justify-between text-xs font-mono text-muted bg-canvas/80 p-2 rounded-lg border border-border-subtle"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 mr-2">
+                              <Folder className="w-3.5 h-3.5 text-accent shrink-0" />
+                              <span className="truncate text-text-main" title={p}>{p}</span>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isOnlyPath}
+                              onClick={() => handleRemovePath(lib.id, p)}
+                              title={isOnlyPath ? 'At least one path is required' : 'Remove path'}
+                              aria-label={`Remove path ${p}`}
+                              className="p-1 text-muted hover:text-cta hover:bg-cta/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -535,7 +624,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                 Add Media Library
               </h3>
               <button
-                onClick={() => setIsAddLibOpen(false)}
+                onClick={() => {
+                  setIsAddLibOpen(false);
+                  setLibName('');
+                  setLibPaths([]);
+                  setIsPrivate(false);
+                  setLibPin('');
+                }}
                 className="p-1 text-muted hover:text-text-main rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
               >
                 <X className="w-5 h-5" />
@@ -568,17 +663,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-text-main mb-1">Folder Path on Server</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="/var/lib/kadr/media/movies"
-                  value={libPath}
-                  onChange={(e) => setLibPath(e.target.value)}
-                  className="w-full bg-canvas border border-border-subtle rounded-xl px-3 py-2 text-sm font-mono text-text-main placeholder:text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-                />
-                <p className="text-xs text-muted mt-1">
-                  Absolute path on the host where video files (.mkv, .mp4, .avi) are stored.
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-medium text-text-main">Folder Paths on Server</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddLibPickerOpen(true)}
+                    className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 font-medium cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight px-2 py-1 rounded-lg bg-accent/10 border border-accent/20"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    + Add Server Folder
+                  </button>
+                </div>
+
+                {libPaths.length === 0 ? (
+                  <div className="p-4 border border-dashed border-border-subtle bg-canvas/40 rounded-xl text-center">
+                    <Folder className="w-6 h-6 text-muted mx-auto mb-1.5" />
+                    <p className="text-xs text-muted">
+                      No folders selected yet. Click "+ Add Server Folder" to browse.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {libPaths.map((p) => (
+                      <div
+                        key={p}
+                        className="flex items-center justify-between px-3 py-2 bg-canvas/80 border border-border-subtle rounded-xl text-xs font-mono text-text-main"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 mr-2">
+                          <Folder className="w-3.5 h-3.5 text-accent shrink-0" />
+                          <span className="truncate" title={p}>{p}</span>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={`Remove folder ${p}`}
+                          onClick={() => setLibPaths((prev) => prev.filter((item) => item !== p))}
+                          className="p-1 text-muted hover:text-cta hover:bg-cta/10 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted mt-1.5">
+                  Select one or more server directories where video files are located.
                 </p>
               </div>
 
@@ -634,6 +762,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                   type="button"
                   onClick={() => {
                     setIsAddLibOpen(false);
+                    setLibName('');
+                    setLibPaths([]);
                     setIsPrivate(false);
                     setLibPin('');
                   }}
@@ -643,7 +773,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingLib}
+                  disabled={isSubmittingLib || libPaths.length === 0}
                   className="px-4 py-2 bg-cta hover:bg-cta-hover text-white font-semibold rounded-xl text-sm transition-colors shadow-md disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
                 >
                   {isSubmittingLib ? 'Creating...' : 'Create Library'}
@@ -730,6 +860,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
           </div>
         </div>
       )}
+
+      {/* Folder Picker for Add Library Modal */}
+      <FolderPickerModal
+        isOpen={isAddLibPickerOpen}
+        onClose={() => setIsAddLibPickerOpen(false)}
+        onSelect={(selectedPath) => {
+          if (!libPaths.includes(selectedPath)) {
+            setLibPaths((prev) => [...prev, selectedPath]);
+          }
+        }}
+      />
+
+      {/* Folder Picker for Existing Library Card */}
+      <FolderPickerModal
+        isOpen={!!cardPickerLibId}
+        onClose={() => setCardPickerLibId(null)}
+        onSelect={(selectedPath) => {
+          if (cardPickerLibId) {
+            handleAddPathToLibrary(cardPickerLibId, selectedPath);
+          }
+        }}
+      />
     </div>
   );
 };

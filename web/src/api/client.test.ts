@@ -418,5 +418,82 @@ describe('ApiClient', () => {
       expect(sessionStorage.getItem('kadr_unlocked_libraries')).toBeNull();
     });
   });
+
+  describe('Multi-Path and Filesystem Browsing', () => {
+    it('browseFilesystem requests /api/v1/system/fs with encoded path query', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          current_path: '/media/movies',
+          parent_path: '/media',
+          directories: [{ name: 'action', path: '/media/movies/action' }],
+          shortcuts: [{ name: 'Media', path: '/media' }],
+        }),
+      });
+
+      const res = await client.browseFilesystem('/media/movies');
+      expect(res.current_path).toBe('/media/movies');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/system/fs?path=%2Fmedia%2Fmovies',
+        expect.anything()
+      );
+    });
+
+    it('browseFilesystem requests /api/v1/system/fs without query if path is omitted', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          current_path: '/',
+          parent_path: null,
+          directories: [],
+          shortcuts: [],
+        }),
+      });
+
+      const res = await client.browseFilesystem();
+      expect(res.current_path).toBe('/');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/system/fs', expect.anything());
+    });
+
+    it('addLibraryPath posts path to /api/v1/libraries/:id/paths', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({}),
+      });
+
+      await client.addLibraryPath('lib-123', '/mnt/nas/media');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/libraries/lib-123/paths',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ path: '/mnt/nas/media' }),
+        })
+      );
+    });
+
+    it('removeLibraryPath sends DELETE to /api/v1/libraries/:id/paths with path query', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({}),
+      });
+
+      await client.removeLibraryPath('lib-123', '/mnt/nas/media');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/libraries/lib-123/paths?path=%2Fmnt%2Fnas%2Fmedia',
+        expect.objectContaining({
+          method: 'DELETE',
+        })
+      );
+    });
+  });
 });
+
 

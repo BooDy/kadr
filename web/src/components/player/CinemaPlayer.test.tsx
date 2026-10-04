@@ -154,10 +154,10 @@ describe('CinemaPlayer Component', () => {
 
     await waitFor(() => {
       expect(api.getSubtitles).toHaveBeenCalledWith(mockItemId);
+      expect(document.querySelectorAll('track').length).toBe(2);
     });
 
     const tracks = document.querySelectorAll('track');
-    expect(tracks.length).toBe(2);
 
     const track1 = tracks[0];
     expect(track1.getAttribute('kind')).toBe('subtitles');

@@ -222,11 +222,30 @@ export type SystemEvent =
       payload: TelemetrySnapshot;
     };
 
+// Filesystem Browsing Types
+export interface FsDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+export interface FsShortcut {
+  name: string;
+  path: string;
+}
+
+export interface FsBrowseResponse {
+  current_path: string;
+  parent_path: string | null;
+  directories: FsDirectoryEntry[];
+  shortcuts: FsShortcut[];
+}
+
 // Library Management Types
 export interface Library {
   id: string;
   name: string;
   path: string;
+  paths?: string[];
   media_type: 'Movie' | 'Episode' | 'Show' | 'Music' | 'Other';
   is_private: boolean;
   created_at: number;
@@ -234,7 +253,8 @@ export interface Library {
 
 export interface CreateLibraryPayload {
   name: string;
-  path: string;
+  path?: string;
+  paths?: string[];
   media_type: 'Movie' | 'Episode';
   is_private?: boolean;
   pin?: string;
