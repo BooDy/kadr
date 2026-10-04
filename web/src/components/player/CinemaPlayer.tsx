@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type FC } from 'react';
 import { api } from '../../api/client';
 import type { SubtitleTrack, ItemDetailsPayload } from '../../types';
-import { PlayerControls } from './PlayerControls';
+import { PlayerControls, formatPlaybackTime } from './PlayerControls';
 
 export interface CinemaPlayerProps {
   itemId: number;
@@ -17,6 +17,8 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
   const [activeSubtitleId, setActiveSubtitleId] = useState<number | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [resumePosition, setResumePosition] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -25,6 +27,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
   const [isControlsVisible, setIsControlsVisible] = useState(true);
 
   const resumePositionRef = useRef<number | null>(null);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMetadataLoadedRef = useRef(false);
   const hasSeekedResumeRef = useRef(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,6 +105,11 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
       .then((state) => {
         if (state?.playback_position_seconds && state.playback_position_seconds > 0) {
           resumePositionRef.current = state.playback_position_seconds;
+          setResumePosition(state.playback_position_seconds);
+          if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+          resumeTimerRef.current = setTimeout(() => {
+            setResumePosition(null);
+          }, 4000);
           if (videoRef.current && isMetadataLoadedRef.current && !hasSeekedResumeRef.current) {
             videoRef.current.currentTime = state.playback_position_seconds;
             hasSeekedResumeRef.current = true;
@@ -109,6 +117,10 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         }
       })
       .catch(() => {});
+
+    return () => {
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    };
   }, [itemId]);
 
   // Fetch subtitles and item details
@@ -288,7 +300,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
       ref={containerRef}
       onMouseMove={showControls}
       onClick={showControls}
-      className={`fixed inset-0 z-50 bg-black flex flex-col items-center justify-center select-none overflow-hidden ${
+      className={`fixed inset-0 z-50 bg-canvas flex flex-col items-center justify-center select-none overflow-hidden ${
         isControlsVisible ? 'cursor-default' : 'cursor-none'
       }`}
     >
@@ -301,6 +313,10 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         onTimeUpdate={handleTimeUpdate}
         onPlay={handlePlay}
         onPause={handlePause}
+        onWaiting={() => setIsLoading(true)}
+        onPlaying={() => setIsLoading(false)}
+        onCanPlay={() => setIsLoading(false)}
+        onSeeked={() => setIsLoading(false)}
         onVolumeChange={handleVolumeChangeFromVideo}
         className="w-full h-full object-contain"
       >
@@ -315,6 +331,34 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
           />
         ))}
       </video>
+
+      {/* Loading Spinner */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+          <div className="w-12 h-12 rounded-full border-4 border-accent border-t-transparent animate-spin" />
+        </div>
+      )}
+
+      {/* Resume banner / prompt */}
+      {resumePosition !== null && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 bg-panel/95 border border-border-subtle rounded-xl text-text-main px-4 py-2.5 shadow-2xl flex items-center gap-3 backdrop-blur-md pointer-events-auto">
+          <span className="text-sm font-medium">
+            Resumed at <span className="font-mono text-accent">{formatPlaybackTime(resumePosition)}</span>
+          </span>
+          <button
+            onClick={() => {
+              if (videoRef.current) {
+                videoRef.current.currentTime = 0;
+                setCurrentTime(0);
+              }
+              setResumePosition(null);
+            }}
+            className="text-xs text-muted hover:text-text-main underline cursor-pointer ml-1 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none rounded"
+          >
+            Start Over
+          </button>
+        </div>
+      )}
 
       <PlayerControls
         title={displayTitle}
