@@ -65,16 +65,20 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
 
   const handleSearchSubtitles = useCallback(
     async (language: string): Promise<SubtitleSearchResult[]> => {
-      const res = await (api.searchSubtitles as any)(itemId, undefined, language);
-      if (Array.isArray(res)) return res;
-      return res?.matches || [];
+      const res = await api.searchSubtitles(itemId, language.trim() || undefined);
+      return res.matches || [];
     },
     [itemId]
   );
 
   const handleDownloadSubtitle = useCallback(
     async (result: SubtitleSearchResult): Promise<void> => {
-      await (api.downloadSubtitle as any)(itemId, result);
+      await api.downloadSubtitle(itemId, {
+        file_id: result.id,
+        language: result.language,
+        title: result.release_name || undefined,
+        is_forced: false,
+      });
       const updatedTracks = await api.getSubtitles(itemId);
       setSubtitles(updatedTracks);
       const latestDownloaded =

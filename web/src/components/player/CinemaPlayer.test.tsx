@@ -392,7 +392,7 @@ describe('CinemaPlayer Component', () => {
     fireEvent.click(searchSubmitBtn);
 
     await waitFor(() => {
-      expect(api.searchSubtitles).toHaveBeenCalledWith(mockItemId, undefined, 'es');
+      expect(api.searchSubtitles).toHaveBeenCalledWith(mockItemId, 'es');
       expect(screen.getByText('Blade.Runner.2049.Spanish.srt')).toBeDefined();
     });
 
@@ -404,7 +404,10 @@ describe('CinemaPlayer Component', () => {
     fireEvent.click(downloadBtn);
 
     await waitFor(() => {
-      expect(api.downloadSubtitle).toHaveBeenCalledWith(mockItemId, mockSearchResults[0]);
+      expect(api.downloadSubtitle).toHaveBeenCalledWith(
+        mockItemId,
+        expect.objectContaining({ file_id: 'sub-303', language: 'es' })
+      );
       expect(api.getSubtitles).toHaveBeenCalledWith(mockItemId);
     });
 
