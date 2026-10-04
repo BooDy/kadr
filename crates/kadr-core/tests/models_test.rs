@@ -54,6 +54,7 @@ fn test_library_serialization_roundtrip() {
         id: "movies".to_string(),
         name: "Movies".to_string(),
         path: PathBuf::from("/media/movies"),
+        paths: vec![PathBuf::from("/media/movies")],
         media_type: MediaType::Movie,
         is_private: false,
         pin_hash: None,
@@ -70,6 +71,7 @@ fn test_library_serialization_roundtrip() {
         id: "priv".to_string(),
         name: "Private".to_string(),
         path: PathBuf::from("/media/private"),
+        paths: vec![PathBuf::from("/media/private")],
         media_type: MediaType::Movie,
         is_private: true,
         pin_hash: Some("secret_hash".to_string()),
@@ -78,6 +80,11 @@ fn test_library_serialization_roundtrip() {
     let priv_json = serde_json::to_string(&private_lib).expect("serialize private");
     assert!(!priv_json.contains("secret_hash"));
     assert!(!priv_json.contains("pin_hash"));
+
+    // Verify backwards-compatible deserialization when paths field is omitted
+    let legacy_json = r#"{"id":"leg","name":"Legacy","path":"/media/leg","media_type":"movie","is_private":false,"created_at":1700000000}"#;
+    let leg_lib: Library = serde_json::from_str(legacy_json).expect("deserialize legacy library");
+    assert_eq!(leg_lib.paths, Vec::<PathBuf>::new());
 }
 
 #[test]

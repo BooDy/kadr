@@ -16,6 +16,8 @@ pub enum StorageError {
     NotFound(String),
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }
 
 impl From<deadpool_sqlite::ConfigError> for StorageError {

@@ -22,6 +22,8 @@ pub struct Library {
     pub id: String,
     pub name: String,
     pub path: PathBuf,
+    #[serde(default)]
+    pub paths: Vec<PathBuf>,
     pub media_type: MediaType,
     #[serde(default)]
     pub is_private: bool,
@@ -36,6 +38,7 @@ impl Default for Library {
             id: String::new(),
             name: String::new(),
             path: PathBuf::new(),
+            paths: Vec::new(),
             media_type: MediaType::Unknown,
             is_private: false,
             pin_hash: None,

@@ -62,6 +62,7 @@ async fn setup_app_with_private_item() -> (axum::Router, String, i64, String) {
         id: private_lib_id.clone(),
         name: "Private Library".to_string(),
         path: PathBuf::from("/media/private"),
+        paths: vec![PathBuf::from("/media/private")],
         media_type: MediaType::Movie,
         is_private: true,
         pin_hash: Some(hash_pin("4321").expect("pin hash")),

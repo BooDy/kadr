@@ -106,7 +106,8 @@ pub async fn create_library(
     let library = Library {
         id,
         name: payload.name.trim().to_string(),
-        path: payload.path,
+        path: payload.path.clone(),
+        paths: vec![payload.path],
         media_type: payload.media_type,
         is_private: payload.is_private,
         pin_hash,
