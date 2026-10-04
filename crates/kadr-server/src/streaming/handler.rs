@@ -41,20 +41,39 @@ pub async fn stream_media_item(
 ) -> Response {
     let item = match media_repo.get_by_id(item_id).await {
         Ok(Some(i)) => i,
-        _ => {
+        Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": "Media item not found" })),
             )
                 .into_response();
         }
+        Err(err) => {
+            tracing::error!("Failed to fetch media item {item_id}: {err}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            )
+                .into_response();
+        }
     };
 
-    if let Ok(Some(library)) = lib_repo.get_by_id(&item.library_id).await {
-        if library.is_private && !unlocked.is_unlocked(&item.library_id) {
+    match lib_repo.get_by_id(&item.library_id).await {
+        Ok(Some(library)) => {
+            if library.is_private && !unlocked.is_unlocked(&item.library_id) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+                )
+                    .into_response();
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::error!("Failed to fetch library for streaming item {item_id}: {err}");
             return (
-                StatusCode::FORBIDDEN,
-                Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
             )
                 .into_response();
         }

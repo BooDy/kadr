@@ -33,12 +33,22 @@ impl WidgetResolver {
         item: &kadr_core::models::MediaItem,
         unlocked_ids: &[String],
     ) -> bool {
-        if let Ok(Some(lib)) = self.lib_repo.get_by_id(&item.library_id).await {
-            if lib.is_private && !unlocked_ids.contains(&item.library_id) {
-                return false;
+        match self.lib_repo.get_by_id(&item.library_id).await {
+            Ok(Some(lib)) => {
+                if lib.is_private && !unlocked_ids.contains(&item.library_id) {
+                    return false;
+                }
+                true
+            }
+            Ok(None) => true,
+            Err(err) => {
+                tracing::error!(
+                    "Failed to fetch library {} for item visibility check: {err}",
+                    item.library_id
+                );
+                false
             }
         }
-        true
     }
 
     /// Resolves an entire screen layout concurrently.

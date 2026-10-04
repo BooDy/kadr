@@ -39,11 +39,21 @@ pub async fn get_item_details(
         }
     };
 
-    if let Ok(Some(lib)) = lib_repo.get_by_id(&item.library_id).await {
-        if lib.is_private && !unlocked.is_unlocked(&item.library_id) {
+    match lib_repo.get_by_id(&item.library_id).await {
+        Ok(Some(lib)) => {
+            if lib.is_private && !unlocked.is_unlocked(&item.library_id) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+                ));
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::error!("Failed to fetch library for item details {item_id}: {err}");
             return Err((
-                StatusCode::FORBIDDEN,
-                Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
             ));
         }
     }
