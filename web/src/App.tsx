@@ -3,8 +3,11 @@ import {
   Film,
   Home,
   Tv,
-  Layout,
-  Activity,
+  Sparkles,
+  Music,
+  Video,
+  BookOpen,
+  Folder,
   LogOut,
   Users,
   Settings,
@@ -12,7 +15,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { api } from './api/client';
-import type { Library, User } from './types';
+import type { Library, MediaType, User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
 import { PinKeypad } from './components/auth/PinKeypad';
 import { BrowseScreen } from './components/browse/BrowseScreen';
@@ -22,6 +25,31 @@ import { TelemetryDashboard } from './components/telemetry/TelemetryDashboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 
 export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'admin' | 'player' | string;
+
+const getLibraryIcon = (mediaType: MediaType | string) => {
+  switch (mediaType) {
+    case 'movie':
+    case 'Movie' as unknown:
+      return <Film className="h-4 w-4" />;
+    case 'show':
+    case 'Show' as unknown:
+      return <Tv className="h-4 w-4" />;
+    case 'anime':
+    case 'Anime' as unknown:
+      return <Sparkles className="h-4 w-4" />;
+    case 'music':
+    case 'Music' as unknown:
+      return <Music className="h-4 w-4" />;
+    case 'home_videos':
+    case 'HomeVideos' as unknown:
+      return <Video className="h-4 w-4" />;
+    case 'audiobook':
+    case 'Audiobook' as unknown:
+      return <BookOpen className="h-4 w-4" />;
+    default:
+      return <Folder className="h-4 w-4" />;
+  }
+};
 
 export const App: FC = () => {
   const [currentView, setCurrentView] = useState<NavView>('home');
@@ -103,7 +131,7 @@ export const App: FC = () => {
           {/* Logo & Brand */}
           <div className="flex items-center gap-8">
             <button
-              onClick={() => setCurrentView('home')}
+              onClick={() => handleNavigate('home')}
               className="flex items-center gap-2.5 text-left group focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none rounded-xl"
             >
               <img
@@ -125,20 +153,6 @@ export const App: FC = () => {
                 <Home className="h-4 w-4" />
                 Home
               </button>
-              <button
-                onClick={() => handleNavigate('movies')}
-                className={navItemClass(currentView === 'movies')}
-              >
-                <Film className="h-4 w-4" />
-                Movies
-              </button>
-              <button
-                onClick={() => handleNavigate('shows')}
-                className={navItemClass(currentView === 'shows')}
-              >
-                <Tv className="h-4 w-4" />
-                Shows
-              </button>
 
               {/* Dynamic Library Navigation Tabs */}
               {libraries.map((lib) => {
@@ -156,10 +170,8 @@ export const App: FC = () => {
                       ) : (
                         <Lock className="h-4 w-4 text-highlight" />
                       )
-                    ) : lib.media_type === 'Movie' || lib.media_type === 'movie' ? (
-                      <Film className="h-4 w-4" />
                     ) : (
-                      <Tv className="h-4 w-4" />
+                      getLibraryIcon(lib.media_type)
                     )}
                     <span>{lib.name}</span>
                     {lib.is_private && (
@@ -178,20 +190,6 @@ export const App: FC = () => {
                 );
               })}
 
-              <button
-                onClick={() => handleNavigate('studio')}
-                className={navItemClass(currentView === 'studio')}
-              >
-                <Layout className="h-4 w-4" />
-                Studio
-              </button>
-              <button
-                onClick={() => handleNavigate('telemetry')}
-                className={navItemClass(currentView === 'telemetry')}
-              >
-                <Activity className="h-4 w-4" />
-                Telemetry
-              </button>
               {currentUser?.role === 'admin' && (
                 <button
                   onClick={() => handleNavigate('admin')}
@@ -290,7 +288,7 @@ export const App: FC = () => {
             )}
 
             {currentView === 'admin' && currentUser?.role === 'admin' && (
-              <AdminDashboard />
+              <AdminDashboard onPlayItem={handlePlayItem} />
             )}
           </>
         )}
