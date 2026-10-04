@@ -317,3 +317,45 @@ fn test_load_overrides_from_dir() {
     assert_eq!(overridden_home.title, "Welcome Home");
     assert_eq!(overridden_home.widgets.len(), 0);
 }
+
+#[test]
+fn test_save_reset_and_delete_custom_screen() {
+    let mut registry = LayoutRegistry::new();
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let dir = temp_dir.path();
+
+    // 1. Save screen overrides built-in home and writes home.json
+    let mut custom_home = registry.get_screen(&ScreenId::Home).unwrap();
+    custom_home.title = "Modified Home".to_string();
+    assert!(registry.save_screen(custom_home, dir).is_ok());
+    assert!(dir.join("home.json").exists());
+    assert_eq!(
+        registry.get_screen(&ScreenId::Home).unwrap().title,
+        "Modified Home"
+    );
+
+    // 2. Reset built-in home restores default and removes home.json
+    let reset_res = registry.reset_screen(&ScreenId::Home, dir);
+    assert!(reset_res.is_ok());
+    assert!(!dir.join("home.json").exists());
+    assert_eq!(registry.get_screen(&ScreenId::Home).unwrap().title, "Home");
+
+    // 3. Reset custom screen returns error
+    let custom_id = ScreenId::Custom("music".to_string());
+    assert!(registry.reset_screen(&custom_id, dir).is_err());
+
+    // 4. Save custom screen writes music.json and registers screen
+    let music_screen = ScreenLayout::new(custom_id.clone(), "Music Zone", vec![]);
+    assert!(registry.save_screen(music_screen, dir).is_ok());
+    assert!(dir.join("music.json").exists());
+    assert!(registry.get_screen(&custom_id).is_some());
+
+    // 5. Delete built-in returns error
+    assert!(registry.delete_custom_screen(&ScreenId::Home, dir).is_err());
+
+    // 6. Delete custom removes music.json and removes from registry
+    assert!(registry.delete_custom_screen(&custom_id, dir).is_ok());
+    assert!(!dir.join("music.json").exists());
+    assert!(registry.get_screen(&custom_id).is_none());
+}
+

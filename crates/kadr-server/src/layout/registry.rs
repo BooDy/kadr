@@ -1,13 +1,21 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 use kadr_core::ast::{QueryMacro, ScreenId, ScreenLayout, WidgetNode, WidgetQueryBinding};
+
+pub type LayoutError = String;
+
+#[derive(Debug, Clone, Default)]
+struct LayoutRegistryInner {
+    order: Vec<ScreenId>,
+    screens: HashMap<ScreenId, ScreenLayout>,
+}
 
 /// In-memory layout registry holding built-in and user-customized screen layouts.
 #[derive(Debug, Clone)]
 pub struct LayoutRegistry {
-    order: Vec<ScreenId>,
-    screens: HashMap<ScreenId, ScreenLayout>,
+    inner: Arc<RwLock<LayoutRegistryInner>>,
 }
 
 impl Default for LayoutRegistry {
@@ -21,8 +29,7 @@ impl LayoutRegistry {
     /// `Home`, `Movies`, and `Shows`.
     pub fn new() -> Self {
         let mut registry = Self {
-            order: Vec::new(),
-            screens: HashMap::new(),
+            inner: Arc::new(RwLock::new(LayoutRegistryInner::default())),
         };
 
         registry.register_screen(default_home_layout());
@@ -34,15 +41,23 @@ impl LayoutRegistry {
 
     /// Retrieves a screen layout by screen identifier.
     pub fn get_screen(&self, id: &ScreenId) -> Option<ScreenLayout> {
-        self.screens.get(id).cloned()
+        self.inner
+            .read()
+            .expect("layout registry lock poisoned")
+            .screens
+            .get(id)
+            .cloned()
     }
 
     /// Lists all registered screens in registration order as pairs of `(ScreenId, Title)`.
     pub fn list_screens(&self) -> Vec<(ScreenId, String)> {
-        self.order
+        let inner = self.inner.read().expect("layout registry lock poisoned");
+        inner
+            .order
             .iter()
             .filter_map(|id| {
-                self.screens
+                inner
+                    .screens
                     .get(id)
                     .map(|s| (s.id.clone(), s.title.clone()))
             })
@@ -51,10 +66,67 @@ impl LayoutRegistry {
 
     /// Registers or overrides a screen layout.
     pub fn register_screen(&mut self, screen: ScreenLayout) {
-        if !self.screens.contains_key(&screen.id) {
-            self.order.push(screen.id.clone());
+        let mut inner = self.inner.write().expect("layout registry lock poisoned");
+        if !inner.screens.contains_key(&screen.id) {
+            inner.order.push(screen.id.clone());
         }
-        self.screens.insert(screen.id.clone(), screen);
+        inner.screens.insert(screen.id.clone(), screen);
+    }
+
+    /// Saves a screen layout to disk as JSON and updates in-memory registry.
+    pub fn save_screen(&mut self, screen: ScreenLayout, dir: &Path) -> Result<(), std::io::Error> {
+        std::fs::create_dir_all(dir)?;
+        let file_path = dir.join(format!("{}.json", screen.id));
+        let serialized = serde_json::to_string_pretty(&screen)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(&file_path, serialized)?;
+        self.register_screen(screen);
+        Ok(())
+    }
+
+    /// Resets a built-in screen layout to factory default and removes its override file.
+    pub fn reset_screen(&mut self, id: &ScreenId, dir: &Path) -> Result<ScreenLayout, LayoutError> {
+        let file_path = dir.join(format!("{id}.json"));
+        if file_path.exists() {
+            let _ = std::fs::remove_file(file_path);
+        }
+        match id {
+            ScreenId::Home => {
+                let default = default_home_layout();
+                self.register_screen(default.clone());
+                Ok(default)
+            }
+            ScreenId::Movies => {
+                let default = default_movies_layout();
+                self.register_screen(default.clone());
+                Ok(default)
+            }
+            ScreenId::Shows => {
+                let default = default_shows_layout();
+                self.register_screen(default.clone());
+                Ok(default)
+            }
+            ScreenId::Custom(name) => Err(format!("Custom screen '{name}' cannot be reset, use delete")),
+        }
+    }
+
+    /// Deletes a custom screen from disk and removes it from the in-memory registry.
+    pub fn delete_custom_screen(&mut self, id: &ScreenId, dir: &Path) -> Result<(), LayoutError> {
+        match id {
+            ScreenId::Home | ScreenId::Movies | ScreenId::Shows => {
+                Err("Built-in screens cannot be deleted".to_string())
+            }
+            ScreenId::Custom(_) => {
+                let file_path = dir.join(format!("{id}.json"));
+                if file_path.exists() {
+                    let _ = std::fs::remove_file(file_path);
+                }
+                let mut inner = self.inner.write().expect("layout registry lock poisoned");
+                inner.screens.remove(id);
+                inner.order.retain(|s| s != id);
+                Ok(())
+            }
+        }
     }
 
     /// Loads screen definitions (TOML or JSON) from the specified directory if present.

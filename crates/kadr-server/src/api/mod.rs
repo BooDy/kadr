@@ -89,10 +89,15 @@ pub fn create_router_with_ingest(
             get(playback::list_continue_watching),
         )
         // Screen, Widget AST & Item Details routes
-        .route("/api/v1/screens", get(screen_routes::list_screens))
+        .route(
+            "/api/v1/screens",
+            get(screen_routes::list_screens).post(screen_routes::create_screen_handler),
+        )
         .route(
             "/api/v1/screens/{screen_id}",
-            get(screen_routes::get_screen),
+            get(screen_routes::get_screen)
+                .put(screen_routes::save_screen_handler)
+                .delete(screen_routes::delete_screen_handler),
         )
         .route(
             "/api/v1/widgets/{widget_id}/data",

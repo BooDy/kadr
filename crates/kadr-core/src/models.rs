@@ -12,6 +12,14 @@ pub enum MediaType {
     Season,
     #[serde(alias = "Episode", alias = "EPISODE")]
     Episode,
+    #[serde(alias = "Anime", alias = "ANIME")]
+    Anime,
+    #[serde(alias = "Music", alias = "MUSIC")]
+    Music,
+    #[serde(alias = "HomeVideos", alias = "home_videos", alias = "HOME_VIDEOS")]
+    HomeVideos,
+    #[serde(alias = "Audiobook", alias = "AUDIOBOOK")]
+    Audiobook,
     #[default]
     #[serde(alias = "Unknown", alias = "UNKNOWN")]
     Unknown,

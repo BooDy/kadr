@@ -4,7 +4,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kadr_core::ast::{ItemDetailsPayload, ScreenId, ScreenLayout, WidgetNode};
+use kadr_core::ast::{
+    ItemDetailsPayload, QueryMacro, ScreenId, ScreenLayout, WidgetNode, WidgetQueryBinding,
+};
 use kadr_core::models::{
     Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo, User, UserRole, WatchState,
 };
@@ -18,7 +20,7 @@ use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use tower::ServiceExt;
 
 fn now_secs() -> i64 {
@@ -31,6 +33,7 @@ fn now_secs() -> i64 {
 struct TestContext {
     app: axum::Router,
     token: String,
+    admin_token: String,
     spotlight_id: i64,
     show_id: i64,
 }
@@ -251,8 +254,18 @@ async fn setup_test_app() -> TestContext {
         .await
         .unwrap();
 
+    let admin_user = User {
+        id: "admin-test".to_string(),
+        username: "admin".to_string(),
+        pin_hash: "adminhash".to_string(),
+        role: UserRole::Admin,
+        created_at: 1000,
+    };
+    user_repo.create(&admin_user).await.expect("create admin failed");
+
     let jwt_svc = JwtService::new("super-secret-jwt-key-with-at-least-32-bytes", 3600);
     let token = jwt_svc.generate_token(&user).unwrap();
+    let admin_token = jwt_svc.generate_token(&admin_user).unwrap();
 
     let layout_registry = LayoutRegistry::new();
     let widget_resolver = Arc::new(WidgetResolver::new(
@@ -277,6 +290,7 @@ async fn setup_test_app() -> TestContext {
     TestContext {
         app,
         token,
+        admin_token,
         spotlight_id,
         show_id,
     }
@@ -585,3 +599,133 @@ async fn test_not_found_cases() {
     let json: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["error"], "Item not found");
 }
+
+#[tokio::test]
+async fn test_save_and_reset_screen_layout() {
+    let ctx = setup_test_app().await;
+
+    // 1. Non-admin cannot mutate screens (403 Forbidden)
+    let custom_home = ScreenLayout::new(
+        ScreenId::Home,
+        "Custom Home",
+        vec![WidgetNode::Carousel {
+            id: "my_carousel".to_string(),
+            title: "My Carousel".to_string(),
+            binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+            items: None,
+            next_cursor: None,
+        }],
+    );
+
+    let req_unauth = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/screens/home")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&custom_home).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_unauth).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 2. Admin can PUT custom layout to /api/v1/screens/home
+    let req_put = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/screens/home")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&custom_home).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_put).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 3. GET /api/v1/screens/home to verify persisted changes
+    let req_get = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/home?unhydrated=true")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_get).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let updated: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(updated.title, "Custom Home");
+    assert_eq!(updated.widgets.len(), 1);
+    assert_eq!(updated.widgets[0].id(), "my_carousel");
+
+    // 4. Admin DELETE /api/v1/screens/home resets to factory defaults
+    let req_del = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/screens/home")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_del).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 5. GET /api/v1/screens/home verifies reset to default layout
+    let req_get_reset = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/home?unhydrated=true")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_get_reset).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let reset: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(reset.title, "Home");
+    assert_eq!(reset.widgets.len(), 6);
+
+    // 6. Admin POST /api/v1/screens creates custom screen
+    let create_payload = json!({
+        "id": "anime",
+        "title": "Anime Hub",
+        "description": "Custom anime section"
+    });
+    let req_post = Request::builder()
+        .method("POST")
+        .uri("/api/v1/screens")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&create_payload).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_post).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 7. GET /api/v1/screens lists the new custom screen
+    let req_list = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_list).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let list: Value = serde_json::from_slice(&bytes).unwrap();
+    let screens = list.as_array().unwrap();
+    assert_eq!(screens.len(), 4);
+    assert!(screens.iter().any(|s| s["id"] == "anime" && s["title"] == "Anime Hub"));
+
+    // 8. Admin DELETE /api/v1/screens/anime deletes the custom screen
+    let req_del_custom = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/screens/anime")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_del_custom).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 9. GET /api/v1/screens/anime returns 404
+    let req_get_deleted = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/anime")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_get_deleted).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+

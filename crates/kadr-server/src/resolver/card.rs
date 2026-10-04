@@ -70,6 +70,10 @@ pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) ->
         MediaType::Show => "show",
         MediaType::Season => "season",
         MediaType::Episode => "episode",
+        MediaType::Anime => "anime",
+        MediaType::Music => "music",
+        MediaType::HomeVideos => "home_videos",
+        MediaType::Audiobook => "audiobook",
         MediaType::Unknown => "unknown",
     }
     .to_string();

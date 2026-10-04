@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::api::item_routes::get_item_details;
 use crate::api::unlock_token::UnlockedLibraries;
-use crate::auth::jwt::AuthUser;
+use crate::auth::jwt::{AuthUser, RequireAdmin};
+use crate::config::AppConfig;
 use crate::layout::LayoutRegistry;
 use crate::resolver::WidgetResolver;
 
@@ -76,3 +77,112 @@ pub async fn get_screen(
         Ok(Json(hydrated))
     }
 }
+
+/// Request body for creating a custom screen layout.
+#[derive(Debug, Deserialize)]
+pub struct CreateScreenRequest {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// Handler for `PUT /api/v1/screens/{screen_id}`.
+/// Saves custom or updated screen AST layout to disk and registry. Requires admin role.
+pub async fn save_screen_handler(
+    _admin: RequireAdmin,
+    Path(screen_id): Path<String>,
+    Extension(mut registry): Extension<LayoutRegistry>,
+    Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
+    Json(mut screen): Json<ScreenLayout>,
+) -> Result<Json<ScreenLayout>, (StatusCode, Json<serde_json::Value>)> {
+    let parsed_id: ScreenId = screen_id.parse().unwrap();
+    screen.id = parsed_id;
+    let screens_dir = config.read().await.server.data_dir.join("screens");
+    registry
+        .save_screen(screen.clone(), &screens_dir)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
+    Ok(Json(screen))
+}
+
+/// Handler for `POST /api/v1/screens`.
+/// Creates a new screen AST layout and persists it. Requires admin role.
+pub async fn create_screen_handler(
+    _admin: RequireAdmin,
+    Extension(mut registry): Extension<LayoutRegistry>,
+    Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
+    Json(payload): Json<CreateScreenRequest>,
+) -> Result<(StatusCode, Json<ScreenLayout>), (StatusCode, Json<serde_json::Value>)> {
+    if payload.id.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Screen ID cannot be empty" })),
+        ));
+    }
+    let parsed_id: ScreenId = payload.id.parse().unwrap();
+    if registry.get_screen(&parsed_id).is_some() {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": format!("Screen '{}' already exists", payload.id) })),
+        ));
+    }
+    let screen = ScreenLayout::new(parsed_id, payload.title, vec![]);
+    let screens_dir = config.read().await.server.data_dir.join("screens");
+    registry
+        .save_screen(screen.clone(), &screens_dir)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
+    Ok((StatusCode::CREATED, Json(screen)))
+}
+
+/// Handler for `DELETE /api/v1/screens/{screen_id}`.
+/// Resets built-in screen to factory defaults or deletes custom screen from disk and registry. Requires admin role.
+pub async fn delete_screen_handler(
+    _admin: RequireAdmin,
+    Path(screen_id): Path<String>,
+    Extension(mut registry): Extension<LayoutRegistry>,
+    Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let parsed_id: ScreenId = screen_id.parse().unwrap();
+    let screens_dir = config.read().await.server.data_dir.join("screens");
+    match parsed_id {
+        ScreenId::Home | ScreenId::Movies | ScreenId::Shows => {
+            registry
+                .reset_screen(&parsed_id, &screens_dir)
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({ "error": e.to_string() })),
+                    )
+                })?;
+            Ok(Json(serde_json::json!({ "message": "Screen reset to defaults" })))
+        }
+        ScreenId::Custom(_) => {
+            if registry.get_screen(&parsed_id).is_none() {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": "Screen not found" })),
+                ));
+            }
+            registry
+                .delete_custom_screen(&parsed_id, &screens_dir)
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({ "error": e.to_string() })),
+                    )
+                })?;
+            Ok(Json(serde_json::json!({ "message": "Screen deleted" })))
+        }
+    }
+}
+
