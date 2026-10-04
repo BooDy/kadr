@@ -110,7 +110,7 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
 
           <button
             onClick={() => onMoreInfo(item.id)}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-panel/80 hover:bg-panel text-text-main border border-border-subtle font-semibold text-sm backdrop-blur-md focus-visible:ring-3 focus-visible:ring-highlight hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+            className="group flex items-center gap-2 px-5 py-3 rounded-xl bg-panel/80 hover:bg-panel text-text-main border border-border-subtle font-semibold text-sm backdrop-blur-md focus-visible:ring-3 focus-visible:ring-highlight hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
           >
             <Info className="h-4 w-4 text-muted group-hover:text-text-main" />
             More Info
