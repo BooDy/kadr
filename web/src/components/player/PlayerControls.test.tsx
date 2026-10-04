@@ -83,6 +83,19 @@ describe('PlayerControls Component', () => {
     expect(await screen.findByText(/Interstellar.French/i)).toBeInTheDocument();
   });
 
+  it('falls back to "en" when search input is empty or whitespace', async () => {
+    const onSearch = vi.fn().mockResolvedValue([]);
+    render(<PlayerControls {...defaultProps} subtitles={[]} onSearchSubtitles={onSearch} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Subtitles' }));
+    fireEvent.click(screen.getByRole('button', { name: /Search OpenSubtitles Online/i }));
+
+    const input = screen.getByPlaceholderText(/Language/i);
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: /Search/i }));
+
+    expect(onSearch).toHaveBeenCalledWith('en');
+  });
+
   it('clicking download on a match calls onDownloadSubtitle and shows loading state', async () => {
     const searchMatch: SubtitleSearchResult = {
       id: 'sub-1',

@@ -124,7 +124,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
     setSearchError(null);
     setDownloadError(null);
     try {
-      const results = await onSearchSubtitles(searchLang.trim());
+      const lang = searchLang.trim() || 'en';
+      const results = await onSearchSubtitles(lang);
       setSearchResults(results || []);
       setHasSearched(true);
     } catch {
@@ -411,7 +412,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                           placeholder="Language (e.g. en, fr, es, ar)..."
                           value={searchLang}
                           onChange={(e) => setSearchLang(e.target.value)}
-                          className="flex-1 px-3 py-1.5 rounded-xl bg-canvas/60 border border-border-subtle text-text-main placeholder-muted text-xs focus:outline-none focus:border-accent focus-visible:ring-3 focus-visible:ring-highlight"
+                          className="flex-1 px-3 py-1.5 rounded-xl bg-canvas/60 border border-border-subtle text-text-main placeholder-muted text-xs focus:outline-none focus:border-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
                         />
                         <button
                           type="submit"
