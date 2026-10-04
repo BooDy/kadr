@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::repos::widget_queries::{privacy_clause, WidgetQueries, SELECT_JOINED_COLUMNS};
 use deadpool_sqlite::Pool;
 use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use rusqlite::params;
@@ -10,6 +11,8 @@ pub struct MediaItemRepository {
     pool: Pool,
 }
 
+pub type MediaItemRepo = MediaItemRepository;
+
 impl MediaItemRepository {
     pub fn new(pool: Pool) -> Self {
         Self { pool }
@@ -17,6 +20,14 @@ impl MediaItemRepository {
 
     pub fn pool(&self) -> &Pool {
         &self.pool
+    }
+
+    pub fn widget_queries(&self) -> WidgetQueries {
+        WidgetQueries::new(self.pool.clone())
+    }
+
+    pub async fn batch_upsert(&self, items: &[MediaItem]) -> Result<usize> {
+        self.upsert_batch(items).await
     }
 
     pub async fn upsert_batch(&self, items: &[MediaItem]) -> Result<usize> {
@@ -249,97 +260,68 @@ impl MediaItemRepository {
 
     pub async fn find_recently_added(
         &self,
+        limit: u32,
+        unlocked_ids: &[String],
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_recently_added(limit, unlocked_ids)
+            .await
+    }
+
+    pub async fn find_recently_added_paginated(
+        &self,
         library_id: Option<&str>,
         limit: u32,
         offset: u32,
+        unlocked_ids: &[String],
     ) -> Result<Vec<MediaItem>> {
-        let lib_id = library_id.map(|s| s.to_string());
-        let conn = self.pool.get().await?;
-        conn.interact(move |c| {
-            let mut result = Vec::new();
-            if let Some(lid) = lib_id {
-                let sql = format!(
-                    "SELECT {SELECT_COLUMNS} FROM media_items \
-                     WHERE library_id = ?1 \
-                     ORDER BY added_at DESC, id DESC \
-                     LIMIT ?2 OFFSET ?3"
-                );
-                let mut stmt = c.prepare(&sql)?;
-                let rows = stmt.query_map(
-                    params![lid, limit as i64, offset as i64],
-                    map_media_item_row,
-                )?;
-                for row in rows {
-                    result.push(row?);
-                }
-            } else {
-                let sql = format!(
-                    "SELECT {SELECT_COLUMNS} FROM media_items \
-                     ORDER BY added_at DESC, id DESC \
-                     LIMIT ?1 OFFSET ?2"
-                );
-                let mut stmt = c.prepare(&sql)?;
-                let rows =
-                    stmt.query_map(params![limit as i64, offset as i64], map_media_item_row)?;
-                for row in rows {
-                    result.push(row?);
-                }
-            }
-            Ok(result)
-        })
-        .await?
+        self.widget_queries()
+            .find_recently_added_paginated(library_id, limit, offset, unlocked_ids)
+            .await
     }
 
-    pub async fn find_top_rated(&self, limit: u32, offset: u32) -> Result<Vec<MediaItem>> {
-        let conn = self.pool.get().await?;
-        conn.interact(move |c| {
-            let sql = format!(
-                "SELECT {SELECT_COLUMNS} FROM media_items \
-                 WHERE json_extract(metadata, '$.rating') IS NOT NULL \
-                 ORDER BY CAST(json_extract(metadata, '$.rating') AS REAL) DESC, id DESC \
-                 LIMIT ?1 OFFSET ?2"
-            );
-            let mut stmt = c.prepare(&sql)?;
-            let rows = stmt.query_map(params![limit as i64, offset as i64], map_media_item_row)?;
-            let mut result = Vec::new();
-            for row in rows {
-                result.push(row?);
-            }
-            Ok(result)
-        })
-        .await?
+    pub async fn find_top_rated(
+        &self,
+        limit: u32,
+        unlocked_ids: &[String],
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_top_rated(limit, unlocked_ids)
+            .await
+    }
+
+    pub async fn find_top_rated_paginated(
+        &self,
+        limit: u32,
+        offset: u32,
+        unlocked_ids: &[String],
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_top_rated_paginated(limit, offset, unlocked_ids)
+            .await
     }
 
     pub async fn find_by_genre(
         &self,
         genre: &str,
         limit: u32,
-        offset: u32,
+        unlocked_ids: &[String],
     ) -> Result<Vec<MediaItem>> {
-        let genre = genre.to_string();
-        let conn = self.pool.get().await?;
-        conn.interact(move |c| {
-            let sql = format!(
-                "SELECT {SELECT_COLUMNS} FROM media_items \
-                 WHERE ( \
-                    (json_extract(metadata, '$.genres') IS NOT NULL AND EXISTS ( \
-                        SELECT 1 FROM json_each(json_extract(metadata, '$.genres')) WHERE LOWER(value) = LOWER(?1) \
-                    )) \
-                    OR (json_extract(metadata, '$.tags') IS NOT NULL AND EXISTS ( \
-                        SELECT 1 FROM json_each(json_extract(metadata, '$.tags')) WHERE LOWER(value) = LOWER(?1) \
-                    )) \
-                 ) \
-                 ORDER BY title ASC, id ASC \
-                 LIMIT ?2 OFFSET ?3"
-            );
-            let mut stmt = c.prepare(&sql)?;
-            let rows = stmt.query_map(params![genre, limit as i64, offset as i64], map_media_item_row)?;
-            let mut result = Vec::new();
-            for row in rows {
-                result.push(row?);
-            }
-            Ok(result)
-        }).await?
+        self.widget_queries()
+            .find_by_genre(genre, limit, unlocked_ids)
+            .await
+    }
+
+    pub async fn find_by_genre_paginated(
+        &self,
+        genre: &str,
+        limit: u32,
+        offset: u32,
+        unlocked_ids: &[String],
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_by_genre_paginated(genre, limit, offset, unlocked_ids)
+            .await
     }
 
     pub async fn find_by_library_paginated(
@@ -348,46 +330,62 @@ impl MediaItemRepository {
         limit: u32,
         offset: u32,
         sort_by: Option<&str>,
+        unlocked_ids: &[String],
     ) -> Result<(Vec<MediaItem>, u64)> {
         let lib_id = library_id.to_string();
         let order_clause = match sort_by.map(|s| s.trim().to_lowercase()).as_deref() {
-            Some("title:desc") | Some("title_desc") => "title DESC, id DESC",
+            Some("title:desc") | Some("title_desc") => "m.title DESC, m.id DESC",
             Some("release_year:asc")
             | Some("release_year_asc")
             | Some("year:asc")
-            | Some("year_asc") => "release_year ASC NULLS LAST, id ASC",
+            | Some("year_asc") => "m.release_year ASC NULLS LAST, m.id ASC",
             Some("release_year:desc")
             | Some("release_year_desc")
             | Some("year:desc")
-            | Some("year_desc") => "release_year DESC NULLS LAST, id DESC",
-            Some("added_at:asc") | Some("added_at_asc") => "added_at ASC, id ASC",
-            Some("added_at:desc") | Some("added_at_desc") => "added_at DESC, id DESC",
+            | Some("year_desc") => "m.release_year DESC NULLS LAST, m.id DESC",
+            Some("added_at:asc") | Some("added_at_asc") => "m.added_at ASC, m.id ASC",
+            Some("added_at:desc") | Some("added_at_desc") => "m.added_at DESC, m.id DESC",
             Some("rating:desc") | Some("rating_desc") => {
-                "CAST(json_extract(metadata, '$.rating') AS REAL) DESC NULLS LAST, id DESC"
+                "CAST(json_extract(m.metadata, '$.rating') AS REAL) DESC NULLS LAST, m.id DESC"
             }
             Some("rating:asc") | Some("rating_asc") => {
-                "CAST(json_extract(metadata, '$.rating') AS REAL) ASC NULLS LAST, id ASC"
+                "CAST(json_extract(m.metadata, '$.rating') AS REAL) ASC NULLS LAST, m.id ASC"
             }
-            _ => "title ASC, id ASC",
+            _ => "m.title ASC, m.id ASC",
         };
 
+        let unlocked = unlocked_ids.to_vec();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let count: i64 = c.query_row(
-                "SELECT COUNT(*) FROM media_items WHERE library_id = ?1",
-                params![lib_id],
-                |row| row.get(0),
-            )?;
+            let (priv_clause, priv_params) = privacy_clause(&unlocked);
+
+            let mut count_params = vec![rusqlite::types::Value::Text(lib_id.clone())];
+            count_params.extend(priv_params.clone());
+
+            let count_sql = format!(
+                "SELECT COUNT(*) FROM media_items m \
+                 JOIN libraries l ON m.library_id = l.id \
+                 WHERE m.library_id = ? AND {priv_clause}"
+            );
+            let mut count_stmt = c.prepare(&count_sql)?;
+            let count: i64 =
+                count_stmt.query_row(rusqlite::params_from_iter(count_params), |row| row.get(0))?;
+
+            let mut select_params = vec![rusqlite::types::Value::Text(lib_id)];
+            select_params.extend(priv_params);
+            select_params.push(rusqlite::types::Value::Integer(limit as i64));
+            select_params.push(rusqlite::types::Value::Integer(offset as i64));
 
             let sql = format!(
-                "SELECT {SELECT_COLUMNS} FROM media_items \
-                 WHERE library_id = ?1 \
+                "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
+                 JOIN libraries l ON m.library_id = l.id \
+                 WHERE m.library_id = ? AND {priv_clause} \
                  ORDER BY {order_clause} \
-                 LIMIT ?2 OFFSET ?3"
+                 LIMIT ? OFFSET ?"
             );
             let mut stmt = c.prepare(&sql)?;
             let rows = stmt.query_map(
-                params![lib_id, limit as i64, offset as i64],
+                rusqlite::params_from_iter(select_params),
                 map_media_item_row,
             )?;
             let mut result = Vec::new();
@@ -399,38 +397,29 @@ impl MediaItemRepository {
         .await?
     }
 
-    pub async fn find_spotlight_candidate(&self) -> Result<Option<MediaItem>> {
-        let conn = self.pool.get().await?;
-        conn.interact(move |c| {
-            let sql = format!(
-                "SELECT {SELECT_COLUMNS} FROM media_items \
-                 ORDER BY \
-                    CASE \
-                        WHEN json_extract(metadata, '$.backdrop_path') IS NOT NULL \
-                             AND json_extract(metadata, '$.backdrop_path') != '' \
-                             AND json_extract(metadata, '$.rating') IS NOT NULL \
-                        THEN 3 \
-                        WHEN json_extract(metadata, '$.backdrop_path') IS NOT NULL \
-                             AND json_extract(metadata, '$.backdrop_path') != '' \
-                        THEN 2 \
-                        WHEN json_extract(metadata, '$.rating') IS NOT NULL \
-                        THEN 1 \
-                        ELSE 0 \
-                    END DESC, \
-                    CAST(json_extract(metadata, '$.rating') AS REAL) DESC NULLS LAST, \
-                    added_at DESC, \
-                    id DESC \
-                 LIMIT 1"
-            );
-            let mut stmt = c.prepare(&sql)?;
-            let mut rows = stmt.query([])?;
-            if let Some(row) = rows.next()? {
-                Ok(Some(map_media_item_row(row)?))
-            } else {
-                Ok(None)
-            }
-        })
-        .await?
+    pub async fn find_by_library(
+        &self,
+        library_id: &str,
+        page: u32,
+        page_size: u32,
+        unlocked_ids: &[String],
+    ) -> Result<(Vec<MediaItem>, u64)> {
+        let offset = page.saturating_sub(1) * page_size;
+        self.find_by_library_paginated(library_id, page_size, offset, None, unlocked_ids)
+            .await
+    }
+
+    pub async fn find_spotlight_candidate(
+        &self,
+        unlocked_ids: &[String],
+    ) -> Result<Option<MediaItem>> {
+        self.widget_queries()
+            .find_spotlight_candidate(unlocked_ids)
+            .await
+    }
+
+    pub async fn find_spotlight_candidate_default(&self) -> Result<Option<MediaItem>> {
+        self.find_spotlight_candidate(&[]).await
     }
 
     pub async fn find_episodes_by_series(&self, series_title: &str) -> Result<Vec<MediaItem>> {

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaType {
     #[serde(alias = "Movie", alias = "MOVIE")]
@@ -12,6 +12,7 @@ pub enum MediaType {
     Season,
     #[serde(alias = "Episode", alias = "EPISODE")]
     Episode,
+    #[default]
     #[serde(alias = "Unknown", alias = "UNKNOWN")]
     Unknown,
 }
@@ -88,7 +89,7 @@ pub struct MediaMetadata {
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MediaItem {
     pub id: Option<i64>,
     pub library_id: String,

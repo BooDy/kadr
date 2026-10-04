@@ -136,7 +136,7 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate()
+                .find_spotlight_candidate(&[])
                 .await
                 .ok()
                 .flatten(),
@@ -209,7 +209,7 @@ impl WidgetResolver {
             QueryMacro::RecentlyAdded => {
                 let items = self
                     .media_repo
-                    .find_recently_added(None, binding.limit, offset)
+                    .find_recently_added_paginated(None, binding.limit, offset, &[])
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -226,7 +226,7 @@ impl WidgetResolver {
             QueryMacro::TopRated => {
                 let items = self
                     .media_repo
-                    .find_top_rated(binding.limit, offset)
+                    .find_top_rated_paginated(binding.limit, offset, &[])
                     .await?;
                 let has_more = items.len() == binding.limit as usize;
                 let cards = self.hydrate_items_to_cards(items, user_id).await;
@@ -242,7 +242,7 @@ impl WidgetResolver {
             QueryMacro::GenreShelf { genre } => {
                 let items = self
                     .media_repo
-                    .find_by_genre(genre, binding.limit, offset)
+                    .find_by_genre_paginated(genre, binding.limit, offset, &[])
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -264,6 +264,7 @@ impl WidgetResolver {
                         binding.limit,
                         offset,
                         binding.sort.as_deref(),
+                        &[],
                     )
                     .await?;
 
@@ -283,7 +284,7 @@ impl WidgetResolver {
                 let candidate = if let Some(id) = item_id {
                     self.media_repo.get_by_id(*id).await?
                 } else {
-                    self.media_repo.find_spotlight_candidate().await?
+                    self.media_repo.find_spotlight_candidate(&[]).await?
                 };
 
                 if let Some(item) = candidate {
