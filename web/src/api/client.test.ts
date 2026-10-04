@@ -328,4 +328,95 @@ describe('ApiClient', () => {
       expect(res200Empty).toBeUndefined();
     });
   });
+
+  describe('Unlocked Libraries Management', () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it('stores, retrieves, and clears unlock tokens in sessionStorage', () => {
+      expect(client.getUnlockedTokens()).toEqual({});
+      expect(client.getUnlockedLibraryIds()).toEqual([]);
+      expect(client.isLibraryUnlocked('lib-1')).toBe(false);
+
+      client.storeUnlockToken('lib-1', 'token-1');
+      expect(client.getUnlockedTokens()).toEqual({ 'lib-1': 'token-1' });
+      expect(client.getUnlockedLibraryIds()).toEqual(['lib-1']);
+      expect(client.isLibraryUnlocked('lib-1')).toBe(true);
+      expect(client.getUnlockToken('lib-1')).toBe('token-1');
+
+      client.storeUnlockToken('lib-2', 'token-2');
+      expect(client.getUnlockedLibraryIds()).toEqual(['lib-1', 'lib-2']);
+
+      client.clearUnlockedToken('lib-1');
+      expect(client.isLibraryUnlocked('lib-1')).toBe(false);
+      expect(client.isLibraryUnlocked('lib-2')).toBe(true);
+
+      client.clearUnlockedTokens();
+      expect(client.getUnlockedTokens()).toEqual({});
+      expect(client.getUnlockedLibraryIds()).toEqual([]);
+    });
+
+    it('injects X-Kadr-Unlocked header into outgoing requests when unlocked tokens exist', async () => {
+      client.storeUnlockToken('lib-1', 'token-abc');
+      client.storeUnlockToken('lib-2', 'token-def');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => [],
+      });
+
+      await client.getLibraries();
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/v1/libraries');
+      expect(options.headers['X-Kadr-Unlocked']).toContain('token-abc');
+      expect(options.headers['X-Kadr-Unlocked']).toContain('token-def');
+    });
+
+    it('appends unlocked query param to getStreamUrl when tokens exist', () => {
+      client.storeUnlockToken('lib-1', 'token-stream-123');
+      const url = client.getStreamUrl(42);
+      expect(url).toBe('/api/v1/stream/42?unlocked=token-stream-123');
+    });
+
+    it('unlockLibrary posts PIN, returns response, and saves token', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          library_id: 'lib-secret',
+          token: 'signed-unlock-token-999',
+          expires_at: 1700086400,
+        }),
+      });
+
+      const res = await client.unlockLibrary('lib-secret', '1234');
+      expect(res.library_id).toBe('lib-secret');
+      expect(res.token).toBe('signed-unlock-token-999');
+
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/v1/libraries/lib-secret/unlock');
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(options.body)).toEqual({ pin: '1234' });
+
+      // Verified token is saved in sessionStorage
+      expect(client.isLibraryUnlocked('lib-secret')).toBe(true);
+      expect(client.getUnlockToken('lib-secret')).toBe('signed-unlock-token-999');
+    });
+
+    it('logout clears unlocked tokens from sessionStorage', () => {
+      client.storeUnlockToken('lib-1', 'token-xyz');
+      expect(client.isLibraryUnlocked('lib-1')).toBe(true);
+
+      client.logout();
+      expect(client.isLibraryUnlocked('lib-1')).toBe(false);
+      expect(sessionStorage.getItem('kadr_unlocked_libraries')).toBeNull();
+    });
+  });
 });
+

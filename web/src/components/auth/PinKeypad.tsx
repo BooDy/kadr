@@ -4,12 +4,22 @@ import { api } from '../../api/client';
 import type { User } from '../../types';
 
 export interface PinKeypadProps {
-  user: User;
+  user?: User;
+  title?: string;
+  subtitle?: string;
+  onSubmitPin?: (pin: string) => Promise<void>;
   onSuccess: (token: string, user: User) => void;
   onCancel?: () => void;
 }
 
-export const PinKeypad: FC<PinKeypadProps> = ({ user, onSuccess, onCancel }) => {
+export const PinKeypad: FC<PinKeypadProps> = ({
+  user,
+  title,
+  subtitle,
+  onSubmitPin,
+  onSuccess,
+  onCancel,
+}) => {
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,8 +31,13 @@ export const PinKeypad: FC<PinKeypadProps> = ({ user, onSuccess, onCancel }) => 
       setError(null);
 
       try {
-        const res = await api.loginWithPin(pinToSubmit, user.id);
-        onSuccess(res.token, res.user);
+        if (onSubmitPin) {
+          await onSubmitPin(pinToSubmit);
+          onSuccess('', user ?? { id: '', username: '', role: 'standard' });
+        } else if (user) {
+          const res = await api.loginWithPin(pinToSubmit, user.id);
+          onSuccess(res.token, res.user);
+        }
       } catch (err: unknown) {
         setIsShaking(true);
         const msg =
@@ -38,7 +53,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({ user, onSuccess, onCancel }) => 
         setIsLoading(false);
       }
     },
-    [user.id, onSuccess]
+    [user, onSubmitPin, onSuccess]
   );
 
   const handleDigit = useCallback(
@@ -95,27 +110,46 @@ export const PinKeypad: FC<PinKeypadProps> = ({ user, onSuccess, onCancel }) => 
         isShaking ? 'animate-shake' : ''
       }`}
     >
-      {/* User Header */}
+      {/* Header (Custom Title or User Header) */}
       <div className="flex flex-col items-center text-center mb-6">
-        <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-rose-500 via-rose-600 to-amber-500 p-0.5 shadow-xl shadow-rose-950/40 mb-3">
-          <div className="h-full w-full rounded-full bg-zinc-950 flex items-center justify-center">
-            <span className="text-2xl font-bold uppercase tracking-wider text-rose-400">
-              {user.username.slice(0, 2) || 'U'}
-            </span>
-          </div>
-        </div>
-        <h3 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <span>{user.username}</span>
-          {user.role === 'admin' && (
-            <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-400 border border-rose-500/30">
-              ADMIN
-            </span>
-          )}
-        </h3>
-        <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5">
-          <Lock className="h-3 w-3 text-zinc-500" />
-          Enter your 4-digit PIN
-        </p>
+        {title ? (
+          <>
+            <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-amber-500 via-amber-600 to-rose-500 p-0.5 shadow-xl shadow-amber-950/40 mb-3">
+              <div className="h-full w-full rounded-full bg-zinc-950 flex items-center justify-center">
+                <Lock className="h-8 w-8 text-amber-400" />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-white tracking-tight">
+              {title}
+            </h3>
+            <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5">
+              <Lock className="h-3 w-3 text-zinc-500" />
+              {subtitle || 'Enter 4-digit PIN'}
+            </p>
+          </>
+        ) : user ? (
+          <>
+            <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-rose-500 via-rose-600 to-amber-500 p-0.5 shadow-xl shadow-rose-950/40 mb-3">
+              <div className="h-full w-full rounded-full bg-zinc-950 flex items-center justify-center">
+                <span className="text-2xl font-bold uppercase tracking-wider text-rose-400">
+                  {user.username.slice(0, 2) || 'U'}
+                </span>
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <span>{user.username}</span>
+              {user.role === 'admin' && (
+                <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-400 border border-rose-500/30">
+                  ADMIN
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5">
+              <Lock className="h-3 w-3 text-zinc-500" />
+              {subtitle || 'Enter your 4-digit PIN'}
+            </p>
+          </>
+        ) : null}
       </div>
 
       {/* 4-digit PIN Indicator Dots */}

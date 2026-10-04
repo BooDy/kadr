@@ -228,6 +228,7 @@ export interface Library {
   name: string;
   path: string;
   media_type: 'Movie' | 'Episode' | 'Show' | 'Music' | 'Other';
+  is_private: boolean;
   created_at: number;
 }
 
@@ -235,6 +236,14 @@ export interface CreateLibraryPayload {
   name: string;
   path: string;
   media_type: 'Movie' | 'Episode';
+  is_private?: boolean;
+  pin?: string;
+}
+
+export interface UnlockLibraryResponse {
+  library_id: string;
+  token: string;
+  expires_at: number;
 }
 
 export interface ScanResultResponse {

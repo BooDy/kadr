@@ -11,6 +11,7 @@ describe('AdminDashboard Component', () => {
       name: 'Featured Movies',
       path: '/media/movies',
       media_type: 'Movie',
+      is_private: false,
       created_at: 1700000000,
     },
     {
@@ -18,6 +19,7 @@ describe('AdminDashboard Component', () => {
       name: 'TV Series',
       path: '/media/shows',
       media_type: 'Episode',
+      is_private: false,
       created_at: 1700000000,
     },
   ];
@@ -48,6 +50,7 @@ describe('AdminDashboard Component', () => {
       name: payload.name,
       path: payload.path,
       media_type: payload.media_type,
+      is_private: payload.is_private ?? false,
       created_at: 1700000100,
     }));
     vi.spyOn(api, 'deleteLibrary').mockResolvedValue();
@@ -106,10 +109,76 @@ describe('AdminDashboard Component', () => {
         name: 'Documentaries',
         path: '/media/docs',
         media_type: 'Movie',
+        is_private: false,
+        pin: undefined,
       });
       expect(screen.getByText('Documentaries')).toBeDefined();
     });
   });
+
+  it('toggles Private Library to show 4-digit PIN input and submits with private flag and PIN', async () => {
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Featured Movies')).toBeDefined();
+    });
+
+    const addBtn = screen.getByRole('button', { name: /Add Library/i });
+    fireEvent.click(addBtn);
+
+    expect(screen.getByText(/Add Media Library/i)).toBeDefined();
+
+    const nameInput = screen.getByPlaceholderText(/e\.g\. Movies, TV Shows, Anime/i);
+    const pathInput = screen.getByPlaceholderText(/\/var\/lib\/kadr\/media\/movies/i);
+
+    fireEvent.change(nameInput, { target: { value: 'Secret Vault' } });
+    fireEvent.change(pathInput, { target: { value: '/media/secret' } });
+
+    const privateToggle = screen.getByLabelText(/Private Library/i);
+    expect(screen.queryByPlaceholderText(/4-digit PIN/i)).toBeNull();
+
+    fireEvent.click(privateToggle);
+
+    const pinInput = screen.getByPlaceholderText(/4-digit PIN/i);
+    expect(pinInput).toBeDefined();
+
+    fireEvent.change(pinInput, { target: { value: '5678' } });
+
+    const submitBtn = screen.getByRole('button', { name: 'Create Library' });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(api.createLibrary).toHaveBeenCalledWith({
+        name: 'Secret Vault',
+        path: '/media/secret',
+        media_type: 'Movie',
+        is_private: true,
+        pin: '5678',
+      });
+    });
+  });
+
+  it('renders amber Private badge with Lock icon on private library cards', async () => {
+    vi.spyOn(api, 'getLibraries').mockResolvedValueOnce([
+      ...mockLibraries,
+      {
+        id: 'lib-priv',
+        name: 'Private Collection',
+        path: '/media/private',
+        media_type: 'Movie',
+        is_private: true,
+        created_at: 1700000000,
+      },
+    ]);
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Private Collection')).toBeDefined();
+      expect(screen.getByText('Private')).toBeDefined();
+    });
+  });
+
 
   it('triggers on-demand library scan', async () => {
     render(<AdminDashboard />);

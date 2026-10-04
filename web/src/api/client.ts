@@ -14,6 +14,7 @@ import type {
   SubtitleTrack,
   SystemConfig,
   TelemetrySnapshot,
+  UnlockLibraryResponse,
   UpdateConfigPayload,
   User,
   WidgetDataResponse,
@@ -33,6 +34,7 @@ export class ApiError extends Error {
 
 export const TOKEN_STORAGE_KEY = 'kadr_token';
 export const USER_STORAGE_KEY = 'kadr_user';
+export const UNLOCKED_LIBRARIES_STORAGE_KEY = 'kadr_unlocked_libraries';
 
 export class ApiClient {
   private baseUrl: string;
@@ -76,9 +78,76 @@ export class ApiClient {
     }
   }
 
+  // Unlocked Libraries Management (sessionStorage)
+  public getUnlockedTokens(): Record<string, string> {
+    if (typeof sessionStorage === 'undefined') return {};
+    const raw = sessionStorage.getItem(UNLOCKED_LIBRARIES_STORAGE_KEY);
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed)) {
+          const result: Record<string, string> = {};
+          for (const item of parsed) {
+            if (typeof item === 'string') {
+              result[item] = item;
+            } else if (item && typeof item === 'object' && item.library_id && item.token) {
+              result[item.library_id] = item.token;
+            }
+          }
+          return result;
+        }
+        const result: Record<string, string> = {};
+        for (const [key, val] of Object.entries(parsed)) {
+          if (typeof val === 'string') {
+            result[key] = val;
+          } else if (val && typeof val === 'object' && 'token' in val && typeof (val as { token: unknown }).token === 'string') {
+            result[key] = (val as { token: string }).token;
+          }
+        }
+        return result;
+      }
+    } catch {
+      return {};
+    }
+    return {};
+  }
+
+  public getUnlockedLibraryIds(): string[] {
+    return Object.keys(this.getUnlockedTokens());
+  }
+
+  public isLibraryUnlocked(libraryId: string): boolean {
+    return Boolean(this.getUnlockedTokens()[libraryId]);
+  }
+
+  public getUnlockToken(libraryId: string): string | null {
+    return this.getUnlockedTokens()[libraryId] || null;
+  }
+
+  public storeUnlockToken(libraryId: string, token: string): void {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = this.getUnlockedTokens();
+    current[libraryId] = token;
+    sessionStorage.setItem(UNLOCKED_LIBRARIES_STORAGE_KEY, JSON.stringify(current));
+  }
+
+  public clearUnlockedToken(libraryId: string): void {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = this.getUnlockedTokens();
+    delete current[libraryId];
+    sessionStorage.setItem(UNLOCKED_LIBRARIES_STORAGE_KEY, JSON.stringify(current));
+  }
+
+  public clearUnlockedTokens(): void {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.removeItem(UNLOCKED_LIBRARIES_STORAGE_KEY);
+  }
+
   public logout(): void {
     this.setToken(null);
     this.setUser(null);
+    this.clearUnlockedTokens();
   }
 
   // HTTP Request Helper
@@ -115,6 +184,11 @@ export class ApiClient {
     const token = this.getToken();
     if (token && !headers['Authorization'] && !headers['authorization']) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const unlockedTokens = Object.values(this.getUnlockedTokens()).filter(Boolean);
+    if (unlockedTokens.length > 0 && !headers['X-Kadr-Unlocked'] && !headers['x-kadr-unlocked']) {
+      headers['X-Kadr-Unlocked'] = unlockedTokens.join(',');
     }
 
     const response = await fetch(url, {
@@ -172,10 +246,21 @@ export class ApiClient {
   }
 
   // URL Resolution Methods
-  public getStreamUrl(itemId: number): string {
+  public getStreamUrl(itemId: number, unlocked?: string): string {
     const token = this.getToken();
     const base = `${this.baseUrl}/api/v1/stream/${itemId}`;
-    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+    const params = new URLSearchParams();
+    if (token) {
+      params.append('token', token);
+    }
+    const unlockedTokens = unlocked
+      ? [unlocked]
+      : Object.values(this.getUnlockedTokens()).filter(Boolean);
+    if (unlockedTokens.length > 0) {
+      params.append('unlocked', unlockedTokens.join(','));
+    }
+    const query = params.toString();
+    return query ? `${base}?${query}` : base;
   }
 
   public getSubtitleStreamUrl(subtitleId: number): string {
@@ -328,6 +413,21 @@ export class ApiClient {
   // Libraries Management
   public async getLibraries(): Promise<Library[]> {
     return this.request<Library[]>('/api/v1/libraries');
+  }
+
+  public async unlockLibrary(
+    id: string,
+    pin: string
+  ): Promise<UnlockLibraryResponse> {
+    const res = await this.request<UnlockLibraryResponse>(
+      `/api/v1/libraries/${encodeURIComponent(id)}/unlock`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ pin }),
+      }
+    );
+    this.storeUnlockToken(res.library_id, res.token);
+    return res;
   }
 
   public async createLibrary(payload: CreateLibraryPayload): Promise<Library> {

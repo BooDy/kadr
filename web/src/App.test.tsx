@@ -174,4 +174,110 @@ describe('App Shell', () => {
     // Now unauthenticated: ProfileSelect is shown
     await waitFor(() => expect(screen.getByText(/Who's watching\?/i)).toBeDefined());
   });
+
+  it('triggers PIN keypad prompt when clicking a locked private library', async () => {
+    api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
+    api.setToken('test-jwt');
+
+    const mockLibraries = [
+      {
+        id: 'lib-vault',
+        name: 'Private Vault',
+        path: '/media/vault',
+        media_type: 'Movie' as const,
+        is_private: true,
+        created_at: 1700000000,
+      },
+    ];
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue(mockLibraries);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({
+      id: 'home',
+      title: 'Home',
+      widgets: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Private Vault/i })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Private Vault/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Unlock Private Vault/i)).toBeDefined();
+    });
+  });
+
+  it('unlocks private library with PIN, saves token to session storage, and displays library contents', async () => {
+    sessionStorage.clear();
+    api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
+    api.setToken('test-jwt');
+
+    const mockLibraries = [
+      {
+        id: 'lib-vault',
+        name: 'Private Vault',
+        path: '/media/vault',
+        media_type: 'Movie' as const,
+        is_private: true,
+        created_at: 1700000000,
+      },
+    ];
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue(mockLibraries);
+    vi.spyOn(api, 'unlockLibrary').mockResolvedValue({
+      library_id: 'lib-vault',
+      token: 'vault-unlock-token-123',
+      expires_at: 1800000000,
+    });
+    vi.spyOn(api, 'getScreen').mockImplementation(async (screenId) => {
+      if (screenId === 'lib-vault') {
+        return {
+          id: 'lib-vault',
+          title: 'Vault Movies',
+          widgets: [
+            {
+              type: 'carousel',
+              id: 'vault_cw',
+              title: 'Vault Items',
+              binding: { macro_type: 'recently_added', limit: 10 },
+              items: [{ id: 501, title: 'Secret Film', media_type: 'movie' }],
+            },
+          ],
+        };
+      }
+      return { id: 'home', title: 'Home', widgets: [] };
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Private Vault/i })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Private Vault/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Unlock Private Vault/i)).toBeDefined();
+    });
+
+    // Enter 4 digits (1, 2, 3, 4)
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
+    fireEvent.click(screen.getByRole('button', { name: '4' }));
+
+    await waitFor(() => {
+      expect(api.unlockLibrary).toHaveBeenCalledWith('lib-vault', '1234');
+      expect(screen.getByText('Vault Items')).toBeDefined();
+    });
+
+    // Verify sessionStorage has saved token under kadr_unlocked_libraries
+    const stored = sessionStorage.getItem('kadr_unlocked_libraries');
+    expect(stored).toBeTruthy();
+    expect(stored).toContain('vault-unlock-token-123');
+  });
 });
+

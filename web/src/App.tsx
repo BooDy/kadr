@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, useEffect, useCallback, type FC } from 'react';
 import {
   Film,
   Home,
@@ -8,17 +8,20 @@ import {
   LogOut,
   Users,
   Settings,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { api } from './api/client';
-import type { User } from './types';
+import type { Library, User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
+import { PinKeypad } from './components/auth/PinKeypad';
 import { BrowseScreen } from './components/browse/BrowseScreen';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
 import { LayoutStudio } from './components/studio/LayoutStudio';
 import { TelemetryDashboard } from './components/telemetry/TelemetryDashboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 
-export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'admin' | 'player';
+export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'admin' | 'player' | string;
 
 export const App: FC = () => {
   const [currentView, setCurrentView] = useState<NavView>('home');
@@ -26,25 +29,58 @@ export const App: FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [activePlayingItemId, setActivePlayingItemId] = useState<number | null>(null);
 
+  // Library and unlock state
+  const [libraries, setLibraries] = useState<Library[]>([]);
+  const [unlockedLibraryIds, setUnlockedLibraryIds] = useState<string[]>(() => api.getUnlockedLibraryIds());
+  const [libraryToUnlock, setLibraryToUnlock] = useState<Library | null>(null);
+  const [activeLibrary, setActiveLibrary] = useState<Library | null>(null);
+
+  const refreshLibraries = useCallback(() => {
+    api.getLibraries().then(setLibraries).catch(() => []);
+    setUnlockedLibraryIds(api.getUnlockedLibraryIds());
+  }, []);
+
   useEffect(() => {
-    // Sync initial user state from local storage or verify session
     const user = api.getUser();
     if (user) {
       setCurrentUser(user);
+      refreshLibraries();
     }
-  }, []);
+  }, [refreshLibraries]);
 
   const handleAuthSuccess = (token: string, user: User) => {
+    api.clearUnlockedTokens();
+    setUnlockedLibraryIds([]);
+    setActiveLibrary(null);
+    setLibraryToUnlock(null);
     api.setToken(token);
     api.setUser(user);
     setCurrentUser(user);
     setIsAuthModalOpen(false);
+    refreshLibraries();
   };
 
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
+    setUnlockedLibraryIds([]);
+    setActiveLibrary(null);
+    setLibraryToUnlock(null);
     setIsAuthModalOpen(false);
+  };
+
+  const handleSelectLibrary = (lib: Library) => {
+    if (lib.is_private && !api.isLibraryUnlocked(lib.id) && !unlockedLibraryIds.includes(lib.id)) {
+      setLibraryToUnlock(lib);
+      return;
+    }
+    setActiveLibrary(lib);
+    setCurrentView(`library-${lib.id}`);
+  };
+
+  const handleNavigate = (view: NavView) => {
+    setActiveLibrary(null);
+    setCurrentView(view);
   };
 
   const handlePlayItem = (itemId: number) => {
@@ -74,7 +110,7 @@ export const App: FC = () => {
             {/* Navigation Links */}
             <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
               <button
-                onClick={() => setCurrentView('home')}
+                onClick={() => handleNavigate('home')}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
                   currentView === 'home'
                     ? 'text-white bg-zinc-800/90 font-semibold'
@@ -85,7 +121,7 @@ export const App: FC = () => {
                 Home
               </button>
               <button
-                onClick={() => setCurrentView('movies')}
+                onClick={() => handleNavigate('movies')}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
                   currentView === 'movies'
                     ? 'text-white bg-zinc-800/90 font-semibold'
@@ -96,7 +132,7 @@ export const App: FC = () => {
                 Movies
               </button>
               <button
-                onClick={() => setCurrentView('shows')}
+                onClick={() => handleNavigate('shows')}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
                   currentView === 'shows'
                     ? 'text-white bg-zinc-800/90 font-semibold'
@@ -106,8 +142,51 @@ export const App: FC = () => {
                 <Tv className="h-4 w-4" />
                 Shows
               </button>
+
+              {/* Dynamic Library Navigation Tabs */}
+              {libraries.map((lib) => {
+                const isUnlocked = unlockedLibraryIds.includes(lib.id) || api.isLibraryUnlocked(lib.id);
+                const isCurrent = currentView === `library-${lib.id}`;
+                return (
+                  <button
+                    key={lib.id}
+                    onClick={() => handleSelectLibrary(lib)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+                      isCurrent
+                        ? 'text-white bg-zinc-800/90 font-semibold'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                    }`}
+                  >
+                    {lib.is_private ? (
+                      isUnlocked ? (
+                        <Unlock className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Lock className="h-4 w-4 text-amber-400" />
+                      )
+                    ) : lib.media_type === 'Movie' ? (
+                      <Film className="h-4 w-4" />
+                    ) : (
+                      <Tv className="h-4 w-4" />
+                    )}
+                    <span>{lib.name}</span>
+                    {lib.is_private && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium border flex items-center gap-1 ${
+                          isUnlocked
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
+                            : 'bg-amber-950/80 text-amber-300 border-amber-500/50'
+                        }`}
+                      >
+                        {isUnlocked ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
+                        {isUnlocked ? 'Unlocked' : 'Private'}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
               <button
-                onClick={() => setCurrentView('studio')}
+                onClick={() => handleNavigate('studio')}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
                   currentView === 'studio'
                     ? 'text-white bg-zinc-800/90 font-semibold'
@@ -118,7 +197,7 @@ export const App: FC = () => {
                 Studio
               </button>
               <button
-                onClick={() => setCurrentView('telemetry')}
+                onClick={() => handleNavigate('telemetry')}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
                   currentView === 'telemetry'
                     ? 'text-white bg-zinc-800/90 font-semibold'
@@ -130,7 +209,7 @@ export const App: FC = () => {
               </button>
               {currentUser?.role === 'admin' && (
                 <button
-                  onClick={() => setCurrentView('admin')}
+                  onClick={() => handleNavigate('admin')}
                   className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
                     currentView === 'admin'
                       ? 'text-white bg-zinc-800/90 font-semibold'
@@ -207,6 +286,10 @@ export const App: FC = () => {
               <BrowseScreen screenId="shows" onPlayItem={handlePlayItem} />
             )}
 
+            {activeLibrary && currentView === `library-${activeLibrary.id}` && (
+              <BrowseScreen screenId={activeLibrary.id} onPlayItem={handlePlayItem} />
+            )}
+
             {currentView === 'player' && activePlayingItemId !== null && (
               <CinemaPlayer
                 itemId={activePlayingItemId}
@@ -240,6 +323,28 @@ export const App: FC = () => {
                 onSuccess={handleAuthSuccess}
                 onCancel={() => setIsAuthModalOpen(false)}
                 onSignOut={handleLogout}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* PinKeypad Modal for Private Library Unlock */}
+        {libraryToUnlock && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="relative w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950/95 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+              <PinKeypad
+                title={`Unlock ${libraryToUnlock.name}`}
+                subtitle="Enter 4-digit library PIN"
+                onSubmitPin={async (pin) => {
+                  const res = await api.unlockLibrary(libraryToUnlock.id, pin);
+                  api.storeUnlockToken(res.library_id, res.token);
+                  setUnlockedLibraryIds(api.getUnlockedLibraryIds());
+                  setActiveLibrary(libraryToUnlock);
+                  setCurrentView(`library-${libraryToUnlock.id}`);
+                  setLibraryToUnlock(null);
+                }}
+                onSuccess={() => {}}
+                onCancel={() => setLibraryToUnlock(null)}
               />
             </div>
           </div>

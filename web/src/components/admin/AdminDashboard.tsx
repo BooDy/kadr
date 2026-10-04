@@ -13,6 +13,7 @@ import {
   Plus,
   X,
   HardDrive,
+  Lock,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import type { Library, SystemConfig, User } from '../../types';
@@ -34,6 +35,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   const [libName, setLibName] = useState('');
   const [libPath, setLibPath] = useState('');
   const [libMediaType, setLibMediaType] = useState<'Movie' | 'Episode'>('Movie');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [libPin, setLibPin] = useState('');
   const [isSubmittingLib, setIsSubmittingLib] = useState(false);
 
   // Add User Modal state
@@ -88,17 +91,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
     e.preventDefault();
     if (!libName.trim() || !libPath.trim()) return;
 
+    if (isPrivate && libPin.length !== 4) {
+      showStatus('error', 'PIN must be exactly 4 digits.');
+      return;
+    }
+
     setIsSubmittingLib(true);
     try {
       const created = await api.createLibrary({
         name: libName.trim(),
         path: libPath.trim(),
         media_type: libMediaType,
+        is_private: isPrivate,
+        pin: isPrivate ? libPin : undefined,
       });
       setLibraries((prev) => [...prev, created]);
       setIsAddLibOpen(false);
       setLibName('');
       setLibPath('');
+      setIsPrivate(false);
+      setLibPin('');
       showStatus('success', `Library "${created.name}" created and queued for initial scan.`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create library';
@@ -301,9 +313,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                         )}
                         <h3 className="font-semibold text-lg text-white">{lib.name}</h3>
                       </div>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
-                        {lib.media_type}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {lib.is_private && (
+                          <span className="flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-950/80 text-amber-300 border border-amber-500/50">
+                            <Lock className="w-3 h-3" />
+                            Private
+                          </span>
+                        )}
+                        <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
+                          {lib.media_type}
+                        </span>
+                      </div>
                     </div>
                     <div className="text-xs font-mono text-zinc-400 break-all bg-zinc-950/60 p-2.5 rounded-lg border border-zinc-800/80 mb-4">
                       {lib.path}
@@ -562,10 +582,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                 </p>
               </div>
 
+              <div className="pt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="private-lib-toggle"
+                    checked={isPrivate}
+                    onChange={(e) => setIsPrivate(e.target.checked)}
+                    className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-amber-500 focus:ring-amber-500 focus:ring-offset-zinc-900 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="private-lib-toggle"
+                    className="text-xs font-medium text-zinc-300 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    Private Library
+                  </label>
+                </div>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Private libraries require a 4-digit PIN to access and are isolated from normal browsing.
+                </p>
+              </div>
+
+              {isPrivate && (
+                <div>
+                  <label htmlFor="lib-pin-input" className="block text-xs font-medium text-zinc-300 mb-1">
+                    4-digit Numeric PIN
+                  </label>
+                  <input
+                    id="lib-pin-input"
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    required={isPrivate}
+                    placeholder="4-digit PIN (e.g. 1234)"
+                    value={libPin}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                      setLibPin(val);
+                    }}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono text-white tracking-widest focus:outline-none focus:border-amber-500"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Enter exactly 4 digits. Required to unlock this library's contents.
+                  </p>
+                </div>
+              )}
+
               <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsAddLibOpen(false)}
+                  onClick={() => {
+                    setIsAddLibOpen(false);
+                    setIsPrivate(false);
+                    setLibPin('');
+                  }}
                   className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-sm font-medium transition-colors"
                 >
                   Cancel
