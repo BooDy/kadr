@@ -80,7 +80,12 @@ export const ProfileSelect: FC<ProfileSelectProps> = ({
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-center justify-center py-8 px-4 sm:px-6">
       {/* Title Header */}
-      <div className="text-center mb-10">
+      <div className="text-center mb-10 flex flex-col items-center">
+        <img
+          src="/kadr-logo-ui.png"
+          alt="KADR Logo"
+          className="h-20 w-20 object-contain drop-shadow-2xl mb-4 hover:scale-105 transition-transform duration-200"
+        />
         <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2">
           Who&apos;s watching?
         </h2>

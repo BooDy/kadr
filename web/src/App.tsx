@@ -99,10 +99,12 @@ export const App: FC = () => {
               onClick={() => setCurrentView('home')}
               className="flex items-center gap-2.5 text-left group focus:outline-none"
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-rose-700 shadow-md shadow-rose-900/30 group-hover:scale-105 transition-transform duration-200">
-                <Film className="h-5 w-5 text-white" />
-              </div>
-              <span className="text-xl font-bold tracking-tight text-white group-hover:text-rose-400 transition-colors">
+              <img
+                src="/kadr-logo-ui.png"
+                alt="KADR Logo"
+                className="h-9 w-9 object-contain drop-shadow group-hover:scale-105 transition-transform duration-200"
+              />
+              <span className="text-xl font-bold tracking-tight text-white group-hover:text-amber-400 transition-colors">
                 KADR
               </span>
             </button>
