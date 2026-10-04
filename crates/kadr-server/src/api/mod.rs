@@ -7,8 +7,11 @@ pub mod library_routes;
 pub mod playback;
 pub mod screen_routes;
 pub mod subtitle_routes;
+pub mod unlock_token;
 pub mod user_routes;
 pub mod widget_routes;
+
+pub use unlock_token::{UnlockedLibraries, UnlockTokenService};
 
 use crate::auth::jwt::JwtService;
 use crate::auth::rate_limiter::RateLimiter;
@@ -141,6 +144,10 @@ pub fn create_router_with_events(
             "/api/v1/libraries/{id}/scan",
             post(library_routes::scan_library),
         )
+        .route(
+            "/api/v1/libraries/{id}/unlock",
+            post(library_routes::unlock_library),
+        )
         // System configuration routes
         .route("/api/v1/system/config", get(config_routes::get_config))
         .route("/api/v1/system/config", put(config_routes::update_config))
@@ -148,6 +155,7 @@ pub fn create_router_with_events(
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
         .layer(Extension(lib_repo))
+        .layer(Extension(UnlockTokenService::new(jwt_svc.secret(), 86400 * 7)))
         .layer(Extension(jwt_svc))
         .layer(Extension(limiter))
         .layer(Extension(session_registry))

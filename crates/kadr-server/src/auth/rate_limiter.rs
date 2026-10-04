@@ -25,6 +25,8 @@ pub struct RateLimiter {
     attempts: Arc<RwLock<HashMap<IpAddr, AttemptRecord>>>,
 }
 
+pub type PinRateLimiter = RateLimiter;
+
 impl RateLimiter {
     pub fn new(max_attempts: u32, window_duration: Duration, lockout_duration: Duration) -> Self {
         Self {

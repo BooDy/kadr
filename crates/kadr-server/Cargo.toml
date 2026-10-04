@@ -54,8 +54,12 @@ tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tokio-util = { version = "0.7", features = ["io"] }
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { version = "1.43", features = ["full", "macros"] }
 tempfile = "3.17"
+http-body-util = "0.1"
 

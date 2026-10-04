@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub struct JwtService {
+    secret: Vec<u8>,
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
     ttl_seconds: usize,
@@ -19,10 +20,15 @@ pub struct JwtService {
 impl JwtService {
     pub fn new(secret: &str, ttl_seconds: usize) -> Self {
         Self {
+            secret: secret.as_bytes().to_vec(),
             encoding_key: EncodingKey::from_secret(secret.as_bytes()),
             decoding_key: DecodingKey::from_secret(secret.as_bytes()),
             ttl_seconds,
         }
+    }
+
+    pub fn secret(&self) -> &[u8] {
+        &self.secret
     }
 
     pub fn generate_token(&self, user: &User) -> Result<String, jsonwebtoken::errors::Error> {
