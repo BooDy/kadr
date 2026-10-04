@@ -28,7 +28,7 @@ impl LayoutRegistry {
     /// Creates a new `LayoutRegistry` initialized with built-in default layouts:
     /// `Home`, `Movies`, and `Shows`.
     pub fn new() -> Self {
-        let mut registry = Self {
+        let registry = Self {
             inner: Arc::new(RwLock::new(LayoutRegistryInner::default())),
         };
 
@@ -65,7 +65,7 @@ impl LayoutRegistry {
     }
 
     /// Registers or overrides a screen layout.
-    pub fn register_screen(&mut self, screen: ScreenLayout) {
+    pub fn register_screen(&self, screen: ScreenLayout) {
         let mut inner = self.inner.write().expect("layout registry lock poisoned");
         if !inner.screens.contains_key(&screen.id) {
             inner.order.push(screen.id.clone());
@@ -74,7 +74,7 @@ impl LayoutRegistry {
     }
 
     /// Saves a screen layout to disk as JSON and updates in-memory registry.
-    pub fn save_screen(&mut self, screen: ScreenLayout, dir: &Path) -> Result<(), std::io::Error> {
+    pub fn save_screen(&self, screen: ScreenLayout, dir: &Path) -> Result<(), std::io::Error> {
         std::fs::create_dir_all(dir)?;
         let file_path = dir.join(format!("{}.json", screen.id));
         let serialized = serde_json::to_string_pretty(&screen)
@@ -85,7 +85,7 @@ impl LayoutRegistry {
     }
 
     /// Resets a built-in screen layout to factory default and removes its override file.
-    pub fn reset_screen(&mut self, id: &ScreenId, dir: &Path) -> Result<ScreenLayout, LayoutError> {
+    pub fn reset_screen(&self, id: &ScreenId, dir: &Path) -> Result<ScreenLayout, LayoutError> {
         let file_path = dir.join(format!("{id}.json"));
         if file_path.exists() {
             if let Err(e) = std::fs::remove_file(&file_path) {
@@ -119,7 +119,7 @@ impl LayoutRegistry {
     }
 
     /// Deletes a custom screen from disk and removes it from the in-memory registry.
-    pub fn delete_custom_screen(&mut self, id: &ScreenId, dir: &Path) -> Result<(), LayoutError> {
+    pub fn delete_custom_screen(&self, id: &ScreenId, dir: &Path) -> Result<(), LayoutError> {
         match id {
             ScreenId::Home | ScreenId::Movies | ScreenId::Shows => {
                 Err("Built-in screens cannot be deleted".to_string())
@@ -147,7 +147,7 @@ impl LayoutRegistry {
 
     /// Loads screen definitions (TOML or JSON) from the specified directory if present.
     /// Invalid files are logged with warnings and do not abort loading of other files.
-    pub fn load_overrides_from_dir(&mut self, dir: &Path) -> Result<(), std::io::Error> {
+    pub fn load_overrides_from_dir(&self, dir: &Path) -> Result<(), std::io::Error> {
         if !dir.exists() {
             return Ok(());
         }

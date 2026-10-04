@@ -272,7 +272,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Initialize layout registry and widget resolver
-    let mut layout_registry = LayoutRegistry::new();
+    let layout_registry = LayoutRegistry::new();
     let config_screens_dir = std::path::Path::new("config/screens");
     if config_screens_dir.exists() {
         if let Err(e) = layout_registry.load_overrides_from_dir(config_screens_dir) {

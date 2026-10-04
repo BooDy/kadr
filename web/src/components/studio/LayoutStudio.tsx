@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type FC } from 'react';
+import { useState, useEffect, useCallback, useRef, type FC } from 'react';
 import {
   Tv,
   Tablet,
@@ -213,6 +213,16 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
 
   // Widget config modal state
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
@@ -341,8 +351,14 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
     try {
       await api.saveScreen(layout.id, layout);
       setIsDirty(false);
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
       setSaveSuccess('Layout saved successfully');
-      setTimeout(() => setSaveSuccess(null), 3000);
+      saveTimerRef.current = setTimeout(() => {
+        setSaveSuccess(null);
+        saveTimerRef.current = null;
+      }, 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to save screen layout: ${msg}`);
@@ -679,7 +695,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                        <label className="flex items-center cursor-pointer p-1 rounded-lg hover:bg-panel-hover transition-colors">
+                        <label className="flex items-center cursor-pointer p-1 rounded-lg hover:bg-panel-hover transition-colors has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-highlight has-[:focus-visible]:outline-none">
                           <input
                             type="checkbox"
                             aria-label={`Toggle ${widget.id}`}
@@ -804,7 +820,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
           role="dialog"
           aria-modal="true"
           aria-label="New Screen"
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-canvas/80 backdrop-blur-sm flex items-center justify-center p-4"
         >
           <div className="bg-panel border border-border-subtle rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-border-subtle">

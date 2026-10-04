@@ -210,7 +210,7 @@ fn test_shows_screen_layout() {
 
 #[test]
 fn test_register_screen_override_and_custom() {
-    let mut registry = LayoutRegistry::new();
+    let registry = LayoutRegistry::new();
 
     // 1. Override existing Home screen
     let custom_home = ScreenLayout::new(
@@ -266,7 +266,7 @@ fn test_register_screen_override_and_custom() {
 
 #[test]
 fn test_load_overrides_from_dir() {
-    let mut registry = LayoutRegistry::new();
+    let registry = LayoutRegistry::new();
     let temp_dir = tempdir().expect("Failed to create temp dir");
 
     // Non-existent dir returns Ok(())
@@ -320,7 +320,7 @@ fn test_load_overrides_from_dir() {
 
 #[test]
 fn test_save_reset_and_delete_custom_screen() {
-    let mut registry = LayoutRegistry::new();
+    let registry = LayoutRegistry::new();
     let temp_dir = tempdir().expect("Failed to create temp dir");
     let dir = temp_dir.path();
 

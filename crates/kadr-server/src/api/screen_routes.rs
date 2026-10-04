@@ -116,7 +116,7 @@ pub struct CreateScreenRequest {
 pub async fn save_screen_handler(
     _admin: RequireAdmin,
     Path(screen_id): Path<String>,
-    Extension(mut registry): Extension<LayoutRegistry>,
+    Extension(registry): Extension<LayoutRegistry>,
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
     Json(mut screen): Json<ScreenLayout>,
 ) -> Result<Json<ScreenLayout>, (StatusCode, Json<serde_json::Value>)> {
@@ -145,7 +145,7 @@ pub async fn save_screen_handler(
 /// Creates a new screen AST layout and persists it. Requires admin role.
 pub async fn create_screen_handler(
     _admin: RequireAdmin,
-    Extension(mut registry): Extension<LayoutRegistry>,
+    Extension(registry): Extension<LayoutRegistry>,
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
     Json(payload): Json<CreateScreenRequest>,
 ) -> Result<(StatusCode, Json<ScreenLayout>), (StatusCode, Json<serde_json::Value>)> {
@@ -181,7 +181,7 @@ pub async fn create_screen_handler(
 pub async fn delete_screen_handler(
     _admin: RequireAdmin,
     Path(screen_id): Path<String>,
-    Extension(mut registry): Extension<LayoutRegistry>,
+    Extension(registry): Extension<LayoutRegistry>,
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     if let Err(err_msg) = validate_screen_id(&screen_id) {

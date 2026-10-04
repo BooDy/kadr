@@ -214,7 +214,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={initialWidget ? 'Edit Widget' : 'Add Widget'}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-canvas/80 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div className="bg-panel border border-border-subtle rounded-2xl max-w-xl w-full p-6 shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
