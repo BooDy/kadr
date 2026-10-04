@@ -2,13 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::extract::{Extension, Path};
+use axum::extract::{Extension, Path, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use kadr_core::events::SystemEvent;
 use kadr_core::models::{Library, MediaType};
 use kadr_ingest::watcher::{scan_directory_recursive, IngestMessage, IngestPipeline};
+use kadr_storage::error::StorageError;
 use kadr_storage::repos::LibraryRepository;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -24,12 +25,28 @@ use crate::events::EventBus;
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateLibraryRequest {
     pub name: String,
-    pub path: PathBuf,
+    pub path: Option<PathBuf>,
+    pub paths: Option<Vec<PathBuf>>,
     pub media_type: MediaType,
     #[serde(default)]
     pub is_private: bool,
     #[serde(default)]
     pub pin: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddPathRequest {
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RemovePathQuery {
+    pub path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemovePathPayload {
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -82,6 +99,29 @@ pub async fn create_library(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    let (resolved_paths, validate_existence) = match payload.paths {
+        Some(paths) if !paths.is_empty() => (paths, true),
+        _ => (payload.path.into_iter().collect(), false),
+    };
+
+    if resolved_paths.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if validate_existence {
+        for p in &resolved_paths {
+            if !p.is_dir() {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+    } else {
+        for p in &resolved_paths {
+            if p.exists() && !p.is_dir() {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+    }
+
     let pin_hash = if payload.is_private {
         match payload.pin.as_deref() {
             Some(pin) if validate_pin(pin).is_ok() => match hash_pin(pin) {
@@ -98,52 +138,52 @@ pub async fn create_library(
     };
 
     let id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-
-    let library = Library {
-        id,
-        name: payload.name.trim().to_string(),
-        path: payload.path.clone(),
-        paths: vec![payload.path],
-        media_type: payload.media_type,
-        is_private: payload.is_private,
-        pin_hash,
-        created_at: now,
+    let library = match lib_repo
+        .create_with_paths(
+            &id,
+            payload.name.trim(),
+            &resolved_paths,
+            payload.media_type,
+            payload.is_private,
+            pin_hash.as_deref(),
+        )
+        .await
+    {
+        Ok(lib) => lib,
+        Err(e) => {
+            error!(error = %e, "Failed to create library in database");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
     };
-
-    if let Err(e) = lib_repo.insert(&library).await {
-        error!(error = %e, "Failed to create library in database");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
 
     event_bus.publish(SystemEvent::LibraryUpdated {
         library_id: library.id.clone(),
         item_count: 0,
-        timestamp: now,
+        timestamp: library.created_at,
     });
 
-    // If path exists on disk, trigger background scanning
-    if library.path.exists() {
-        let lib_clone = library.clone();
-        let pipe_clone = pipeline.clone();
-        let tx_clone = ingest_tx.clone();
-        tokio::spawn(async move {
-            let files = scan_directory_recursive(&lib_clone.path);
-            info!(
-                library = %lib_clone.name,
-                count = files.len(),
-                "Scanning newly registered library files"
-            );
-            for file in files {
-                if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
-                    let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
-                }
+    // If paths exist on disk, trigger background scanning
+    let lib_clone = library.clone();
+    let pipe_clone = pipeline.clone();
+    let tx_clone = ingest_tx.clone();
+    tokio::spawn(async move {
+        let mut all_files = Vec::new();
+        for p in &lib_clone.paths {
+            if p.exists() {
+                all_files.extend(scan_directory_recursive(p));
             }
-        });
-    }
+        }
+        info!(
+            library = %lib_clone.name,
+            count = all_files.len(),
+            "Scanning newly registered library files"
+        );
+        for file in all_files {
+            if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
+                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+            }
+        }
+    });
 
     Ok((StatusCode::CREATED, Json(library)))
 }
@@ -291,7 +331,18 @@ pub async fn scan_library(
         }
     };
 
-    let files = scan_directory_recursive(&library.path);
+    let paths = if library.paths.is_empty() {
+        vec![library.path.clone()]
+    } else {
+        library.paths.clone()
+    };
+
+    let mut files = Vec::new();
+    for p in &paths {
+        if p.exists() {
+            files.extend(scan_directory_recursive(p));
+        }
+    }
     let files_scanned = files.len();
 
     let lib_clone = library.clone();
@@ -328,4 +379,115 @@ pub async fn scan_library(
             queued: true,
         }),
     ))
+}
+
+/// Handler for `POST /api/v1/libraries/{id}/paths`.
+///
+/// Adds an additional storage path to a library and initiates scanning.
+/// Requires admin role.
+pub async fn add_library_path(
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(pipeline): Extension<Arc<IngestPipeline>>,
+    Extension(ingest_tx): Extension<mpsc::Sender<IngestMessage>>,
+    Extension(event_bus): Extension<Arc<EventBus>>,
+    Json(payload): Json<AddPathRequest>,
+) -> Result<(StatusCode, Json<Library>), StatusCode> {
+    if !payload.path.is_dir() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let existing_lib = match lib_repo.get_by_id(&id).await {
+        Ok(Some(lib)) => lib,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to get library");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    if let Err(e) = lib_repo.add_path(&id, &payload.path).await {
+        error!(error = %e, library_id = %id, "Failed to add path to library");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let updated_lib = match lib_repo.get_by_id(&id).await {
+        Ok(Some(lib)) => lib,
+        _ => existing_lib,
+    };
+
+    let lib_clone = updated_lib.clone();
+    let added_path = payload.path.clone();
+    let pipe_clone = pipeline.clone();
+    let tx_clone = ingest_tx.clone();
+    tokio::spawn(async move {
+        let files = scan_directory_recursive(&added_path);
+        info!(
+            library = %lib_clone.name,
+            path = ?added_path,
+            count = files.len(),
+            "Scanning newly added library path"
+        );
+        for file in files {
+            if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
+                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+            }
+        }
+    });
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    event_bus.publish(SystemEvent::LibraryUpdated {
+        library_id: id,
+        item_count: 0,
+        timestamp: now,
+    });
+
+    Ok((StatusCode::OK, Json(updated_lib)))
+}
+
+/// Handler for `DELETE /api/v1/libraries/{id}/paths`.
+///
+/// Removes a storage path from a library. Returns 400 Bad Request if trying to remove the last path.
+/// Accepts `?path=...` query param or JSON `{ "path": "..." }` body.
+/// Requires admin role.
+pub async fn remove_library_path(
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+    Query(query): Query<RemovePathQuery>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(event_bus): Extension<Arc<EventBus>>,
+    body: axum::body::Bytes,
+) -> Result<StatusCode, StatusCode> {
+    let path = if let Some(p) = query.path {
+        p
+    } else if let Ok(payload) = serde_json::from_slice::<RemovePathPayload>(&body) {
+        payload.path
+    } else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    match lib_repo.remove_path(&id, &path).await {
+        Ok(()) => {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            event_bus.publish(SystemEvent::LibraryUpdated {
+                library_id: id,
+                item_count: 0,
+                timestamp: now,
+            });
+            Ok(StatusCode::OK)
+        }
+        Err(StorageError::NotFound(_)) => Err(StatusCode::NOT_FOUND),
+        Err(StorageError::InvalidInput(_)) => Err(StatusCode::BAD_REQUEST),
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to remove path from library");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

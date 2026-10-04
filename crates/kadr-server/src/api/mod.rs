@@ -8,6 +8,7 @@ pub mod playback;
 pub mod screen_routes;
 pub mod streaming;
 pub mod subtitle_routes;
+pub mod system_routes;
 pub mod unlock_token;
 pub mod user_routes;
 pub mod widget_routes;
@@ -138,12 +139,21 @@ pub fn create_router_with_events(
             "/api/v1/system/telemetry",
             get(events_routes::get_telemetry),
         )
+        // System configuration and fs routes
+        .route("/api/v1/system/config", get(config_routes::get_config))
+        .route("/api/v1/system/config", put(config_routes::update_config))
+        .route("/api/v1/system/fs", get(system_routes::browse_filesystem))
         // Library management routes
         .route("/api/v1/libraries", get(library_routes::list_libraries))
         .route("/api/v1/libraries", post(library_routes::create_library))
         .route(
             "/api/v1/libraries/{id}",
             delete(library_routes::delete_library),
+        )
+        .route(
+            "/api/v1/libraries/{id}/paths",
+            post(library_routes::add_library_path)
+                .delete(library_routes::remove_library_path),
         )
         .route(
             "/api/v1/libraries/{id}/scan",
@@ -153,9 +163,6 @@ pub fn create_router_with_events(
             "/api/v1/libraries/{id}/unlock",
             post(library_routes::unlock_library),
         )
-        // System configuration routes
-        .route("/api/v1/system/config", get(config_routes::get_config))
-        .route("/api/v1/system/config", put(config_routes::update_config))
         .layer(Extension(user_repo))
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))

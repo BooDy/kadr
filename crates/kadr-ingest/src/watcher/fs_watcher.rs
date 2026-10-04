@@ -46,18 +46,37 @@ pub async fn start_library_watcher(
         Config::default(),
     )?;
 
-    watcher.watch(&library.path, RecursiveMode::Recursive)?;
+    let paths = if library.paths.is_empty() {
+        vec![library.path.clone()]
+    } else {
+        library.paths.clone()
+    };
+    for p in &paths {
+        if p.exists() {
+            let _ = watcher.watch(p, RecursiveMode::Recursive);
+        }
+    }
 
     // Initial reconciliation scan
     let lib_clone = library.clone();
     let pipe_clone = pipeline.clone();
     let tx_clone = tx.clone();
+    let paths_clone = paths.clone();
     tokio::spawn(async move {
-        let initial_files = scan_directory_recursive(&lib_clone.path);
-        info!(library = %lib_clone.name, count = initial_files.len(), "Running startup library scan");
-        for file in initial_files {
-            if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
-                let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+        for p in &paths_clone {
+            if p.exists() {
+                let initial_files = scan_directory_recursive(p);
+                info!(
+                    library = %lib_clone.name,
+                    path = ?p,
+                    count = initial_files.len(),
+                    "Running startup library scan"
+                );
+                for file in initial_files {
+                    if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
+                        let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
+                    }
+                }
             }
         }
     });
