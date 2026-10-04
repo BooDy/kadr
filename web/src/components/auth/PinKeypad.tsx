@@ -106,7 +106,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
   return (
     <div
       data-testid="pin-keypad-container"
-      className={`w-full max-w-sm mx-auto flex flex-col items-center select-none ${
+      className={`bg-panel border border-border-subtle rounded-2xl p-6 sm:p-8 max-w-sm w-full mx-auto flex flex-col items-center select-none shadow-2xl ${
         isShaking ? 'animate-shake' : ''
       }`}
     >
@@ -114,38 +114,38 @@ export const PinKeypad: FC<PinKeypadProps> = ({
       <div className="flex flex-col items-center text-center mb-6">
         {title ? (
           <>
-            <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-amber-500 via-amber-600 to-rose-500 p-0.5 shadow-xl shadow-amber-950/40 mb-3">
-              <div className="h-full w-full rounded-full bg-zinc-950 flex items-center justify-center">
-                <Lock className="h-8 w-8 text-amber-400" />
+            <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-accent to-highlight p-0.5 shadow-lg shadow-black/40 mb-3">
+              <div className="h-full w-full rounded-full bg-canvas flex items-center justify-center">
+                <Lock className="h-7 w-7 text-highlight" />
               </div>
             </div>
-            <h3 className="text-xl font-bold text-white tracking-tight">
+            <h3 className="text-xl font-bold text-text-main tracking-tight">
               {title}
             </h3>
-            <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5">
-              <Lock className="h-3 w-3 text-zinc-500" />
+            <p className="text-xs text-muted mt-1 flex items-center gap-1.5">
+              <Lock className="h-3 w-3 text-muted" />
               {subtitle || 'Enter 4-digit PIN'}
             </p>
           </>
         ) : user ? (
           <>
-            <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-rose-500 via-rose-600 to-amber-500 p-0.5 shadow-xl shadow-rose-950/40 mb-3">
-              <div className="h-full w-full rounded-full bg-zinc-950 flex items-center justify-center">
-                <span className="text-2xl font-bold uppercase tracking-wider text-rose-400">
+            <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-accent to-highlight p-0.5 shadow-lg shadow-black/40 mb-3">
+              <div className="h-full w-full rounded-full bg-canvas flex items-center justify-center">
+                <span className="text-2xl font-bold uppercase tracking-wider text-accent">
                   {user.username.slice(0, 2) || 'U'}
                 </span>
               </div>
             </div>
-            <h3 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+            <h3 className="text-xl font-bold text-text-main tracking-tight flex items-center gap-2">
               <span>{user.username}</span>
               {user.role === 'admin' && (
-                <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-400 border border-rose-500/30">
+                <span className="rounded-full bg-cta px-2 py-0.5 text-[10px] font-semibold text-white">
                   ADMIN
                 </span>
               )}
             </h3>
-            <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5">
-              <Lock className="h-3 w-3 text-zinc-500" />
+            <p className="text-xs text-muted mt-1 flex items-center gap-1.5">
+              <Lock className="h-3 w-3 text-muted" />
               {subtitle || 'Enter your 4-digit PIN'}
             </p>
           </>
@@ -167,8 +167,8 @@ export const PinKeypad: FC<PinKeypadProps> = ({
               aria-label={`Digit ${index + 1} ${isFilled ? 'filled' : 'empty'}`}
               className={`h-4 w-4 rounded-full transition-all duration-200 ${
                 isFilled
-                  ? 'bg-rose-500 scale-110 shadow-lg shadow-rose-500/50 border border-rose-400'
-                  : 'bg-zinc-800/80 border-2 border-zinc-700/80'
+                  ? 'bg-highlight scale-110 shadow-md shadow-highlight/30'
+                  : 'bg-muted/40 border border-muted'
               }`}
             />
           );
@@ -180,7 +180,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
         {error && (
           <p
             role="alert"
-            className="text-xs font-semibold text-rose-400 tracking-wide transition-opacity"
+            className="text-xs font-semibold text-cta tracking-wide transition-opacity"
           >
             {error}
           </p>
@@ -188,7 +188,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
       </div>
 
       {/* Numeric Keypad Grid */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-[280px]">
+      <div className="grid grid-cols-3 gap-3 place-items-center w-full max-w-[240px]">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
           <button
             key={digit}
@@ -196,7 +196,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
             disabled={isLoading}
             onClick={() => handleDigit(digit)}
             aria-label={digit}
-            className="h-16 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 text-xl font-bold text-white shadow-md hover:bg-zinc-800 hover:border-zinc-700 active:scale-95 active:bg-zinc-700/80 disabled:opacity-50 disabled:pointer-events-none transition-all duration-150 flex items-center justify-center"
+            className="bg-canvas/60 hover:bg-canvas text-text-main hover:text-white border border-border-subtle rounded-xl text-2xl font-bold h-14 w-14 transition-all duration-150 active:scale-95 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center"
           >
             {digit}
           </button>
@@ -208,7 +208,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
           disabled={isLoading}
           onClick={() => onCancel?.()}
           aria-label="Cancel"
-          className="h-16 rounded-2xl bg-zinc-900/40 border border-zinc-800/50 text-xs font-semibold uppercase tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800/60 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-150 flex items-center justify-center"
+          className="h-14 w-14 rounded-xl text-muted hover:text-text-main hover:bg-canvas/40 border border-border-subtle text-[11px] font-semibold uppercase tracking-wider transition-all duration-150 active:scale-95 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center"
         >
           Cancel
         </button>
@@ -218,7 +218,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
           disabled={isLoading}
           onClick={() => handleDigit('0')}
           aria-label="0"
-          className="h-16 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 text-xl font-bold text-white shadow-md hover:bg-zinc-800 hover:border-zinc-700 active:scale-95 active:bg-zinc-700/80 disabled:opacity-50 disabled:pointer-events-none transition-all duration-150 flex items-center justify-center"
+          className="bg-canvas/60 hover:bg-canvas text-text-main hover:text-white border border-border-subtle rounded-xl text-2xl font-bold h-14 w-14 transition-all duration-150 active:scale-95 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center"
         >
           0
         </button>
@@ -229,9 +229,9 @@ export const PinKeypad: FC<PinKeypadProps> = ({
           onClick={handleBackspace}
           aria-label="Backspace"
           title="Backspace"
-          className="h-16 rounded-2xl bg-zinc-900/40 border border-zinc-800/50 text-zinc-400 hover:text-rose-400 hover:bg-zinc-800/60 active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all duration-150 flex items-center justify-center"
+          className="h-14 w-14 rounded-xl text-muted hover:text-text-main hover:bg-canvas/40 border border-border-subtle transition-all duration-150 active:scale-95 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center"
         >
-          <Delete className="h-6 w-6" />
+          <Delete className="h-5 w-5" />
         </button>
       </div>
     </div>
