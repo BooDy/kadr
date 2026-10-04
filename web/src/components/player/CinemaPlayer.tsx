@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type FC } from 'react';
 import { api } from '../../api/client';
-import type { SubtitleTrack, ItemDetailsPayload } from '../../types';
+import type { SubtitleTrack, SubtitleSearchResult, ItemDetailsPayload } from '../../types';
 import { PlayerControls, formatPlaybackTime } from './PlayerControls';
 
 export interface CinemaPlayerProps {
@@ -15,6 +15,8 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
   const [itemDetails, setItemDetails] = useState<ItemDetailsPayload | null>(null);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSubtitleId, setActiveSubtitleId] = useState<number | null>(null);
+  const [recentlyDownloadedId, setRecentlyDownloadedId] = useState<number | null>(null);
+  const [isSubtitlesMenuOpen, setIsSubtitlesMenuOpen] = useState(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +33,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
   const isMetadataLoadedRef = useRef(false);
   const hasSeekedResumeRef = useRef(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSubtitlesMenuOpenRef = useRef(false);
 
   const streamUrl = api.getStreamUrl(itemId);
 
@@ -38,11 +41,54 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     setIsControlsVisible(true);
     if (hideTimeoutRef.current) {
       clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
     }
-    hideTimeoutRef.current = setTimeout(() => {
-      setIsControlsVisible(false);
-    }, 3000);
+    if (!isSubtitlesMenuOpenRef.current) {
+      hideTimeoutRef.current = setTimeout(() => {
+        setIsControlsVisible(false);
+      }, 3000);
+    }
   }, []);
+
+  useEffect(() => {
+    isSubtitlesMenuOpenRef.current = isSubtitlesMenuOpen;
+    if (isSubtitlesMenuOpen) {
+      setIsControlsVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+    } else {
+      showControls();
+    }
+  }, [isSubtitlesMenuOpen, showControls]);
+
+  const handleSearchSubtitles = useCallback(
+    async (language: string): Promise<SubtitleSearchResult[]> => {
+      const res = await (api.searchSubtitles as any)(itemId, undefined, language);
+      if (Array.isArray(res)) return res;
+      return res?.matches || [];
+    },
+    [itemId]
+  );
+
+  const handleDownloadSubtitle = useCallback(
+    async (result: SubtitleSearchResult): Promise<void> => {
+      await (api.downloadSubtitle as any)(itemId, result);
+      const updatedTracks = await api.getSubtitles(itemId);
+      setSubtitles(updatedTracks);
+      const latestDownloaded =
+        updatedTracks.find(
+          (t) => t.source === 'downloaded' && !subtitles.some((old) => old.id === t.id)
+        ) ||
+        updatedTracks.find((t) => !subtitles.some((old) => old.id === t.id)) ||
+        updatedTracks[updatedTracks.length - 1];
+      if (latestDownloaded) {
+        setRecentlyDownloadedId(latestDownloaded.id);
+      }
+    },
+    [itemId, subtitles]
+  );
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -385,6 +431,17 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         onToggleFullscreen={toggleFullscreen}
         onSelectSubtitle={setActiveSubtitleId}
         onClose={onClose}
+        onSearchSubtitles={handleSearchSubtitles}
+        onDownloadSubtitle={handleDownloadSubtitle}
+        recentlyDownloadedId={recentlyDownloadedId}
+        onSubtitlesMenuToggle={(isOpen) => {
+          setIsSubtitlesMenuOpen(isOpen);
+          isSubtitlesMenuOpenRef.current = isOpen;
+          if (isOpen && hideTimeoutRef.current) {
+            clearTimeout(hideTimeoutRef.current);
+            hideTimeoutRef.current = null;
+          }
+        }}
       />
     </div>
   );

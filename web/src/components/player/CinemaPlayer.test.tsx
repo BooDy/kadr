@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CinemaPlayer } from './CinemaPlayer';
 import { api } from '../../api/client';
-import type { PlaybackState, PlaybackSessionResponse, SubtitleTrack, ItemDetailsPayload } from '../../types';
+import type { PlaybackState, PlaybackSessionResponse, SubtitleTrack, SubtitleSearchResult, ItemDetailsPayload } from '../../types';
 
 describe('CinemaPlayer Component', () => {
   const mockItemId = 10;
@@ -333,5 +333,135 @@ describe('CinemaPlayer Component', () => {
     });
 
     expect(controlsContainer?.className).toContain('opacity-100');
+  });
+
+  it('integrates online subtitle search, download, and live DOM track injection', async () => {
+    const mockSearchResults: SubtitleSearchResult[] = [
+      {
+        id: 'sub-303',
+        language: 'es',
+        format: 'srt',
+        release_name: 'Blade.Runner.2049.Spanish.srt',
+        hearing_impaired: false,
+        download_count: 50,
+      },
+    ];
+
+    const newTrack: SubtitleTrack = {
+      id: 103,
+      media_item_id: mockItemId,
+      source: 'downloaded',
+      language: 'es',
+      title: 'Blade.Runner.2049.Spanish.srt',
+      format: 'srt',
+      is_default: false,
+      is_forced: false,
+      stream_url: '/api/v1/subtitles/103/stream.vtt',
+    };
+
+    vi.spyOn(api, 'searchSubtitles').mockResolvedValue({
+      configured: true,
+      matches: mockSearchResults as any,
+    });
+    vi.spyOn(api, 'downloadSubtitle').mockResolvedValue(newTrack);
+
+    render(<CinemaPlayer itemId={mockItemId} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Blade Runner 2049')).toBeDefined();
+    });
+
+    // Subtitles should initially be 2 tracks
+    expect(document.querySelectorAll('track').length).toBe(2);
+
+    // Open subtitles popover
+    const subtitlesBtn = screen.getByRole('button', { name: /subtitles/i });
+    fireEvent.click(subtitlesBtn);
+
+    // Click "+ Search & Download Online"
+    const searchOnlineBtn = screen.getByRole('button', { name: /\+ search & download online/i });
+    fireEvent.click(searchOnlineBtn);
+
+    // Search input should appear
+    const langInput = screen.getByPlaceholderText(/language/i);
+    expect(langInput).toBeDefined();
+    fireEvent.change(langInput, { target: { value: 'es' } });
+
+    // Submit search
+    const searchSubmitBtn = screen.getByRole('button', { name: /^search$/i });
+    fireEvent.click(searchSubmitBtn);
+
+    await waitFor(() => {
+      expect(api.searchSubtitles).toHaveBeenCalledWith(mockItemId, undefined, 'es');
+      expect(screen.getByText('Blade.Runner.2049.Spanish.srt')).toBeDefined();
+    });
+
+    // When downloaded, getSubtitles returns the original tracks plus the new one
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([...mockSubtitles, newTrack]);
+
+    // Click Download on the match
+    const downloadBtn = screen.getByRole('button', { name: /^download$/i });
+    fireEvent.click(downloadBtn);
+
+    await waitFor(() => {
+      expect(api.downloadSubtitle).toHaveBeenCalledWith(mockItemId, mockSearchResults[0]);
+      expect(api.getSubtitles).toHaveBeenCalledWith(mockItemId);
+    });
+
+    // Dynamic track injection into <video>
+    await waitFor(() => {
+      const tracks = document.querySelectorAll('track');
+      expect(tracks.length).toBe(3);
+      expect(tracks[2].getAttribute('src')).toBe('/api/v1/subtitles/103/stream.vtt');
+      expect(tracks[2].getAttribute('srclang')).toBe('es');
+      expect(tracks[2].getAttribute('label')).toBe('Blade.Runner.2049.Spanish.srt');
+    });
+
+    // Should return to list view with download banner and Downloaded badge
+    await waitFor(() => {
+      expect(screen.getByText(/subtitle downloaded! click below to display on screen/i)).toBeDefined();
+      expect(screen.getByText('Downloaded')).toBeDefined();
+    });
+  });
+
+  it('suspends HUD auto-hide when subtitles menu is open', async () => {
+    vi.useFakeTimers();
+
+    render(<CinemaPlayer itemId={mockItemId} onClose={mockOnClose} />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const controlsContainer = document.querySelector('.bg-gradient-to-t');
+    expect(controlsContainer?.className).toContain('opacity-100');
+
+    // Open subtitles popover
+    const subtitlesBtn = screen.getByRole('button', { name: /subtitles/i });
+    act(() => {
+      fireEvent.click(subtitlesBtn);
+    });
+
+    // Advance 3 seconds while subtitles menu is open
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    // Controls must remain visible
+    expect(controlsContainer?.className).toContain('opacity-100');
+
+    // Close subtitles menu by selecting Off
+    const offBtn = screen.getByRole('button', { name: /^off$/i });
+    act(() => {
+      fireEvent.click(offBtn);
+    });
+
+    // Advance 3 seconds now that menu is closed
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    // Controls should now be hidden
+    expect(controlsContainer?.className).toContain('opacity-0');
   });
 });
