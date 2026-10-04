@@ -170,7 +170,9 @@ impl LibraryRepository {
         let path_str = path.as_ref().to_string_lossy().into_owned();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let lib_exists: bool = c.query_row(
+            let tx = c.transaction()?;
+
+            let lib_exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM libraries WHERE id = ?1)",
                 params![library_id],
                 |row| row.get(0),
@@ -179,13 +181,17 @@ impl LibraryRepository {
                 return Err(StorageError::NotFound(format!("Library {library_id} not found")));
             }
 
-            let path_exists: bool = c.query_row(
+            let path_exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM library_paths WHERE library_id = ?1 AND path = ?2)",
                 params![library_id, path_str],
                 |row| row.get(0),
             )?;
 
-            let count: i64 = c.query_row(
+            if !path_exists {
+                return Ok(());
+            }
+
+            let count: i64 = tx.query_row(
                 "SELECT COUNT(*) FROM library_paths WHERE library_id = ?1",
                 params![library_id],
                 |row| row.get(0),
@@ -197,11 +203,6 @@ impl LibraryRepository {
                 ));
             }
 
-            if !path_exists {
-                return Ok(());
-            }
-
-            let tx = c.transaction()?;
             tx.execute(
                 "DELETE FROM library_paths WHERE library_id = ?1 AND path = ?2",
                 params![library_id, path_str],

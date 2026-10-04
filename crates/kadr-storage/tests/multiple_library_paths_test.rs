@@ -62,10 +62,17 @@ async fn test_create_and_manage_multiple_library_paths() {
     assert_eq!(after_remove.paths.len(), 2);
     assert!(!after_remove.paths.contains(&PathBuf::from("/media/movies2")));
 
-    // Removing non-existent path errors or succeeds idempotently
+    // Removing 3rd path leaves exactly 1 path
     repo.remove_path("lib-multi", "/media/movies3").await.unwrap();
     let final_lib = repo.get_by_id("lib-multi").await.unwrap().unwrap();
     assert_eq!(final_lib.paths.len(), 1);
+
+    // Removing non-existent path on 1-path library succeeds idempotently
+    repo.remove_path("lib-multi", "/media/non_existent")
+        .await
+        .expect("Removing non-existent path on 1-path library must succeed idempotently");
+    let still_one = repo.get_by_id("lib-multi").await.unwrap().unwrap();
+    assert_eq!(still_one.paths.len(), 1);
 
     // Attempting to remove the last path must fail
     let err = repo.remove_path("lib-multi", "/media/movies1").await;
