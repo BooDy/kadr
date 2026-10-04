@@ -78,6 +78,15 @@ describe('AdminDashboard Component', () => {
       debounce_millis: payload.debounce_millis ?? mockConfig.debounce_millis,
       use_ffprobe: payload.use_ffprobe ?? mockConfig.use_ffprobe,
     }));
+    vi.spyOn(api, 'getScreens').mockResolvedValue([{ id: 'home', title: 'Home' }]);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({ id: 'home', title: 'Home', widgets: [] });
+    vi.spyOn(api, 'getTelemetry').mockResolvedValue({
+      active_sessions_count: 1,
+      rss_memory_bytes: 10485760,
+      db_size_bytes: 1048576,
+      wal_size_bytes: 4096,
+      timestamp: Date.now(),
+    });
   });
 
   it('renders admin header and tabs with initial libraries and multiple paths', async () => {
@@ -415,6 +424,37 @@ describe('AdminDashboard Component', () => {
     const select = screen.getByRole('combobox') as HTMLSelectElement;
     fireEvent.change(select, { target: { value: 'anime' } });
     expect(select.value).toBe('anime');
+  });
+
+  it('renders all 5 admin tabs and switches to Layout Studio and Telemetry', async () => {
+    render(<AdminDashboard />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Libraries/i })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Users/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Layout Studio/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Telemetry/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Configuration/i })).toBeInTheDocument();
+
+    // Switch to Layout Studio
+    fireEvent.click(screen.getByRole('button', { name: /Layout Studio/i }));
+    expect(await screen.findByText(/Declarative AST screen inspector/i)).toBeInTheDocument();
+
+    // Switch to Telemetry
+    fireEvent.click(screen.getByRole('button', { name: /Telemetry/i }));
+    expect(await screen.findByText(/System Telemetry/i)).toBeInTheDocument();
+  });
+
+  it('renders initialTab when specified', async () => {
+    render(<AdminDashboard initialTab="studio" />);
+    expect(await screen.findByText(/Declarative AST screen inspector/i)).toBeInTheDocument();
+  });
+
+  it('calls onClose when close button is clicked', async () => {
+    const handleClose = vi.fn();
+    render(<AdminDashboard onClose={handleClose} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Libraries/i })).toBeInTheDocument());
+    const closeBtn = screen.getByRole('button', { name: /Close Dashboard/i });
+    fireEvent.click(closeBtn);
+    expect(handleClose).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -15,17 +15,29 @@ import {
   HardDrive,
   Lock,
   Folder,
+  Layout,
+  Activity,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import type { Library, MediaType, SystemConfig, User } from '../../types';
 import { FolderPickerModal } from './FolderPickerModal';
+import { LayoutStudio } from '../studio/LayoutStudio';
+import { TelemetryDashboard } from '../telemetry/TelemetryDashboard';
 
-interface AdminDashboardProps {
+export type AdminTab = 'libraries' | 'users' | 'studio' | 'telemetry' | 'config';
+
+export interface AdminDashboardProps {
   onClose?: () => void;
+  onPlayItem?: (itemId: number) => void;
+  initialTab?: AdminTab;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
-  const [activeTab, setActiveTab] = useState<'libraries' | 'config' | 'users'>('libraries');
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  onClose,
+  onPlayItem,
+  initialTab,
+}) => {
+  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab || 'libraries');
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -86,6 +98,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const showStatus = (type: 'success' | 'error' | 'warning', text: string) => {
     setStatusMessage({ type, text });
@@ -265,32 +283,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
           </p>
         </div>
 
-        {/* Global Feedback Banner */}
-        {statusMessage && (
-          <div
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-300'
-                : statusMessage.type === 'warning'
-                ? 'bg-amber-950/80 border border-amber-500/50 text-amber-300'
-                : 'bg-cta/15 border border-cta/30 text-cta'
-            }`}
-          >
-            {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0" />
-            )}
-            <span>{statusMessage.text}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Global Feedback Banner */}
+          {statusMessage && (
+            <div
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
+                statusMessage.type === 'success'
+                  ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-300'
+                  : statusMessage.type === 'warning'
+                  ? 'bg-amber-950/80 border border-amber-500/50 text-amber-300'
+                  : 'bg-cta/15 border border-cta/30 text-cta'
+              }`}
+            >
+              {statusMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{statusMessage.text}</span>
+            </div>
+          )}
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Close Dashboard"
+              aria-label="Close Dashboard"
+              className="p-2 text-muted hover:text-text-main rounded-xl hover:bg-panel-hover transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex space-x-2 mt-6 border-b border-border-subtle pb-2">
+      <div className="flex space-x-2 mt-6 border-b border-border-subtle pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('libraries')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
             activeTab === 'libraries'
               ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
               : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
@@ -300,19 +331,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
           Libraries ({libraries.length})
         </button>
         <button
-          onClick={() => setActiveTab('config')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
-            activeTab === 'config'
-              ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
-              : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
-          }`}
-        >
-          <Server className="w-4 h-4" />
-          Server Configuration
-        </button>
-        <button
           onClick={() => setActiveTab('users')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight ${
+          aria-label={`Users / User Profiles (${users.length})`}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
             activeTab === 'users'
               ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
               : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
@@ -320,6 +341,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
         >
           <Users className="w-4 h-4" />
           User Profiles ({users.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('studio')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
+            activeTab === 'studio'
+              ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
+              : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
+          }`}
+        >
+          <Layout className="w-4 h-4" />
+          Layout Studio
+        </button>
+        <button
+          onClick={() => setActiveTab('telemetry')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
+            activeTab === 'telemetry'
+              ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
+              : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          Telemetry
+        </button>
+        <button
+          onClick={() => setActiveTab('config')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
+            activeTab === 'config'
+              ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
+              : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
+          }`}
+        >
+          <Server className="w-4 h-4" />
+          Server Configuration
         </button>
       </div>
 
@@ -625,6 +679,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Tab 4: Layout Studio */}
+      {activeTab === 'studio' && (
+        <div className="mt-8">
+          <LayoutStudio onPlayItem={onPlayItem} />
+        </div>
+      )}
+
+      {/* Tab 5: Telemetry Dashboard */}
+      {activeTab === 'telemetry' && (
+        <div className="mt-8">
+          <TelemetryDashboard />
         </div>
       )}
 
