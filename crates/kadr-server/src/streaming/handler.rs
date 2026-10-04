@@ -10,9 +10,10 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
+use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
 use crate::streaming::range::{parse_range_header, RangeResult};
-use kadr_storage::repos::MediaItemRepository;
+use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 
 pub fn resolve_mime(ext: &str) -> &'static str {
     match ext.to_lowercase().as_str() {
@@ -31,10 +32,12 @@ pub fn resolve_mime(ext: &str) -> &'static str {
 }
 
 pub async fn stream_media_item(
-    _auth_user: AuthUser,
+    _auth_user: Option<AuthUser>,
     Path(item_id): Path<i64>,
     headers: HeaderMap,
+    unlocked: UnlockedLibraries,
     Extension(media_repo): Extension<MediaItemRepository>,
+    Extension(lib_repo): Extension<LibraryRepository>,
 ) -> Response {
     let item = match media_repo.get_by_id(item_id).await {
         Ok(Some(i)) => i,
@@ -46,6 +49,16 @@ pub async fn stream_media_item(
                 .into_response();
         }
     };
+
+    if let Ok(Some(library)) = lib_repo.get_by_id(&item.library_id).await {
+        if library.is_private && !unlocked.is_unlocked(&item.library_id) {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+            )
+                .into_response();
+        }
+    }
 
     let file = match File::open(&item.file_path).await {
         Ok(f) => f,

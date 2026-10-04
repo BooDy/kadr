@@ -133,6 +133,21 @@ where
     }
 }
 
+impl<S> axum::extract::OptionalFromRequestParts<S> for AuthUser
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        let auth = <AuthUser as FromRequestParts<S>>::from_request_parts(parts, state).await;
+        Ok(auth.ok())
+    }
+}
+
 impl<S> FromRequestParts<S> for RequireAdmin
 where
     S: Send + Sync,

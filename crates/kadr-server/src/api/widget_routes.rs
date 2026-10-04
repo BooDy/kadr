@@ -8,6 +8,7 @@ use axum::{
 use kadr_core::ast::{CardViewModel, ScreenId};
 use serde::{Deserialize, Serialize};
 
+use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
 use crate::layout::LayoutRegistry;
 use crate::resolver::WidgetResolver;
@@ -42,6 +43,7 @@ pub struct WidgetDataResponse {
 /// Searches the widget binding in the layout registry and resolves paginated card items.
 pub async fn get_widget_data(
     auth_user: AuthUser,
+    unlocked: UnlockedLibraries,
     Path(widget_id): Path<String>,
     Query(query): Query<WidgetDataQuery>,
     Extension(registry): Extension<LayoutRegistry>,
@@ -89,8 +91,14 @@ pub async fn get_widget_data(
         query_binding.sort = Some(sort.clone());
     }
 
+    let unlocked_ids = unlocked.to_vec();
     let (items, next_cursor, total_count) = resolver
-        .resolve_widget_data(&query_binding, &auth_user.id, query.offset)
+        .resolve_widget_data_with_unlocked(
+            &query_binding,
+            &auth_user.id,
+            query.offset,
+            &unlocked_ids,
+        )
         .await
         .map_err(|err| {
             tracing::error!("Failed to resolve widget data: {err}");

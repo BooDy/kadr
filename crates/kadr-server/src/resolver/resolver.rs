@@ -4,7 +4,7 @@ use kadr_core::ast::{
 };
 use kadr_core::models::MediaType;
 use kadr_storage::error::Result;
-use kadr_storage::repos::{MediaItemRepository, PlaybackRepository};
+use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
 
 use super::card::to_card_view_model;
 
@@ -13,23 +13,50 @@ use super::card::to_card_view_model;
 pub struct WidgetResolver {
     media_repo: MediaItemRepository,
     playback_repo: PlaybackRepository,
+    lib_repo: LibraryRepository,
 }
 
 impl WidgetResolver {
     /// Creates a new `WidgetResolver` with the provided storage repositories.
     pub fn new(media_repo: MediaItemRepository, playback_repo: PlaybackRepository) -> Self {
+        let lib_repo = LibraryRepository::new(media_repo.pool().clone());
         Self {
             media_repo,
             playback_repo,
+            lib_repo,
         }
+    }
+
+    /// Helper to verify whether an item is visible according to library privacy.
+    async fn is_item_visible(
+        &self,
+        item: &kadr_core::models::MediaItem,
+        unlocked_ids: &[String],
+    ) -> bool {
+        if let Ok(Some(lib)) = self.lib_repo.get_by_id(&item.library_id).await {
+            if lib.is_private && !unlocked_ids.contains(&item.library_id) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Resolves an entire screen layout concurrently.
     pub async fn resolve_screen(&self, screen: ScreenLayout, user_id: &str) -> ScreenLayout {
+        self.resolve_screen_with_unlocked(screen, user_id, &[]).await
+    }
+
+    /// Resolves an entire screen layout concurrently with unlocked private libraries.
+    pub async fn resolve_screen_with_unlocked(
+        &self,
+        screen: ScreenLayout,
+        user_id: &str,
+        unlocked_ids: &[String],
+    ) -> ScreenLayout {
         let futures = screen
             .widgets
             .into_iter()
-            .map(|widget| self.resolve_widget(widget, user_id));
+            .map(|widget| self.resolve_widget(widget, user_id, unlocked_ids));
         let widgets = join_all(futures).await;
 
         ScreenLayout {
@@ -39,14 +66,21 @@ impl WidgetResolver {
         }
     }
 
-    async fn resolve_widget(&self, widget: WidgetNode, user_id: &str) -> WidgetNode {
+    async fn resolve_widget(
+        &self,
+        widget: WidgetNode,
+        user_id: &str,
+        unlocked_ids: &[String],
+    ) -> WidgetNode {
         match widget {
             WidgetNode::HeroBanner {
                 id,
                 binding,
                 data: _,
             } => {
-                let card = self.resolve_hero_banner_data(&binding, user_id).await;
+                let card = self
+                    .resolve_hero_banner_data(&binding, user_id, unlocked_ids)
+                    .await;
                 WidgetNode::HeroBanner {
                     id,
                     binding,
@@ -61,7 +95,7 @@ impl WidgetResolver {
                 next_cursor: _,
             } => {
                 let (cards, next_cursor, _) = self
-                    .resolve_widget_data(&binding, user_id, 0)
+                    .resolve_widget_data_with_unlocked(&binding, user_id, 0, unlocked_ids)
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve carousel {id}: {err}");
@@ -86,7 +120,7 @@ impl WidgetResolver {
                 total_count: _,
             } => {
                 let (cards, next_cursor, total_count) = self
-                    .resolve_widget_data(&binding, user_id, 0)
+                    .resolve_widget_data_with_unlocked(&binding, user_id, 0, unlocked_ids)
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve grid {id}: {err}");
@@ -109,7 +143,7 @@ impl WidgetResolver {
                 details: _,
             } => {
                 let details = self
-                    .resolve_item_details(item_id, user_id)
+                    .resolve_item_details_with_unlocked(item_id, user_id, unlocked_ids)
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve item details {id}: {err}");
@@ -129,22 +163,36 @@ impl WidgetResolver {
         &self,
         binding: &WidgetQueryBinding,
         user_id: &str,
+        unlocked_ids: &[String],
     ) -> Option<CardViewModel> {
         let candidate = match binding.macro_type {
             QueryMacro::SpotlightItem { item_id: Some(id) } => {
-                self.media_repo.get_by_id(id).await.ok().flatten()
+                let item = self.media_repo.get_by_id(id).await.ok().flatten()?;
+                if self.is_item_visible(&item, unlocked_ids).await {
+                    Some(item)
+                } else {
+                    None
+                }
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate(&[])
+                .find_spotlight_candidate(unlocked_ids)
                 .await
                 .ok()
                 .flatten(),
             QueryMacro::ItemDetails { item_id } => {
-                self.media_repo.get_by_id(item_id).await.ok().flatten()
+                let item = self.media_repo.get_by_id(item_id).await.ok().flatten()?;
+                if self.is_item_visible(&item, unlocked_ids).await {
+                    Some(item)
+                } else {
+                    None
+                }
             }
             _ => {
-                let (cards, _, _) = self.resolve_widget_data(binding, user_id, 0).await.ok()?;
+                let (cards, _, _) = self
+                    .resolve_widget_data_with_unlocked(binding, user_id, 0, unlocked_ids)
+                    .await
+                    .ok()?;
                 return cards.into_iter().next();
             }
         };
@@ -173,6 +221,18 @@ impl WidgetResolver {
         user_id: &str,
         offset: u32,
     ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
+        self.resolve_widget_data_with_unlocked(binding, user_id, offset, &[]).await
+    }
+
+    /// Resolves paginated widget data for a query binding with unlocked private libraries.
+    /// Returns `(cards, next_cursor, total_count)`.
+    pub async fn resolve_widget_data_with_unlocked(
+        &self,
+        binding: &WidgetQueryBinding,
+        user_id: &str,
+        offset: u32,
+        unlocked_ids: &[String],
+    ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
         match &binding.macro_type {
             QueryMacro::ContinueWatching => {
                 let states = self.playback_repo.get_continue_watching(user_id).await?;
@@ -194,7 +254,9 @@ impl WidgetResolver {
                 let mut cards = Vec::with_capacity(page_states.len());
                 for state in &page_states {
                     if let Some(item) = items_map.get(&state.media_item_id) {
-                        cards.push(to_card_view_model(item, Some(state)));
+                        if self.is_item_visible(item, unlocked_ids).await {
+                            cards.push(to_card_view_model(item, Some(state)));
+                        }
                     }
                 }
 
@@ -209,7 +271,7 @@ impl WidgetResolver {
             QueryMacro::RecentlyAdded => {
                 let items = self
                     .media_repo
-                    .find_recently_added_paginated(None, binding.limit, offset, &[])
+                    .find_recently_added_paginated(None, binding.limit, offset, unlocked_ids)
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -226,7 +288,7 @@ impl WidgetResolver {
             QueryMacro::TopRated => {
                 let items = self
                     .media_repo
-                    .find_top_rated_paginated(binding.limit, offset, &[])
+                    .find_top_rated_paginated(binding.limit, offset, unlocked_ids)
                     .await?;
                 let has_more = items.len() == binding.limit as usize;
                 let cards = self.hydrate_items_to_cards(items, user_id).await;
@@ -242,7 +304,7 @@ impl WidgetResolver {
             QueryMacro::GenreShelf { genre } => {
                 let items = self
                     .media_repo
-                    .find_by_genre_paginated(genre, binding.limit, offset, &[])
+                    .find_by_genre_paginated(genre, binding.limit, offset, unlocked_ids)
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -264,7 +326,7 @@ impl WidgetResolver {
                         binding.limit,
                         offset,
                         binding.sort.as_deref(),
-                        &[],
+                        unlocked_ids,
                     )
                     .await?;
 
@@ -282,9 +344,18 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id } => {
                 let candidate = if let Some(id) = item_id {
-                    self.media_repo.get_by_id(*id).await?
+                    let item = self.media_repo.get_by_id(*id).await?;
+                    if let Some(i) = item {
+                        if self.is_item_visible(&i, unlocked_ids).await {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 } else {
-                    self.media_repo.find_spotlight_candidate(&[]).await?
+                    self.media_repo.find_spotlight_candidate(unlocked_ids).await?
                 };
 
                 if let Some(item) = candidate {
@@ -301,9 +372,13 @@ impl WidgetResolver {
             }
             QueryMacro::ItemDetails { item_id } => {
                 if let Some(item) = self.media_repo.get_by_id(*item_id).await? {
-                    let playback = self.playback_repo.get_state(user_id, *item_id).await?;
-                    let card = to_card_view_model(&item, playback.as_ref());
-                    Ok((vec![card], None, None))
+                    if self.is_item_visible(&item, unlocked_ids).await {
+                        let playback = self.playback_repo.get_state(user_id, *item_id).await?;
+                        let card = to_card_view_model(&item, playback.as_ref());
+                        Ok((vec![card], None, None))
+                    } else {
+                        Ok((Vec::new(), None, None))
+                    }
                 } else {
                     Ok((Vec::new(), None, None))
                 }
@@ -336,10 +411,24 @@ impl WidgetResolver {
         item_id: i64,
         user_id: &str,
     ) -> Result<Option<ItemDetailsPayload>> {
+        self.resolve_item_details_with_unlocked(item_id, user_id, &[]).await
+    }
+
+    /// Resolves comprehensive single item details including playback state and child episodes with unlocked private libraries.
+    pub async fn resolve_item_details_with_unlocked(
+        &self,
+        item_id: i64,
+        user_id: &str,
+        unlocked_ids: &[String],
+    ) -> Result<Option<ItemDetailsPayload>> {
         let item = match self.media_repo.get_by_id(item_id).await? {
             Some(i) => i,
             None => return Ok(None),
         };
+
+        if !self.is_item_visible(&item, unlocked_ids).await {
+            return Ok(None);
+        }
 
         let playback = self.playback_repo.get_state(user_id, item_id).await?;
         let card = to_card_view_model(&item, playback.as_ref());

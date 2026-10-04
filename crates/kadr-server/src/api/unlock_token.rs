@@ -121,6 +121,10 @@ impl UnlockedLibraries {
         self.0.contains(library_id)
     }
 
+    pub fn ids(&self) -> &HashSet<String> {
+        &self.0
+    }
+
     pub fn to_vec(&self) -> Vec<String> {
         self.0.iter().cloned().collect()
     }

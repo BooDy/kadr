@@ -6,6 +6,7 @@ pub mod item_routes;
 pub mod library_routes;
 pub mod playback;
 pub mod screen_routes;
+pub mod streaming;
 pub mod subtitle_routes;
 pub mod unlock_token;
 pub mod user_routes;
@@ -92,6 +93,10 @@ pub fn create_router_with_events(
         .route(
             "/api/v1/widgets/{widget_id}/data",
             get(widget_routes::get_widget_data),
+        )
+        .route(
+            "/api/v1/items/{item_id}",
+            get(item_routes::get_item_details),
         )
         .route(
             "/api/v1/items/{item_id}/details",

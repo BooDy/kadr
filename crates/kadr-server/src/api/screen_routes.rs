@@ -8,6 +8,8 @@ use axum::{
 use kadr_core::ast::{ScreenId, ScreenLayout};
 use serde::{Deserialize, Serialize};
 
+pub use crate::api::item_routes::get_item_details;
+use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
 use crate::layout::LayoutRegistry;
 use crate::resolver::WidgetResolver;
@@ -47,6 +49,7 @@ pub async fn list_screens(
 /// Returns the hydrated (or raw if `unhydrated=true`) AST layout for the requested screen.
 pub async fn get_screen(
     auth_user: AuthUser,
+    unlocked: UnlockedLibraries,
     Path(screen_id): Path<String>,
     Query(query): Query<ScreenQuery>,
     Extension(registry): Extension<LayoutRegistry>,
@@ -66,7 +69,10 @@ pub async fn get_screen(
     if query.unhydrated {
         Ok(Json(layout))
     } else {
-        let hydrated = resolver.resolve_screen(layout, &auth_user.id).await;
+        let unlocked_ids = unlocked.to_vec();
+        let hydrated = resolver
+            .resolve_screen_with_unlocked(layout, &auth_user.id, &unlocked_ids)
+            .await;
         Ok(Json(hydrated))
     }
 }
