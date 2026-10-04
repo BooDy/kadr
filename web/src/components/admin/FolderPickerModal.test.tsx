@@ -142,6 +142,16 @@ describe('FolderPickerModal', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it('calls onClose when Escape key is pressed', async () => {
+    const onClose = vi.fn();
+    render(<FolderPickerModal isOpen={true} onClose={onClose} onSelect={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('movies')).toBeInTheDocument());
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('displays error message and allows retrying if browse fails', async () => {
     vi.spyOn(api, 'browseFilesystem').mockRejectedValueOnce(new Error('Permission denied'));
 

@@ -30,14 +30,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
 
   // Add Library Modal state
   const [isAddLibOpen, setIsAddLibOpen] = useState(false);
   const [libName, setLibName] = useState('');
   const [libPaths, setLibPaths] = useState<string[]>([]);
   const [isAddLibPickerOpen, setIsAddLibPickerOpen] = useState(false);
-  const [cardPickerLibId, setCardPickerLibId] = useState<string | null>(null);
+  const [cardPickerLib, setCardPickerLib] = useState<Library | null>(null);
   const [libMediaType, setLibMediaType] = useState<'Movie' | 'Episode'>('Movie');
   const [isPrivate, setIsPrivate] = useState(false);
   const [libPin, setLibPin] = useState('');
@@ -86,7 +86,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
     loadData();
   }, []);
 
-  const showStatus = (type: 'success' | 'error', text: string) => {
+  const showStatus = (type: 'success' | 'error' | 'warning', text: string) => {
     setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 5000);
   };
@@ -125,6 +125,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   };
 
   const handleAddPathToLibrary = async (libraryId: string, path: string) => {
+    const library = libraries.find((l) => l.id === libraryId);
+    if (library) {
+      const currentPaths = library.paths && library.paths.length > 0 ? library.paths : [library.path];
+      if (currentPaths.includes(path)) {
+        showStatus('warning', 'This folder is already part of the library');
+        return;
+      }
+    }
+
     try {
       await api.addLibraryPath(libraryId, path);
       setLibraries((prev) =>
@@ -260,6 +269,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
               statusMessage.type === 'success'
                 ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-300'
+                : statusMessage.type === 'warning'
+                ? 'bg-amber-950/80 border border-amber-500/50 text-amber-300'
                 : 'bg-cta/15 border border-cta/30 text-cta'
             }`}
           >
@@ -383,7 +394,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                         </span>
                         <button
                           type="button"
-                          onClick={() => setCardPickerLibId(lib.id)}
+                          onClick={() => setCardPickerLib(lib)}
                           className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 font-medium cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight px-2 py-0.5 rounded-md hover:bg-accent/10 transition-colors"
                         >
                           <Plus className="w-3 h-3" />
@@ -874,11 +885,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
 
       {/* Folder Picker for Existing Library Card */}
       <FolderPickerModal
-        isOpen={!!cardPickerLibId}
-        onClose={() => setCardPickerLibId(null)}
+        isOpen={!!cardPickerLib}
+        initialPath={cardPickerLib?.path}
+        onClose={() => setCardPickerLib(null)}
         onSelect={(selectedPath) => {
-          if (cardPickerLibId) {
-            handleAddPathToLibrary(cardPickerLibId, selectedPath);
+          if (cardPickerLib) {
+            handleAddPathToLibrary(cardPickerLib.id, selectedPath);
           }
         }}
       />

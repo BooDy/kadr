@@ -285,6 +285,7 @@ describe('AdminDashboard Component', () => {
     fireEvent.click(addFolderBtns[1]);
 
     await waitFor(() => {
+      expect(api.browseFilesystem).toHaveBeenCalledWith('/media/shows');
       expect(screen.getByText('Select Server Folder')).toBeDefined();
     });
 
@@ -292,6 +293,35 @@ describe('AdminDashboard Component', () => {
 
     await waitFor(() => {
       expect(api.addLibraryPath).toHaveBeenCalledWith('lib-2', '/mnt/nas/shows');
+    });
+  });
+
+  it('shows a warning status and returns early without calling API when folder is already part of the library', async () => {
+    vi.spyOn(api, 'browseFilesystem').mockResolvedValueOnce({
+      current_path: '/media/shows',
+      parent_path: '/media',
+      directories: [],
+      shortcuts: [],
+    });
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText('TV Series')).toBeDefined();
+    });
+
+    const addFolderBtns = screen.getAllByRole('button', { name: /\+ Add Folder/i });
+    fireEvent.click(addFolderBtns[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Select Server Folder')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Select This Folder/i }));
+
+    await waitFor(() => {
+      expect(api.addLibraryPath).not.toHaveBeenCalled();
+      expect(screen.getByText('This folder is already part of the library')).toBeDefined();
     });
   });
 

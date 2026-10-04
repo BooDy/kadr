@@ -207,6 +207,22 @@ async fn test_create_library_validation_errors() {
         .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // Relative path returns 400
+    let payload = json!({
+        "name": "Relative Path Library",
+        "path": "relative/path/to/media",
+        "media_type": "Movie"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/libraries")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
+        .body(Body::from(payload.to_string()))
+        .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
@@ -259,6 +275,17 @@ async fn test_add_and_remove_library_paths() {
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::from(json!({ "path": "/nonexistent/xyz" }).to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 3b. Add relative path returns 400
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/libraries/{lib_id}/paths"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
+        .body(Body::from(json!({ "path": "relative/sub/dir" }).to_string()))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);

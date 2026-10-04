@@ -99,13 +99,27 @@ pub async fn create_library(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let (resolved_paths, validate_existence) = match payload.paths {
+    let (raw_paths, validate_existence) = match payload.paths {
         Some(paths) if !paths.is_empty() => (paths, true),
         _ => (payload.path.into_iter().collect(), false),
     };
 
-    if resolved_paths.is_empty() {
+    if raw_paths.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let resolved_paths: Vec<PathBuf> = raw_paths
+        .into_iter()
+        .map(|p| match std::fs::canonicalize(&p) {
+            Ok(canon) => canon,
+            Err(_) => p,
+        })
+        .collect();
+
+    for p in &resolved_paths {
+        if !p.is_absolute() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
     }
 
     if validate_existence {
@@ -394,7 +408,12 @@ pub async fn add_library_path(
     Extension(event_bus): Extension<Arc<EventBus>>,
     Json(payload): Json<AddPathRequest>,
 ) -> Result<(StatusCode, Json<Library>), StatusCode> {
-    if !payload.path.is_dir() {
+    let path = match std::fs::canonicalize(&payload.path) {
+        Ok(canon) => canon,
+        Err(_) => payload.path,
+    };
+
+    if !path.is_absolute() || !path.is_dir() {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -407,7 +426,7 @@ pub async fn add_library_path(
         }
     };
 
-    if let Err(e) = lib_repo.add_path(&id, &payload.path).await {
+    if let Err(e) = lib_repo.add_path(&id, &path).await {
         error!(error = %e, library_id = %id, "Failed to add path to library");
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -418,7 +437,7 @@ pub async fn add_library_path(
     };
 
     let lib_clone = updated_lib.clone();
-    let added_path = payload.path.clone();
+    let added_path = path;
     let pipe_clone = pipeline.clone();
     let tx_clone = ingest_tx.clone();
     tokio::spawn(async move {
@@ -462,12 +481,17 @@ pub async fn remove_library_path(
     Extension(event_bus): Extension<Arc<EventBus>>,
     body: axum::body::Bytes,
 ) -> Result<StatusCode, StatusCode> {
-    let path = if let Some(p) = query.path {
+    let raw_path = if let Some(p) = query.path {
         p
     } else if let Ok(payload) = serde_json::from_slice::<RemovePathPayload>(&body) {
         payload.path
     } else {
         return Err(StatusCode::BAD_REQUEST);
+    };
+
+    let path = match std::fs::canonicalize(&raw_path) {
+        Ok(canon) => canon,
+        Err(_) => raw_path,
     };
 
     match lib_repo.remove_path(&id, &path).await {
