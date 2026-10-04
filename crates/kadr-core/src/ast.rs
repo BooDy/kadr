@@ -6,13 +6,68 @@ use std::str::FromStr;
 use crate::models::TechnicalInfo;
 
 /// Represents high-level screen identifiers in the application.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScreenId {
     Home,
     Movies,
     Shows,
     Custom(String),
+}
+
+impl Serialize for ScreenId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ScreenId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ScreenIdVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ScreenIdVisitor {
+            type Value = ScreenId;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a screen ID string or object")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<ScreenId, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(value.parse().unwrap())
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<ScreenId, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(value.parse().unwrap())
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<ScreenId, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                if let Some((key, val)) = access.next_entry::<String, String>()? {
+                    if key == "custom" {
+                        return Ok(ScreenId::Custom(val));
+                    } else {
+                        return Ok(key.parse().unwrap());
+                    }
+                }
+                Err(serde::de::Error::custom("expected screen ID"))
+            }
+        }
+
+        deserializer.deserialize_any(ScreenIdVisitor)
+    }
 }
 
 impl fmt::Display for ScreenId {

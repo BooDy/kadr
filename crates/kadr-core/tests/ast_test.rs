@@ -61,7 +61,7 @@ fn test_screen_id_variants() {
     assert_eq!(serde_json::to_string(&shows).unwrap(), "\"shows\"");
     assert_eq!(
         serde_json::to_string(&custom).unwrap(),
-        "{\"custom\":\"favorites\"}"
+        "\"favorites\""
     );
 
     assert_eq!(
@@ -75,6 +75,10 @@ fn test_screen_id_variants() {
     assert_eq!(
         serde_json::from_str::<ScreenId>("\"shows\"").unwrap(),
         ScreenId::Shows
+    );
+    assert_eq!(
+        serde_json::from_str::<ScreenId>("\"favorites\"").unwrap(),
+        ScreenId::Custom("favorites".to_string())
     );
     assert_eq!(
         serde_json::from_str::<ScreenId>("{\"custom\":\"favorites\"}").unwrap(),

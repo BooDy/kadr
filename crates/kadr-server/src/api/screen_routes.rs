@@ -46,6 +46,23 @@ pub async fn list_screens(
     Json(screens)
 }
 
+/// Validates that a screen ID is not empty, does not start with '.', and contains only ASCII alphanumeric, '-', or '_'.
+pub fn validate_screen_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty() {
+        return Err("Screen ID cannot be empty");
+    }
+    if id.starts_with('.') {
+        return Err("Screen ID cannot start with '.'");
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Screen ID must contain only ASCII alphanumeric, '-', or '_' characters");
+    }
+    Ok(())
+}
+
 /// Handler for `GET /api/v1/screens/{screen_id}`.
 /// Returns the hydrated (or raw if `unhydrated=true`) AST layout for the requested screen.
 pub async fn get_screen(
@@ -56,6 +73,13 @@ pub async fn get_screen(
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,
 ) -> Result<Json<ScreenLayout>, (StatusCode, Json<serde_json::Value>)> {
+    if let Err(err_msg) = validate_screen_id(&screen_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err_msg })),
+        ));
+    }
+
     let parsed_id: ScreenId = screen_id.parse().unwrap();
     let layout = match registry.get_screen(&parsed_id) {
         Some(l) => l,
@@ -96,6 +120,13 @@ pub async fn save_screen_handler(
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
     Json(mut screen): Json<ScreenLayout>,
 ) -> Result<Json<ScreenLayout>, (StatusCode, Json<serde_json::Value>)> {
+    if let Err(err_msg) = validate_screen_id(&screen_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err_msg })),
+        ));
+    }
+
     let parsed_id: ScreenId = screen_id.parse().unwrap();
     screen.id = parsed_id;
     let screens_dir = config.read().await.server.data_dir.join("screens");
@@ -118,12 +149,13 @@ pub async fn create_screen_handler(
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
     Json(payload): Json<CreateScreenRequest>,
 ) -> Result<(StatusCode, Json<ScreenLayout>), (StatusCode, Json<serde_json::Value>)> {
-    if payload.id.trim().is_empty() {
+    if let Err(err_msg) = validate_screen_id(&payload.id) {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Screen ID cannot be empty" })),
+            Json(serde_json::json!({ "error": err_msg })),
         ));
     }
+
     let parsed_id: ScreenId = payload.id.parse().unwrap();
     if registry.get_screen(&parsed_id).is_some() {
         return Err((
@@ -152,6 +184,13 @@ pub async fn delete_screen_handler(
     Extension(mut registry): Extension<LayoutRegistry>,
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if let Err(err_msg) = validate_screen_id(&screen_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err_msg })),
+        ));
+    }
+
     let parsed_id: ScreenId = screen_id.parse().unwrap();
     let screens_dir = config.read().await.server.data_dir.join("screens");
     match parsed_id {

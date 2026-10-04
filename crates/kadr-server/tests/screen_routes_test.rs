@@ -729,3 +729,161 @@ async fn test_save_and_reset_screen_layout() {
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn test_custom_screen_put_serde_and_validation() {
+    let ctx = setup_test_app().await;
+
+    // 1. Path traversal / invalid screen ID validation on POST
+    let invalid_post_ids = vec!["../bad_id", ".hidden", "bad id$", "bad/id", ""];
+    for invalid_id in invalid_post_ids {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/screens")
+            .header("authorization", format!("Bearer {}", ctx.admin_token))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&json!({
+                    "id": invalid_id,
+                    "title": "Invalid ID"
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+        let res = ctx.app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "POST /api/v1/screens with id '{invalid_id}' should return 400"
+        );
+    }
+
+    // 2. Invalid screen ID validation on PUT, GET, DELETE
+    let req_put_invalid = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/screens/.hidden")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&json!({
+                "id": ".hidden",
+                "title": "Invalid ID",
+                "widgets": []
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_put_invalid).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    let req_get_invalid = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/.hidden")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_get_invalid).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    let req_del_invalid = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/screens/.hidden")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_del_invalid).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 3. PUT /api/v1/screens/anime with custom screen JSON
+    let custom_anime = ScreenLayout::new(
+        ScreenId::Custom("anime".to_string()),
+        "Anime Hub",
+        vec![WidgetNode::Carousel {
+            id: "anime_spotlight".to_string(),
+            title: "Trending Anime".to_string(),
+            binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+            items: None,
+            next_cursor: None,
+        }],
+    );
+
+    // 4. Non-admin PUT returns 403
+    let req_put_non_admin = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/screens/anime")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&custom_anime).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_put_non_admin).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 5. Non-admin POST returns 403
+    let req_post_non_admin = Request::builder()
+        .method("POST")
+        .uri("/api/v1/screens")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&json!({
+                "id": "anime",
+                "title": "Anime Hub"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_post_non_admin).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 6. Non-admin DELETE returns 403
+    let req_del_non_admin = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/screens/anime")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_del_non_admin).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 7. Admin PUT /api/v1/screens/anime succeeds (200 OK)
+    let req_put_admin = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/screens/anime")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&custom_anime).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_put_admin).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 8. GET /api/v1/screens/anime returns string id "anime" and matching layout
+    let req_get_anime = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/anime?unhydrated=true")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_get_anime).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let raw_json: Value = serde_json::from_slice(&bytes).unwrap();
+
+    // Verify id is serializing as clean string "anime", NOT {"custom": "anime"}
+    assert_eq!(raw_json["id"], "anime");
+    assert_eq!(raw_json["title"], "Anime Hub");
+    let layout: ScreenLayout = serde_json::from_value(raw_json).unwrap();
+    assert_eq!(layout.id, ScreenId::Custom("anime".to_string()));
+    assert_eq!(layout.widgets.len(), 1);
+    assert_eq!(layout.widgets[0].id(), "anime_spotlight");
+
+    // Clean up
+    let req_del = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/screens/anime")
+        .header("authorization", format!("Bearer {}", ctx.admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req_del).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+

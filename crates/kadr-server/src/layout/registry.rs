@@ -88,7 +88,15 @@ impl LayoutRegistry {
     pub fn reset_screen(&mut self, id: &ScreenId, dir: &Path) -> Result<ScreenLayout, LayoutError> {
         let file_path = dir.join(format!("{id}.json"));
         if file_path.exists() {
-            let _ = std::fs::remove_file(file_path);
+            if let Err(e) = std::fs::remove_file(&file_path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::error!("Failed to remove layout file {}: {e}", file_path.display());
+                    return Err(format!(
+                        "Failed to remove layout file {}: {e}",
+                        file_path.display()
+                    ));
+                }
+            }
         }
         match id {
             ScreenId::Home => {
@@ -119,7 +127,15 @@ impl LayoutRegistry {
             ScreenId::Custom(_) => {
                 let file_path = dir.join(format!("{id}.json"));
                 if file_path.exists() {
-                    let _ = std::fs::remove_file(file_path);
+                    if let Err(e) = std::fs::remove_file(&file_path) {
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            tracing::error!("Failed to remove layout file {}: {e}", file_path.display());
+                            return Err(format!(
+                                "Failed to remove layout file {}: {e}",
+                                file_path.display()
+                            ));
+                        }
+                    }
                 }
                 let mut inner = self.inner.write().expect("layout registry lock poisoned");
                 inner.screens.remove(id);
