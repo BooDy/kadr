@@ -131,37 +131,37 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
   const getViewportWrapperStyle = () => {
     switch (viewport) {
       case 'tablet':
-        return 'max-w-[768px] mx-auto border-4 border-zinc-800 rounded-3xl p-4 shadow-2xl bg-zinc-950';
+        return 'max-w-[768px] mx-auto bg-panel border border-border-subtle rounded-2xl p-4 shadow-2xl';
       case 'mobile':
-        return 'max-w-[390px] mx-auto border-4 border-zinc-800 rounded-3xl p-3 shadow-2xl bg-zinc-950';
+        return 'max-w-[390px] mx-auto bg-panel border border-border-subtle rounded-2xl p-3 shadow-2xl';
       case 'tv':
       default:
-        return 'w-full border border-zinc-800/80 rounded-2xl p-6 shadow-2xl bg-zinc-950';
+        return 'w-full bg-panel border border-border-subtle rounded-2xl p-6 shadow-2xl';
     }
   };
 
   return (
     <div className="space-y-6 pb-16">
       {/* Top Header & Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border-subtle pb-6">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
-            <Layers className="h-6 w-6 text-rose-500" />
+          <h2 className="text-2xl font-bold tracking-tight text-text-main flex items-center gap-2.5">
+            <Layers className="h-6 w-6 text-accent" />
             Layout Studio
           </h2>
-          <p className="text-sm text-zinc-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             Declarative AST screen inspector and multi-device viewport simulator.
           </p>
         </div>
 
         {/* Viewport Simulator Mode Selector */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-900 border border-zinc-800 self-start md:self-auto">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-panel border border-border-subtle self-start md:self-auto">
           <button
             onClick={() => setViewport('tv')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               viewport === 'tv'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                ? 'bg-accent text-canvas font-semibold shadow-sm'
+                : 'text-muted hover:text-text-main hover:bg-panel-hover'
             }`}
           >
             <Tv className="w-3.5 h-3.5" />
@@ -171,8 +171,8 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
             onClick={() => setViewport('tablet')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               viewport === 'tablet'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                ? 'bg-accent text-canvas font-semibold shadow-sm'
+                : 'text-muted hover:text-text-main hover:bg-panel-hover'
             }`}
           >
             <Tablet className="w-3.5 h-3.5" />
@@ -182,8 +182,8 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
             onClick={() => setViewport('mobile')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               viewport === 'mobile'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                ? 'bg-accent text-canvas font-semibold shadow-sm'
+                : 'text-muted hover:text-text-main hover:bg-panel-hover'
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />
@@ -194,17 +194,17 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
 
       {/* Screen Selector Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mr-2">
+        <span className="text-xs font-semibold text-muted uppercase tracking-wider mr-2">
           Screens:
         </span>
         {screens.map((s) => (
           <button
             key={s.id}
             onClick={() => setSelectedScreenId(s.id)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+            className={`px-4 py-2 rounded-xl text-sm transition-all cursor-pointer ${
               selectedScreenId === s.id
-                ? 'bg-zinc-800 text-white border border-rose-500/50 shadow-md'
-                : 'bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-zinc-800/60'
+                ? 'bg-panel text-accent font-semibold border border-border-subtle rounded-xl shadow-md'
+                : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl border border-transparent'
             }`}
           >
             {s.title || s.id}
@@ -215,24 +215,24 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
       {/* Main Studio Body: Widget Tree Inspector (Sidebar) & Live Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* Widget Tree Inspector */}
-        <div className="lg:col-span-1 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md p-4 space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Layers className="w-4 h-4 text-rose-400" />
+        <div className="lg:col-span-1 rounded-2xl border border-border-subtle bg-panel/60 backdrop-blur-md p-4 space-y-4">
+          <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+            <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
+              <Layers className="w-4 h-4 text-accent" />
               Widget Tree
             </h3>
-            <span className="text-[11px] font-mono text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded-md border border-zinc-800">
+            <span className="text-[11px] font-mono text-muted bg-canvas px-2 py-0.5 rounded-md border border-border-subtle">
               {layout?.widgets.length || 0} nodes
             </span>
           </div>
 
           {loading ? (
-            <div className="py-8 flex flex-col items-center justify-center text-zinc-500 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-rose-500" />
+            <div className="py-8 flex flex-col items-center justify-center text-muted gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-accent" />
               <span className="text-xs">Loading widgets...</span>
             </div>
           ) : !layout || layout.widgets.length === 0 ? (
-            <div className="py-6 text-center text-xs text-zinc-500">
+            <div className="py-6 text-center text-xs text-muted">
               No widgets configured for this screen.
             </div>
           ) : (
@@ -248,34 +248,34 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                 return (
                   <div
                     key={widget.id}
-                    className={`p-3 rounded-xl border transition-all ${
+                    className={`font-mono text-xs text-text-main bg-canvas/80 p-3 rounded-xl border border-border-subtle transition-all ${
                       isEnabled
-                        ? 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
-                        : 'bg-zinc-950/40 border-zinc-900/60 opacity-60'
+                        ? 'hover:border-border-subtle/80 hover:bg-canvas'
+                        : 'opacity-50'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-semibold text-white truncate">
+                          <span className="font-semibold text-text-main truncate">
                             {widget.id}
                           </span>
-                          <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-mono font-medium text-rose-400 border border-rose-500/20">
+                          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-mono font-medium text-accent border border-accent/20">
                             {displayType}
                           </span>
                         </div>
                         {widgetTitle && (
-                          <p className="text-[11px] text-zinc-400 truncate">
+                          <p className="text-[11px] text-muted truncate">
                             {widgetTitle}
                           </p>
                         )}
-                        <span className="text-[10px] text-zinc-500 font-mono">
+                        <span className="text-[10px] text-muted font-mono">
                           #{index + 1}
                         </span>
                       </div>
 
                       {/* Enable/Disable Toggle */}
-                      <label className="flex items-center cursor-pointer p-1 rounded-lg hover:bg-zinc-800/80 transition-colors">
+                      <label className="flex items-center cursor-pointer p-1 rounded-lg hover:bg-panel-hover transition-colors">
                         <input
                           type="checkbox"
                           aria-label={`Toggle ${widget.id}`}
@@ -284,9 +284,9 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                           className="sr-only"
                         />
                         {isEnabled ? (
-                          <Eye className="w-4 h-4 text-rose-400" />
+                          <Eye className="w-4 h-4 text-accent" />
                         ) : (
-                          <EyeOff className="w-4 h-4 text-zinc-600" />
+                          <EyeOff className="w-4 h-4 text-muted" />
                         )}
                       </label>
                     </div>
@@ -299,9 +299,9 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
 
         {/* Live Interactive Preview Pane */}
         <div className="lg:col-span-3 space-y-4">
-          <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
-            <span>Viewport: <strong className="text-zinc-200 capitalize">{viewport}</strong></span>
-            <span>Screen AST: <code className="text-rose-400">{selectedScreenId}</code></span>
+          <div className="flex items-center justify-between text-xs text-muted px-1">
+            <span>Viewport: <strong className="text-text-main capitalize">{viewport}</strong></span>
+            <span>Screen AST: <code className="text-accent">{selectedScreenId}</code></span>
           </div>
 
           <div
@@ -311,15 +311,15 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
           >
             {loading && (
               <div className="py-24 flex flex-col items-center justify-center gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
-                <span className="text-sm text-zinc-400">Loading screen preview...</span>
+                <Loader2 className="w-8 h-8 animate-spin text-accent" />
+                <span className="text-sm text-muted">Loading screen preview...</span>
               </div>
             )}
 
             {!loading && error && (
               <div className="py-16 text-center space-y-3">
-                <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
-                <p className="text-sm text-zinc-400">{error}</p>
+                <AlertCircle className="w-10 h-10 text-cta mx-auto" />
+                <p className="text-sm text-muted">{error}</p>
               </div>
             )}
 
