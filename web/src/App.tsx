@@ -20,8 +20,6 @@ import { ProfileSelect } from './components/auth/ProfileSelect';
 import { PinKeypad } from './components/auth/PinKeypad';
 import { BrowseScreen } from './components/browse/BrowseScreen';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
-import { LayoutStudio } from './components/studio/LayoutStudio';
-import { TelemetryDashboard } from './components/telemetry/TelemetryDashboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 
 export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'admin' | 'player' | string;
@@ -257,14 +255,6 @@ export const App: FC = () => {
               <BrowseScreen screenId="home" onPlayItem={handlePlayItem} />
             )}
 
-            {currentView === 'movies' && (
-              <BrowseScreen screenId="movies" onPlayItem={handlePlayItem} />
-            )}
-
-            {currentView === 'shows' && (
-              <BrowseScreen screenId="shows" onPlayItem={handlePlayItem} />
-            )}
-
             {activeLibrary && currentView === `library-${activeLibrary.id}` && (
               <BrowseScreen screenId={activeLibrary.id} onPlayItem={handlePlayItem} />
             )}
@@ -277,14 +267,6 @@ export const App: FC = () => {
                   setCurrentView('home');
                 }}
               />
-            )}
-
-            {currentView === 'studio' && (
-              <LayoutStudio onPlayItem={handlePlayItem} />
-            )}
-
-            {currentView === 'telemetry' && (
-              <TelemetryDashboard />
             )}
 
             {currentView === 'admin' && currentUser?.role === 'admin' && (

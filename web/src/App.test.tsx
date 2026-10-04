@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 import { api } from './api/client';
@@ -180,7 +181,7 @@ describe('App Shell', () => {
     api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
     api.setToken('test-jwt');
 
-    vi.spyOn(api, 'getScreen').mockResolvedValueOnce({
+    vi.spyOn(api, 'getScreen').mockResolvedValue({
       id: 'home',
       title: 'Home',
       widgets: [
@@ -198,16 +199,21 @@ describe('App Shell', () => {
     });
 
     render(<App />);
-    await waitFor(() => expect(screen.getByText('Sample Film')).toBeDefined());
+    await waitFor(() => expect(screen.getByText('Sample Film')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: /play now/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Now playing item #999/i)).toBeDefined();
+      expect(screen.getByText(/Cinema Player/i)).toBeInTheDocument();
+      expect(screen.getByText(/Now playing item #999/i)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: /back to browse/i }));
-    expect(screen.queryByText(/Now playing item #999/i)).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText(/Cinema Player/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Now playing item #999/i)).not.toBeInTheDocument();
+      expect(screen.getByText('Sample Film')).toBeInTheDocument();
+    });
   });
 
   it('shows active user avatar in header with Switch Profile menu and opens switch profile modal', async () => {

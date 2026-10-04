@@ -516,7 +516,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Server Configuration */}
+      {/* Tab 2: User Management */}
+      {activeTab === 'users' && (
+        <div className="mt-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-text-main">Registered User Profiles</h2>
+              <p className="text-muted text-sm mt-0.5">
+                Profiles can sign in via 4-digit PIN to track watch history and access media.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsAddUserOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-cta hover:bg-cta-hover text-white font-semibold rounded-xl text-sm transition-colors shadow-md cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+            >
+              <Plus className="w-4 h-4" />
+              Add User Profile
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {users.map((u) => (
+              <div
+                key={u.id}
+                className="bg-panel border border-border-subtle rounded-xl p-5 flex items-center justify-between hover:bg-panel-hover transition-colors shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-canvas border border-border-subtle flex items-center justify-center font-bold text-accent">
+                    {u.username.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-main">{u.username}</h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-canvas text-muted border border-border-subtle">
+                      {u.role.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Layout Studio */}
+      {activeTab === 'studio' && (
+        <div className="mt-8">
+          <LayoutStudio onPlayItem={onPlayItem} />
+        </div>
+      )}
+
+      {/* Tab 4: Telemetry Dashboard */}
+      {activeTab === 'telemetry' && (
+        <div className="mt-8">
+          <TelemetryDashboard />
+        </div>
+      )}
+
+      {/* Tab 5: Server Configuration */}
       {activeTab === 'config' && (
         <div className="mt-8 max-w-3xl space-y-6">
           <div>
@@ -637,62 +693,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </form>
-        </div>
-      )}
-
-      {/* Tab 3: User Management */}
-      {activeTab === 'users' && (
-        <div className="mt-8 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-text-main">Registered User Profiles</h2>
-              <p className="text-muted text-sm mt-0.5">
-                Profiles can sign in via 4-digit PIN to track watch history and access media.
-              </p>
-            </div>
-            <button
-              onClick={() => setIsAddUserOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-cta hover:bg-cta-hover text-white font-semibold rounded-xl text-sm transition-colors shadow-md cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
-            >
-              <Plus className="w-4 h-4" />
-              Add User Profile
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {users.map((u) => (
-              <div
-                key={u.id}
-                className="bg-panel border border-border-subtle rounded-xl p-5 flex items-center justify-between hover:bg-panel-hover transition-colors shadow-sm"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-canvas border border-border-subtle flex items-center justify-center font-bold text-accent">
-                    {u.username.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-text-main">{u.username}</h3>
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-canvas text-muted border border-border-subtle">
-                      {u.role.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: Layout Studio */}
-      {activeTab === 'studio' && (
-        <div className="mt-8">
-          <LayoutStudio onPlayItem={onPlayItem} />
-        </div>
-      )}
-
-      {/* Tab 5: Telemetry Dashboard */}
-      {activeTab === 'telemetry' && (
-        <div className="mt-8">
-          <TelemetryDashboard />
         </div>
       )}
 

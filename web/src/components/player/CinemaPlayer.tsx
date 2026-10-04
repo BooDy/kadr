@@ -304,6 +304,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         isControlsVisible ? 'cursor-default' : 'cursor-none'
       }`}
     >
+      <span className="sr-only">Cinema Player</span>
       <video
         ref={videoRef}
         src={streamUrl}
