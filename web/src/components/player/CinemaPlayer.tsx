@@ -347,6 +347,10 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
           </span>
           <button
             onClick={() => {
+              if (resumeTimerRef.current) {
+                clearTimeout(resumeTimerRef.current);
+                resumeTimerRef.current = null;
+              }
               if (videoRef.current) {
                 videoRef.current.currentTime = 0;
                 setCurrentTime(0);

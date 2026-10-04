@@ -116,7 +116,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           <span className="font-mono text-xs text-text-main min-w-12 text-right select-none drop-shadow">
             {formatPlaybackTime(currentTime)}
           </span>
-          <div className="relative flex-1 flex items-center group/seek">
+          <div className="relative flex-1 flex items-center group/seek focus-within:ring-3 focus-within:ring-highlight focus-within:ring-offset-2 focus-within:ring-offset-canvas rounded-full">
             <div className="relative w-full bg-muted/40 h-1.5 group-hover/seek:h-2.5 hover:h-2.5 rounded-full transition-all cursor-pointer flex items-center">
               <div
                 className="bg-accent rounded-full relative h-full flex items-center justify-end"
@@ -133,7 +133,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
               step={1}
               value={currentTime}
               onChange={(e) => onSeek(Number(e.target.value))}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none rounded-full"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus:outline-none rounded-full"
             />
           </div>
           <span className="font-mono text-xs text-text-main min-w-12 select-none drop-shadow">
@@ -170,7 +170,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                   <Volume2 className="w-5 h-5" />
                 )}
               </button>
-              <div className="relative w-16 sm:w-24 flex items-center">
+              <div className="relative w-16 sm:w-24 flex items-center group/vol focus-within:ring-3 focus-within:ring-highlight focus-within:ring-offset-2 focus-within:ring-offset-canvas rounded-full">
                 <div className="relative w-full bg-muted/40 h-1.5 group-hover/vol:h-2 rounded-full transition-all cursor-pointer flex items-center">
                   <div
                     className="bg-highlight rounded-full relative h-full flex items-center justify-end"
@@ -187,7 +187,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                   step={0.05}
                   value={isMuted ? 0 : volume}
                   onChange={(e) => onVolumeChange(Number(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none rounded-full accent-highlight"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus:outline-none rounded-full accent-highlight"
                 />
               </div>
             </div>
