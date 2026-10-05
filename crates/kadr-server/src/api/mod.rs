@@ -159,6 +159,10 @@ pub fn create_router_with_ingest(
             delete(library_routes::delete_library),
         )
         .route(
+            "/api/v1/libraries/{id}/folders",
+            get(library_routes::browse_library_folders),
+        )
+        .route(
             "/api/v1/libraries/{id}/paths",
             post(library_routes::add_library_path)
                 .delete(library_routes::remove_library_path),

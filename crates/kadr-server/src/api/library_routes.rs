@@ -6,21 +6,52 @@ use axum::extract::{Extension, Path, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use kadr_core::ast::CardViewModel;
 use kadr_core::events::SystemEvent;
-use kadr_core::models::{Library, MediaType};
+use kadr_core::models::{Library, MediaItem, MediaType};
 use kadr_ingest::watcher::{scan_directory_recursive, IngestMessage, IngestPipeline};
 use kadr_storage::error::StorageError;
-use kadr_storage::repos::LibraryRepository;
+use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::api::auth_routes::ClientIp;
-use crate::api::unlock_token::UnlockTokenService;
-use crate::auth::jwt::RequireAdmin;
+use crate::api::unlock_token::{UnlockTokenService, UnlockedLibraries};
+use crate::auth::jwt::{AuthUser, RequireAdmin};
 use crate::auth::pin::{hash_pin, validate_pin, verify_pin};
 use crate::auth::rate_limiter::{RateLimitStatus, RateLimiter};
 use crate::events::EventBus;
+use crate::resolver::to_card_view_model;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FolderEntry {
+    pub name: String,
+    pub path: String,
+    pub item_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BreadcrumbItem {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryFolderResponse {
+    pub library_id: String,
+    pub library_name: String,
+    pub current_path: String,
+    pub parent_path: Option<String>,
+    pub breadcrumbs: Vec<BreadcrumbItem>,
+    pub directories: Vec<FolderEntry>,
+    pub items: Vec<CardViewModel>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BrowseFolderQuery {
+    pub path: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateLibraryRequest {
@@ -520,4 +551,367 @@ pub async fn remove_library_path(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+fn is_video_file(path: &std::path::Path) -> bool {
+    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "mkv" | "mp4" | "webm" | "avi" | "mov" | "m4v"
+    )
+}
+
+/// Handler for `GET /api/v1/libraries/{id}/folders`.
+///
+/// Returns sandboxed directory contents, subdirectories with item counts,
+/// and media items enriched with database metadata and playback progress.
+pub async fn browse_library_folders(
+    auth_user: Option<AuthUser>,
+    unlocked: UnlockedLibraries,
+    Path(id): Path<String>,
+    Query(query): Query<BrowseFolderQuery>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(media_repo): Extension<MediaItemRepository>,
+    Extension(playback_repo): Extension<PlaybackRepository>,
+) -> Result<Json<LibraryFolderResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let library = match lib_repo.get_by_id(&id).await {
+        Ok(Some(lib)) => lib,
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Library not found" })),
+            ));
+        }
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to load library");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            ));
+        }
+    };
+
+    if library.is_private && !unlocked.is_unlocked(&library.id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+        ));
+    }
+
+    let raw_roots = if library.paths.is_empty() {
+        vec![library.path.clone()]
+    } else {
+        library.paths.clone()
+    };
+
+    let mut canonical_roots = Vec::new();
+    for root in &raw_roots {
+        if let Ok(canon) = std::fs::canonicalize(root) {
+            canonical_roots.push(canon);
+        }
+    }
+
+    if canonical_roots.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Library path not found on disk" })),
+        ));
+    }
+
+    let requested_path = query.path.unwrap_or_default();
+    let trimmed = requested_path.trim();
+
+    if trimmed.contains('\0') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid path containing null bytes" })),
+        ));
+    }
+
+    if trimmed.contains("..") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Path traversal not allowed" })),
+        ));
+    }
+
+    let rel_path_check = std::path::Path::new(trimmed);
+    if trimmed.starts_with('/')
+        || trimmed.starts_with('\\')
+        || rel_path_check.is_absolute()
+        || rel_path_check.has_root()
+        || trimmed.contains(':')
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Absolute path not allowed" })),
+        ));
+    }
+
+    for comp in rel_path_check.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Path traversal not allowed" })),
+                ));
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Absolute path not allowed" })),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    let clean_path = trimmed.trim_matches(|c| c == '/' || c == '\\').to_string();
+
+    let mut matched_target_dirs: Vec<PathBuf> = Vec::new();
+    if clean_path.is_empty() {
+        matched_target_dirs.extend(canonical_roots.iter().cloned());
+    } else {
+        let mut any_candidate_exists = false;
+        for root in &canonical_roots {
+            let candidate = root.join(&clean_path);
+            if candidate.exists() {
+                any_candidate_exists = true;
+                let canon = match std::fs::canonicalize(&candidate) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!(error = %e, path = ?candidate, "Failed to canonicalize path");
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({ "error": "Invalid path" })),
+                        ));
+                    }
+                };
+                if !canon.starts_with(root) {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({ "error": "Path outside library root" })),
+                    ));
+                }
+                if !canon.is_dir() {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({ "error": "Path is not a directory" })),
+                    ));
+                }
+                matched_target_dirs.push(canon);
+            }
+        }
+
+        if !any_candidate_exists || matched_target_dirs.is_empty() {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Path not found" })),
+            ));
+        }
+    }
+
+    let current_path = clean_path.clone();
+
+    let parent_path = if clean_path.is_empty() {
+        None
+    } else if let Some((parent, _)) = clean_path.rsplit_once('/') {
+        Some(parent.to_string())
+    } else {
+        Some(String::new())
+    };
+
+    let breadcrumbs = if clean_path.is_empty() {
+        Vec::new()
+    } else {
+        let mut crumbs = Vec::new();
+        let mut accum = String::new();
+        for seg in clean_path.split('/') {
+            if seg.is_empty() {
+                continue;
+            }
+            if accum.is_empty() {
+                accum.push_str(seg);
+            } else {
+                accum.push('/');
+                accum.push_str(seg);
+            }
+            crumbs.push(BreadcrumbItem {
+                name: seg.to_string(),
+                path: accum.clone(),
+            });
+        }
+        crumbs
+    };
+
+    let mut dir_map: std::collections::BTreeMap<String, FolderEntry> =
+        std::collections::BTreeMap::new();
+    let mut video_paths = Vec::new();
+
+    for target_dir in matched_target_dirs {
+        let mut reader = match tokio::fs::read_dir(&target_dir).await {
+            Ok(r) => r,
+            Err(e) => {
+                error!(error = %e, dir = ?target_dir, "Failed to read directory");
+                continue;
+            }
+        };
+
+        while let Ok(Some(entry)) = reader.next_entry().await {
+            let file_name = entry.file_name().to_string_lossy().into_owned();
+            if file_name.starts_with('.') {
+                continue;
+            }
+
+            let entry_path = entry.path();
+            let file_type = match entry.file_type().await {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+
+            let is_dir = if file_type.is_dir() {
+                true
+            } else if file_type.is_symlink() {
+                entry_path.is_dir()
+            } else {
+                false
+            };
+
+            if is_dir {
+                let mut sub_count = 0;
+                if let Ok(mut sub_reader) = tokio::fs::read_dir(&entry_path).await {
+                    while let Ok(Some(sub_entry)) = sub_reader.next_entry().await {
+                        let sub_name = sub_entry.file_name().to_string_lossy().into_owned();
+                        if !sub_name.starts_with('.') {
+                            sub_count += 1;
+                        }
+                    }
+                }
+
+                let rel_dir_path = if current_path.is_empty() {
+                    file_name.clone()
+                } else {
+                    format!("{}/{}", current_path, file_name)
+                };
+
+                dir_map.entry(file_name.clone()).or_insert(FolderEntry {
+                    name: file_name,
+                    path: rel_dir_path,
+                    item_count: sub_count,
+                });
+            } else if is_video_file(&entry_path) {
+                video_paths.push(entry_path);
+            }
+        }
+    }
+
+    video_paths.sort();
+    video_paths.dedup();
+
+    let mut lookup_paths: Vec<&std::path::Path> = Vec::new();
+    for p in &video_paths {
+        lookup_paths.push(p.as_path());
+    }
+    let canon_paths: Vec<PathBuf> = video_paths
+        .iter()
+        .filter_map(|p| std::fs::canonicalize(p).ok())
+        .collect();
+    for p in &canon_paths {
+        lookup_paths.push(p.as_path());
+    }
+
+    let media_map = match media_repo.find_by_paths(&lookup_paths).await {
+        Ok(m) => m,
+        Err(e) => {
+            error!(error = %e, "Failed to query media items for folder browsing");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            ));
+        }
+    };
+
+    let mut media_items = Vec::new();
+    let mut item_ids = Vec::new();
+
+    for video_path in &video_paths {
+        let item_opt = media_map.get(video_path).or_else(|| {
+            std::fs::canonicalize(video_path)
+                .ok()
+                .and_then(|c| media_map.get(&c))
+        });
+
+        if let Some(item) = item_opt {
+            if let Some(id) = item.id {
+                item_ids.push(id);
+            }
+            media_items.push((video_path.clone(), Some(item.clone())));
+        } else {
+            media_items.push((video_path.clone(), None));
+        }
+    }
+
+    item_ids.sort_unstable();
+    item_ids.dedup();
+
+    let playback_map = if let Some(ref user) = auth_user {
+        if !item_ids.is_empty() {
+            playback_repo
+                .get_states_for_items(&user.id, &item_ids)
+                .await
+                .unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let mut items = Vec::new();
+    for (video_path, item_opt) in media_items {
+        if let Some(item) = item_opt {
+            let playback = item.id.and_then(|id| playback_map.get(&id));
+            items.push(to_card_view_model(&item, playback));
+        } else {
+            let file_name = video_path
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let stem = video_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| file_name.clone());
+            let synthetic = MediaItem {
+                id: None,
+                library_id: library.id.clone(),
+                item_type: MediaType::Movie,
+                title: stem,
+                original_title: None,
+                release_year: None,
+                added_at: 0,
+                file_path: video_path,
+                file_name,
+                file_size: 0,
+                technical: Default::default(),
+                metadata: Default::default(),
+            };
+            items.push(to_card_view_model(&synthetic, None));
+        }
+    }
+
+    let mut directories: Vec<FolderEntry> = dir_map.into_values().collect();
+    directories.sort_by_key(|a| a.name.to_lowercase());
+    items.sort_by_key(|a| a.title.to_lowercase());
+
+    Ok(Json(LibraryFolderResponse {
+        library_id: library.id,
+        library_name: library.name,
+        current_path,
+        parent_path,
+        breadcrumbs,
+        directories,
+        items,
+    }))
 }
