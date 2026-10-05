@@ -82,7 +82,7 @@ async fn test_milestone_4_subtitles_end_to_end_journey() {
         IngestWorker::new(ingest_rx, media_repo.clone()).with_subtitles(subtitle_repo.clone());
     let worker_handle = tokio::spawn(worker.run());
 
-    let pipeline = Arc::new(IngestPipeline::new(false));
+    let pipeline = Arc::new(IngestPipeline::new(false, None));
     let scanned_files = scan_directory_recursive(&media_dir);
     for file in scanned_files {
         if let Ok(Some((item, subs))) = pipeline.process_file(&library, &file).await {

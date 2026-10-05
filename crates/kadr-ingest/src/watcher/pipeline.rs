@@ -2,9 +2,10 @@ use crate::error::Result;
 use crate::parser::FilenameParser;
 use crate::probe::TechnicalProber;
 use crate::sidecars::{DiscoveredSubtitle, SidecarScanner};
+use crate::thumbnail::ThumbnailExtractor;
 use kadr_core::models::{Library, MediaItem, MediaMetadata};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tracing::warn;
 
@@ -12,21 +13,27 @@ pub struct IngestPipeline {
     filename_parser: FilenameParser,
     sidecar_scanner: SidecarScanner,
     prober: TechnicalProber,
+    thumbnail_extractor: Option<ThumbnailExtractor>,
 }
 
 impl Default for IngestPipeline {
     fn default() -> Self {
-        Self::new(false)
+        Self::new(true, None)
     }
 }
 
 impl IngestPipeline {
-    pub fn new(enable_ffprobe: bool) -> Self {
+    pub fn new(enable_ffprobe: bool, thumbnails_dir: Option<PathBuf>) -> Self {
         Self {
             filename_parser: FilenameParser::new(),
             sidecar_scanner: SidecarScanner::new(),
             prober: TechnicalProber::new(enable_ffprobe),
+            thumbnail_extractor: thumbnails_dir.map(ThumbnailExtractor::new),
         }
+    }
+
+    pub fn thumbnail_extractor(&self) -> Option<&ThumbnailExtractor> {
+        self.thumbnail_extractor.as_ref()
     }
 
     pub async fn process_file<P: AsRef<Path>>(
@@ -97,8 +104,17 @@ impl IngestPipeline {
             meta.tags = nfo_data.tags;
         }
 
+        let mut poster_path = artwork.poster.and_then(|p| p.to_str().map(String::from));
+        if poster_path.is_none() {
+            if let Some(ref extractor) = self.thumbnail_extractor {
+                if let Ok(Some(thumb_path)) = extractor.extract_thumbnail(path, technical.duration_seconds).await {
+                    poster_path = Some(thumb_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
         meta.release_group = parsed.release_group;
-        meta.poster_path = artwork.poster.and_then(|p| p.to_str().map(String::from));
+        meta.poster_path = poster_path;
         meta.backdrop_path = artwork.backdrop.and_then(|p| p.to_str().map(String::from));
 
         let subtitles = self.sidecar_scanner.find_subtitles(path);

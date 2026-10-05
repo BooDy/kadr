@@ -311,7 +311,7 @@ async fn test_scan_library_routes_to_ingest_worker() {
 
     // Create a real channel and pipeline
     let (ingest_tx, mut ingest_rx) = tokio::sync::mpsc::channel(10);
-    let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false));
+    let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false, None));
     let config = Arc::new(RwLock::new(AppConfig::default()));
 
     let app = kadr_server::api::create_router_with_ingest(

@@ -166,7 +166,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     let worker_handle = tokio::spawn(worker.run());
 
-    let pipeline = Arc::new(IngestPipeline::new(config.scanner.use_ffprobe));
+    let thumbnails_dir = config.server.data_dir.join("thumbnails");
+    let pipeline = Arc::new(IngestPipeline::new(
+        config.scanner.use_ffprobe,
+        Some(thumbnails_dir),
+    ));
     let mut watchers = Vec::new();
 
     for lib in active_libraries {

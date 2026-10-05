@@ -214,7 +214,7 @@ pub fn create_router_with_events(
     telemetry_collector: Arc<TelemetryCollector>,
 ) -> Router {
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
-    let dummy_pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false));
+    let dummy_pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false, None));
     let default_config = Arc::new(tokio::sync::RwLock::new(crate::config::AppConfig::default()));
     create_router_with_ingest(
         user_repo,

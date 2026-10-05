@@ -39,7 +39,7 @@ async fn test_pipeline_processes_file_and_extracts_all_metadata() {
         ..Default::default()
     };
 
-    let pipeline = IngestPipeline::new(false);
+    let pipeline = IngestPipeline::new(false, None);
     let (item, _) = pipeline
         .process_file(&library, &video_path)
         .await
@@ -69,7 +69,7 @@ async fn test_pipeline_ignores_unparseable_or_non_media_files() {
         ..Default::default()
     };
 
-    let pipeline = IngestPipeline::new(false);
+    let pipeline = IngestPipeline::new(false, None);
     let item = pipeline.process_file(&library, &txt_path).await.unwrap();
     assert!(item.is_none());
 }
@@ -182,7 +182,7 @@ async fn test_start_library_watcher_initial_scan() {
         ..Default::default()
     };
 
-    let pipeline = std::sync::Arc::new(IngestPipeline::new(false));
+    let pipeline = std::sync::Arc::new(IngestPipeline::new(false, None));
     let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
     let _watcher =
@@ -236,7 +236,7 @@ async fn test_pipeline_malformed_nfo_falls_back_to_filename_metadata() {
         ..Default::default()
     };
 
-    let pipeline = IngestPipeline::new(false);
+    let pipeline = IngestPipeline::new(false, None);
     let (item, _) = pipeline
         .process_file(&library, &video_path)
         .await

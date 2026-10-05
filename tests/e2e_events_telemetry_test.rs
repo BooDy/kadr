@@ -384,7 +384,7 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
     // -------------------------------------------------------------------------
     // Step 7: Trigger ingestion via IngestWorker -> verify library:updated on SSE
     // -------------------------------------------------------------------------
-    let pipeline = Arc::new(IngestPipeline::new(false));
+    let pipeline = Arc::new(IngestPipeline::new(false, None));
     let scanned_files = scan_directory_recursive(&media_dir);
     for file in scanned_files {
         if let Ok(Some((item, subs))) = pipeline.process_file(&library, &file).await {

@@ -39,7 +39,7 @@ async fn test_end_to_end_library_scan_and_reactive_ingest() {
     let worker = IngestWorker::new(rx, media_repo.clone());
     let _worker_handle = tokio::spawn(worker.run());
 
-    let pipeline = Arc::new(IngestPipeline::new(false));
+    let pipeline = Arc::new(IngestPipeline::new(false, None));
     let _watcher = start_library_watcher(
         library.clone(),
         pipeline.clone(),
