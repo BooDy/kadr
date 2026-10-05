@@ -790,3 +790,116 @@ async fn test_hero_banner_spotlight_respects_filters() {
     }
 }
 
+#[tokio::test]
+async fn test_continue_watching_cursor_advances_by_page_states_len() {
+    let (resolver, media_repo, playback_repo, _, _cont_movie_id, _) = setup_test_environment().await;
+
+    // Add a second movie in progress
+    let now = now_secs();
+    let second_path = PathBuf::from("/media/shows/s01e02.mkv");
+    let second_item = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Continue Episode".to_string(),
+        original_title: None,
+        release_year: Some(2022),
+        added_at: now - 5 * 86400,
+        file_path: second_path.clone(),
+        file_name: "s01e02.mkv".to_string(),
+        file_size: 1_000_000_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata::default(),
+    };
+    media_repo.upsert_batch(&[second_item]).await.unwrap();
+    let paths_map = media_repo
+        .find_by_paths(&[&second_path])
+        .await
+        .unwrap();
+    let second_item_id = paths_map.values().next().unwrap().id.unwrap();
+
+    // Set playback state for second item, with updated_at slightly earlier than cont_movie_id
+    playback_repo
+        .upsert_progress(
+            "user-1",
+            second_item_id,
+            120,
+            WatchState::InProgress,
+            now - 100,
+        )
+        .await
+        .unwrap();
+
+    // Query with limit=1, excluding "movies" library.
+    // Page 0 takes `cont_movie_id` (from movies), which is filtered out.
+    // cards.len() is 0, but has_more is true (page_states.len() == 1 == limit).
+    // next_cursor MUST advance to "1", not "0".
+    let binding = WidgetQueryBinding::new(QueryMacro::ContinueWatching)
+        .with_limit(1)
+        .with_filters(WidgetFilterConfig {
+            exclude_library_ids: vec!["movies".to_string()],
+            ..Default::default()
+        });
+
+    let (cards_page0, next_cursor0, _) = resolver
+        .resolve_widget_data(&binding, "user-1", 0)
+        .await
+        .expect("resolve failed");
+    assert_eq!(cards_page0.len(), 0);
+    assert_eq!(next_cursor0, Some("1".to_string()));
+
+    // Page 1 with offset=1 should yield second_item_id (from shows library)
+    let (cards_page1, next_cursor1, _) = resolver
+        .resolve_widget_data(&binding, "user-1", 1)
+        .await
+        .expect("resolve failed");
+    assert_eq!(cards_page1.len(), 1);
+    assert_eq!(cards_page1[0].id, second_item_id);
+    assert_eq!(next_cursor1, Some("2".to_string()));
+
+    // Page 2 with offset=2 reaches end
+    let (cards_page2, next_cursor2, _) = resolver
+        .resolve_widget_data(&binding, "user-1", 2)
+        .await
+        .expect("resolve failed");
+    assert_eq!(cards_page2.len(), 0);
+    assert_eq!(next_cursor2, None);
+}
+
+#[tokio::test]
+async fn test_filter_fail_closed_on_missing_or_corrupt_library() {
+    let (resolver, media_repo, _, _, _, _) = setup_test_environment().await;
+
+    // Insert an orphaned media item whose library_id does not exist by bypassing FK checks
+    let orphan_id: i64 = {
+        let conn = media_repo.pool().get().await.unwrap();
+        conn.interact(move |c| {
+            c.execute("PRAGMA foreign_keys = OFF", []).unwrap();
+            c.execute(
+                "INSERT INTO media_items (library_id, item_type, title, added_at, file_path, file_name, metadata)
+                 VALUES ('non_existent_library', 'movie', 'Orphan Movie', 1000, '/media/orphan.mkv', 'orphan.mkv', '{}')",
+                [],
+            )
+            .unwrap();
+            let id = c.last_insert_rowid();
+            c.execute("PRAGMA foreign_keys = ON", []).unwrap();
+            id
+        })
+        .await
+        .unwrap()
+    };
+
+    // Spotlight with explicit item_id pointing to orphan
+    let binding = WidgetQueryBinding::new(QueryMacro::SpotlightItem {
+        item_id: Some(orphan_id),
+    });
+
+    let (cards, _, _) = resolver
+        .resolve_widget_data(&binding, "user-1", 0)
+        .await
+        .expect("resolve failed");
+
+    // Fail-closed must reject item because its library cannot be verified
+    assert!(cards.is_empty(), "Orphan item must be filtered out by fail-closed library check");
+}
+

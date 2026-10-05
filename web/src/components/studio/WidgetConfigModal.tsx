@@ -647,7 +647,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                           aria-pressed={isSelected}
                           className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
                             isSelected
-                              ? 'bg-accent text-white font-semibold'
+                              ? 'bg-accent text-canvas font-semibold'
                               : 'bg-canvas border border-border-subtle text-muted hover:text-text-main hover:bg-panel-hover'
                           }`}
                         >
@@ -690,7 +690,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                           aria-pressed={isSelected}
                           className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
                             isSelected
-                              ? 'bg-accent text-white font-semibold'
+                              ? 'bg-accent text-canvas font-semibold'
                               : 'bg-canvas border border-border-subtle text-muted hover:text-text-main hover:bg-panel-hover'
                           }`}
                         >

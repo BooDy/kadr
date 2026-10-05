@@ -60,14 +60,20 @@ impl WidgetResolver {
         unlocked_ids: &[String],
     ) -> bool {
         // 1. Private check: if filters.exclude_private is true, item must not be in a private library
-        if let Ok(Some(lib)) = self.lib_repo.get_by_id(&item.library_id).await {
-            if lib.is_private {
-                if filters.map(|f| f.exclude_private).unwrap_or(false) {
-                    return false;
-                }
-                if !unlocked_ids.contains(&lib.id) {
-                    return false;
-                }
+        let lib = match self.lib_repo.get_by_id(&item.library_id).await {
+            Ok(Some(lib)) => lib,
+            Ok(None) => return false,
+            Err(err) => {
+                tracing::error!(library_id = %item.library_id, error = %err, "Failed to load library for filter check");
+                return false; // Fail-closed
+            }
+        };
+        if lib.is_private {
+            if filters.map(|f| f.exclude_private).unwrap_or(false) {
+                return false;
+            }
+            if !unlocked_ids.contains(&lib.id) {
+                return false;
             }
         }
 
@@ -79,16 +85,15 @@ impl WidgetResolver {
 
             // 3. Exclude genres (case-insensitive)
             if !f.exclude_genres.is_empty() {
-                let item_genres: Vec<String> = item
-                    .metadata
-                    .genres
-                    .iter()
-                    .map(|g| g.trim().to_lowercase())
-                    .collect();
-                for excluded in &f.exclude_genres {
-                    if item_genres.contains(&excluded.trim().to_lowercase()) {
-                        return false;
-                    }
+                let has_excluded_genre = f.exclude_genres.iter().any(|excluded| {
+                    let excluded_trimmed = excluded.trim();
+                    item.metadata
+                        .genres
+                        .iter()
+                        .any(|g| g.trim().eq_ignore_ascii_case(excluded_trimmed))
+                });
+                if has_excluded_genre {
+                    return false;
                 }
             }
 
@@ -339,7 +344,7 @@ impl WidgetResolver {
                 }
 
                 let next_cursor = if has_more {
-                    Some((offset + cards.len() as u32).to_string())
+                    Some((offset + page_states.len() as u32).to_string())
                 } else {
                     None
                 };
