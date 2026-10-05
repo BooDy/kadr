@@ -46,11 +46,9 @@ impl ThumbnailExtractor {
         }
 
         let target_path = self.cache_path(media_path);
-        if target_path.is_file() {
-            if let Ok(meta) = tokio::fs::metadata(&target_path).await {
-                if meta.is_file() && meta.len() > 0 {
-                    return Ok(Some(target_path));
-                }
+        if let Ok(meta) = tokio::fs::metadata(&target_path).await {
+            if meta.is_file() && meta.len() > 0 {
+                return Ok(Some(target_path));
             }
         }
 

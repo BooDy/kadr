@@ -82,8 +82,9 @@ async fn stream_artwork(
                         let thumb_str = thumb_path.to_string_lossy().to_string();
                         let mut updated = item.clone();
                         updated.metadata.poster_path = Some(thumb_str.clone());
-                        let repo = media_repo.clone();
-                        let _ = repo.upsert_batch(&[updated]).await;
+                        if let Err(e) = media_repo.upsert_batch(&[updated]).await {
+                            tracing::warn!("Failed to persist updated poster_path for media item {item_id}: {e}");
+                        }
                         resolved_path = Some(thumb_str);
                     }
                 }
