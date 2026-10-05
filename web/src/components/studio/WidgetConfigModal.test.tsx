@@ -317,4 +317,313 @@ describe('WidgetConfigModal Component', () => {
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  describe('Advanced Filters Configuration', () => {
+    it('renders collapsible Advanced Filters toggle with active filter count badge', () => {
+      const { rerender } = render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      const toggleButton = screen.getByRole('button', { name: /Advanced Filters/i });
+      expect(toggleButton).toBeInTheDocument();
+      expect(screen.queryByText(/filter.*active/i)).not.toBeInTheDocument();
+
+      const widgetWithFilters: WidgetNode = {
+        type: 'carousel',
+        id: 'widget-filtered',
+        title: 'Filtered Carousel',
+        binding: {
+          macro_type: 'recently_added',
+          limit: 20,
+          filters: {
+            exclude_private: true,
+            max_age_days: 30,
+          },
+        },
+      };
+
+      rerender(
+        <WidgetConfigModal
+          isOpen={true}
+          initialWidget={widgetWithFilters}
+          libraries={mockLibraries}
+          onSave={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText(/2 filters active/i)).toBeInTheDocument();
+    });
+
+    it('expanding section reveals Exclude Private Libraries, Exclude Libraries, Exclude Genres, and Date Added controls', () => {
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByLabelText(/Always exclude private libraries/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Exclude Libraries/i)).not.toBeInTheDocument();
+
+      const toggleBtn = screen.getByRole('button', { name: /Advanced Filters/i });
+      fireEvent.click(toggleBtn);
+
+      expect(screen.getByLabelText(/Always exclude private libraries from this widget/i)).toBeInTheDocument();
+      expect(screen.getByText(/Exclude Libraries/i)).toBeInTheDocument();
+      expect(screen.getByText('Movies')).toBeInTheDocument();
+      expect(screen.getByText('TV Shows')).toBeInTheDocument();
+      expect(screen.getByText('Anime')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Exclude Genres/i)).toBeInTheDocument();
+      expect(screen.getByText(/Date Added/i)).toBeInTheDocument();
+    });
+
+    it('toggling Exclude Private sets filters.exclude_private = true', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      const checkbox = screen.getByLabelText(/Always exclude private libraries from this widget/i);
+      expect((checkbox as HTMLInputElement).checked).toBe(false);
+
+      fireEvent.click(checkbox);
+      expect((checkbox as HTMLInputElement).checked).toBe(true);
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters).toBeDefined();
+        expect(saved.binding.filters?.exclude_private).toBe(true);
+      }
+    });
+
+    it('checking library checkboxes adds them to filters.exclude_library_ids', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      const tvCheckbox = screen.getByLabelText('TV Shows');
+      const animeCheckbox = screen.getByLabelText('Anime');
+
+      fireEvent.click(tvCheckbox);
+      fireEvent.click(animeCheckbox);
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters?.exclude_library_ids).toEqual(['lib-2', 'lib-anime']);
+      }
+    });
+
+    it('clicking genre quick-chips adds/removes them from filters.exclude_genres', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      const horrorChip = screen.getByRole('button', { name: 'Horror' });
+      const romanceChip = screen.getByRole('button', { name: 'Romance' });
+
+      fireEvent.click(horrorChip);
+      fireEvent.click(romanceChip);
+
+      // Verify text input reflects selection
+      const genreInput = screen.getByLabelText(/Exclude Genres/i) as HTMLInputElement;
+      expect(genreInput.value).toContain('Horror');
+      expect(genreInput.value).toContain('Romance');
+
+      // Unclick Horror
+      fireEvent.click(horrorChip);
+      expect(genreInput.value).not.toContain('Horror');
+      expect(genreInput.value).toContain('Romance');
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters?.exclude_genres).toEqual(['Romance']);
+      }
+    });
+
+    it('clicking date added preset pills sets filters.max_age_days', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      const thirtyDaysPill = screen.getByRole('button', { name: '30 Days' });
+      fireEvent.click(thirtyDaysPill);
+
+      const maxAgeInput = screen.getByLabelText(/Only include items added within the last N days/i) as HTMLInputElement;
+      expect(maxAgeInput.value).toBe('30');
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      let saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters?.max_age_days).toBe(30);
+      }
+
+      // Reset and test All Time
+      const allTimePill = screen.getByRole('button', { name: 'All Time' });
+      fireEvent.click(allTimePill);
+      expect(maxAgeInput.value).toBe('');
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+      saved = handleSave.mock.calls[1][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters?.max_age_days).toBeUndefined();
+      }
+    });
+
+    it('submitting modal passes filters inside binding to onSave', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.change(screen.getByLabelText(/Title/i), { target: { value: 'Curated Rail' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      // Exclude private
+      fireEvent.click(screen.getByLabelText(/Always exclude private libraries from this widget/i));
+
+      // Exclude library
+      fireEvent.click(screen.getByLabelText('Anime'));
+
+      // Exclude genre via chip
+      fireEvent.click(screen.getByRole('button', { name: 'Documentary' }));
+
+      // Set max age via preset
+      fireEvent.click(screen.getByRole('button', { name: '90 Days' }));
+
+      // Save
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters).toEqual({
+          exclude_private: true,
+          exclude_library_ids: ['lib-anime'],
+          exclude_genres: ['Documentary'],
+          max_age_days: 90,
+        });
+      }
+    });
+
+    it('pre-fills filter state when initialWidget already has filters', () => {
+      const initialWidget: WidgetNode = {
+        type: 'carousel',
+        id: 'widget-prefill',
+        title: 'Filtered Favorites',
+        binding: {
+          macro_type: 'recently_added',
+          limit: 20,
+          filters: {
+            exclude_private: true,
+            exclude_library_ids: ['lib-1'],
+            exclude_genres: ['Kids'],
+            max_age_days: 7,
+          },
+        },
+      };
+
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          initialWidget={initialWidget}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Section should be auto-expanded because initialWidget has active filters
+      expect(screen.getByText(/4 filters active/i)).toBeInTheDocument();
+
+      const privateCheckbox = screen.getByLabelText(/Always exclude private libraries from this widget/i) as HTMLInputElement;
+      expect(privateCheckbox.checked).toBe(true);
+
+      const moviesCheckbox = screen.getByLabelText('Movies') as HTMLInputElement;
+      expect(moviesCheckbox.checked).toBe(true);
+
+      const genreInput = screen.getByLabelText(/Exclude Genres/i) as HTMLInputElement;
+      expect(genreInput.value).toBe('Kids');
+
+      const maxAgeInput = screen.getByLabelText(/Only include items added within the last N days/i) as HTMLInputElement;
+      expect(maxAgeInput.value).toBe('7');
+
+      // Save without modifications
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters).toEqual({
+          exclude_private: true,
+          exclude_library_ids: ['lib-1'],
+          exclude_genres: ['Kids'],
+          max_age_days: 7,
+        });
+      }
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sliders, Check } from 'lucide-react';
-import type { Library, WidgetNode, QueryMacro, WidgetQueryBinding } from '../../types';
+import { X, Sliders, Check, ChevronDown, ChevronRight, Filter } from 'lucide-react';
+import type { Library, WidgetNode, QueryMacro, WidgetQueryBinding, WidgetFilterConfig } from '../../types';
 
 export interface WidgetConfigModalProps {
   isOpen: boolean;
@@ -30,6 +30,16 @@ const SORT_OPTIONS = [
   { value: 'release_year:asc', label: 'Release Year (Oldest)' },
 ];
 
+const POPULAR_GENRES = ['Horror', 'Romance', 'Kids', 'Animation', 'Documentary', 'Drama'];
+
+const AGE_PRESETS = [
+  { label: '7 Days', days: 7 },
+  { label: '30 Days', days: 30 },
+  { label: '90 Days', days: 90 },
+  { label: '1 Year', days: 365 },
+  { label: 'All Time', days: 0 },
+];
+
 export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   isOpen,
   initialWidget,
@@ -46,6 +56,14 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   const [itemId, setItemId] = useState<string>('');
   const [limit, setLimit] = useState<number>(20);
   const [sort, setSort] = useState<string>('');
+
+  // Advanced Filters State
+  const [isFiltersOpen, setIsFiltersOpen] = useState<boolean>(false);
+  const [excludePrivate, setExcludePrivate] = useState<boolean>(false);
+  const [excludeLibraryIds, setExcludeLibraryIds] = useState<string[]>([]);
+  const [excludeGenres, setExcludeGenres] = useState<string[]>([]);
+  const [genreInputText, setGenreInputText] = useState<string>('');
+  const [maxAgeDays, setMaxAgeDays] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -96,6 +114,28 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             setMacroType('recently_added');
           }
         }
+
+        const filters = binding.filters;
+        const hasActiveFilters = Boolean(
+          filters?.exclude_private ||
+          (filters?.exclude_library_ids && filters.exclude_library_ids.length > 0) ||
+          (filters?.exclude_genres && filters.exclude_genres.length > 0) ||
+          (filters?.max_age_days && filters.max_age_days > 0)
+        );
+
+        setIsFiltersOpen(hasActiveFilters);
+        setExcludePrivate(Boolean(filters?.exclude_private));
+        setExcludeLibraryIds(filters?.exclude_library_ids ?? []);
+        setExcludeGenres(filters?.exclude_genres ?? []);
+        setGenreInputText((filters?.exclude_genres ?? []).join(', '));
+        setMaxAgeDays(filters?.max_age_days ?? null);
+      } else {
+        setIsFiltersOpen(false);
+        setExcludePrivate(false);
+        setExcludeLibraryIds([]);
+        setExcludeGenres([]);
+        setGenreInputText('');
+        setMaxAgeDays(null);
       }
     } else {
       setWidgetType('carousel');
@@ -107,8 +147,60 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       setItemId('');
       setLimit(20);
       setSort('');
+      setIsFiltersOpen(false);
+      setExcludePrivate(false);
+      setExcludeLibraryIds([]);
+      setExcludeGenres([]);
+      setGenreInputText('');
+      setMaxAgeDays(null);
     }
   }, [isOpen, initialWidget, libraries]);
+
+  const toggleGenreChip = (genreName: string) => {
+    const exists = excludeGenres.some((g) => g.toLowerCase() === genreName.toLowerCase());
+    let nextGenres: string[];
+    if (exists) {
+      nextGenres = excludeGenres.filter((g) => g.toLowerCase() !== genreName.toLowerCase());
+    } else {
+      nextGenres = [...excludeGenres, genreName];
+    }
+    setExcludeGenres(nextGenres);
+    setGenreInputText(nextGenres.join(', '));
+  };
+
+  const handleGenreInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setGenreInputText(val);
+    const parsed = val
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    setExcludeGenres(parsed);
+  };
+
+  const handleAgePresetClick = (days: number) => {
+    if (days === 0) {
+      setMaxAgeDays(null);
+    } else {
+      setMaxAgeDays(days);
+    }
+  };
+
+  const handleMaxAgeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.trim();
+    if (val === '') {
+      setMaxAgeDays(null);
+    } else {
+      const num = Number(val);
+      setMaxAgeDays(isNaN(num) || num <= 0 ? null : num);
+    }
+  };
+
+  const activeFilterCount =
+    (excludePrivate ? 1 : 0) +
+    (excludeLibraryIds.length > 0 ? 1 : 0) +
+    (excludeGenres.length > 0 ? 1 : 0) +
+    (maxAgeDays !== null && maxAgeDays > 0 ? 1 : 0);
 
   // Handle escape key
   useEffect(() => {
@@ -164,10 +256,34 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         break;
     }
 
+    const filterConfig: WidgetFilterConfig = {};
+    let hasFilters = false;
+
+    if (excludePrivate) {
+      filterConfig.exclude_private = true;
+      hasFilters = true;
+    }
+
+    if (excludeLibraryIds.length > 0) {
+      filterConfig.exclude_library_ids = excludeLibraryIds;
+      hasFilters = true;
+    }
+
+    if (excludeGenres.length > 0) {
+      filterConfig.exclude_genres = excludeGenres;
+      hasFilters = true;
+    }
+
+    if (maxAgeDays !== null && maxAgeDays > 0) {
+      filterConfig.max_age_days = maxAgeDays;
+      hasFilters = true;
+    }
+
     const binding: WidgetQueryBinding = {
       macro_type: resolvedMacro,
       limit: Math.max(1, Number(limit) || 20),
       ...(sort.trim() ? { sort: sort.trim() } : {}),
+      ...(hasFilters ? { filters: filterConfig } : {}),
     };
 
     const id = initialWidget?.id || `${widgetType}_${Date.now()}`;
@@ -412,6 +528,180 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                 {isCustomSort && <option value={sort}>{sort}</option>}
               </select>
             </div>
+          </div>
+
+          {/* Advanced Filters Collapsible Section */}
+          <div className="pt-2 border-t border-border-subtle/50">
+            <button
+              type="button"
+              onClick={() => setIsFiltersOpen((prev) => !prev)}
+              aria-expanded={isFiltersOpen}
+              aria-controls="advanced-filters-panel"
+              className="w-full flex items-center justify-between py-2.5 px-3 bg-canvas/60 hover:bg-panel-hover border border-border-subtle rounded-xl text-sm font-medium text-text-main transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+            >
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-accent" />
+                <span>Advanced Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="bg-accent/20 text-accent font-semibold px-2 py-0.5 rounded text-xs">
+                    {activeFilterCount} {activeFilterCount === 1 ? 'filter active' : 'filters active'}
+                  </span>
+                )}
+              </div>
+              {isFiltersOpen ? (
+                <ChevronDown className="w-4 h-4 text-muted" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted" />
+              )}
+            </button>
+
+            {isFiltersOpen && (
+              <div id="advanced-filters-panel" className="mt-4 space-y-4 pl-1">
+                {/* Exclude Private Libraries */}
+                <div>
+                  <div className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
+                    Exclude Private Libraries
+                  </div>
+                  <div className="flex items-start gap-3 bg-canvas/40 border border-border-subtle rounded-xl p-3">
+                    <input
+                      id="widget-exclude-private"
+                      type="checkbox"
+                      checked={excludePrivate}
+                      onChange={(e) => setExcludePrivate(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-border-subtle bg-canvas text-accent focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none accent-accent cursor-pointer"
+                    />
+                    <div>
+                      <label
+                        htmlFor="widget-exclude-private"
+                        className="text-sm font-medium text-text-main cursor-pointer"
+                      >
+                        Always exclude private libraries from this widget
+                      </label>
+                      <p className="text-xs text-muted mt-0.5">
+                        Items from private libraries will never appear, even when unlocked in your active session.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Exclude Specific Libraries */}
+                <div>
+                  <div className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
+                    Exclude Libraries
+                  </div>
+                  {libraries.length === 0 ? (
+                    <p className="text-xs text-muted">No libraries available</p>
+                  ) : (
+                    <div className="space-y-2 max-h-36 overflow-y-auto pr-1 bg-canvas/40 border border-border-subtle rounded-xl p-3">
+                      {libraries.map((lib) => (
+                        <label
+                          key={lib.id}
+                          htmlFor={`widget-exclude-lib-${lib.id}`}
+                          className="flex items-center gap-2.5 text-sm text-text-main cursor-pointer hover:text-accent transition-colors"
+                        >
+                          <input
+                            id={`widget-exclude-lib-${lib.id}`}
+                            type="checkbox"
+                            checked={excludeLibraryIds.includes(lib.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setExcludeLibraryIds((prev) => [...prev, lib.id]);
+                              } else {
+                                setExcludeLibraryIds((prev) => prev.filter((id) => id !== lib.id));
+                              }
+                            }}
+                            className="h-4 w-4 rounded border-border-subtle bg-canvas text-accent focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none accent-accent cursor-pointer"
+                          />
+                          <span>{lib.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Exclude Genres */}
+                <div>
+                  <label
+                    htmlFor="widget-exclude-genres"
+                    className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+                  >
+                    Exclude Genres
+                  </label>
+                  <input
+                    id="widget-exclude-genres"
+                    aria-label="Exclude Genres"
+                    type="text"
+                    value={genreInputText}
+                    onChange={handleGenreInputChange}
+                    placeholder="e.g. Horror, Thriller"
+                    className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main placeholder:text-muted/60 transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none mb-2"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {POPULAR_GENRES.map((g) => {
+                      const isSelected = excludeGenres.some((item) => item.toLowerCase() === g.toLowerCase());
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => toggleGenreChip(g)}
+                          aria-pressed={isSelected}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                            isSelected
+                              ? 'bg-accent text-white font-semibold'
+                              : 'bg-canvas border border-border-subtle text-muted hover:text-text-main hover:bg-panel-hover'
+                          }`}
+                        >
+                          {g}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Exclude by Date Added (Max Age) */}
+                <div>
+                  <label
+                    htmlFor="widget-max-age"
+                    className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+                  >
+                    Date Added (Max Age)
+                  </label>
+                  <input
+                    id="widget-max-age"
+                    aria-label="Only include items added within the last N days"
+                    type="number"
+                    min="0"
+                    placeholder="Only include items added within the last N days (leave empty or 0 for all time)"
+                    value={maxAgeDays !== null && maxAgeDays > 0 ? maxAgeDays : ''}
+                    onChange={handleMaxAgeInputChange}
+                    className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main placeholder:text-muted/60 transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none mb-2"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {AGE_PRESETS.map((preset) => {
+                      const isSelected =
+                        preset.days === 0
+                          ? maxAgeDays === null || maxAgeDays === 0
+                          : maxAgeDays === preset.days;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => handleAgePresetClick(preset.days)}
+                          aria-pressed={isSelected}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                            isSelected
+                              ? 'bg-accent text-white font-semibold'
+                              : 'bg-canvas border border-border-subtle text-muted hover:text-text-main hover:bg-panel-hover'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

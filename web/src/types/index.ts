@@ -60,10 +60,18 @@ export type QueryMacro =
   | { spotlight_item: { item_id?: number } }
   | { item_details: { item_id: number } };
 
+export interface WidgetFilterConfig {
+  exclude_private?: boolean;
+  exclude_library_ids?: string[];
+  exclude_genres?: string[];
+  max_age_days?: number;
+}
+
 export interface WidgetQueryBinding {
   macro_type: QueryMacro | string | Record<string, unknown>;
   limit: number;
   sort?: string;
+  filters?: WidgetFilterConfig;
 }
 
 export type WidgetNode =
