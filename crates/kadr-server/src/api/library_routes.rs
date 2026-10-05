@@ -612,6 +612,8 @@ pub async fn browse_library_folders(
             canonical_roots.push(canon);
         }
     }
+    canonical_roots.sort();
+    canonical_roots.dedup();
 
     if canonical_roots.is_empty() {
         return Err((
@@ -796,11 +798,14 @@ pub async fn browse_library_folders(
                     format!("{}/{}", current_path, file_name)
                 };
 
-                dir_map.entry(file_name.clone()).or_insert(FolderEntry {
-                    name: file_name,
-                    path: rel_dir_path,
-                    item_count: sub_count,
-                });
+                dir_map
+                    .entry(file_name.clone())
+                    .and_modify(|e| e.item_count += sub_count)
+                    .or_insert(FolderEntry {
+                        name: file_name,
+                        path: rel_dir_path,
+                        item_count: sub_count,
+                    });
             } else if is_video_file(&entry_path) {
                 video_paths.push(entry_path);
             }
@@ -886,7 +891,7 @@ pub async fn browse_library_folders(
             let synthetic = MediaItem {
                 id: None,
                 library_id: library.id.clone(),
-                item_type: MediaType::Movie,
+                item_type: library.media_type,
                 title: stem,
                 original_title: None,
                 release_year: None,

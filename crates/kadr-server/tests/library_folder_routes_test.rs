@@ -538,3 +538,82 @@ async fn test_browse_library_authenticated_watch_progress() {
     assert_eq!(item.playback_progress, Some(0.5));
     assert_eq!(item.badge, Some("RESUME".to_string()));
 }
+
+#[tokio::test]
+async fn test_browse_library_multi_root_aggregates_counts_dedups_and_inherits_media_type() {
+    let ctx = setup_test_context().await;
+
+    let root1 = ctx.temp_dir.path().join("tv_root_1");
+    let root2 = ctx.temp_dir.path().join("tv_root_2");
+    std::fs::create_dir_all(&root1).expect("create root1");
+    std::fs::create_dir_all(&root2).expect("create root2");
+
+    // Both roots have a folder called "Sitcoms"
+    let sitcoms1 = root1.join("Sitcoms");
+    let sitcoms2 = root2.join("Sitcoms");
+    std::fs::create_dir_all(&sitcoms1).expect("create sitcoms1");
+    std::fs::create_dir_all(&sitcoms2).expect("create sitcoms2");
+
+    // sitcoms1 has 2 files
+    std::fs::write(sitcoms1.join("ep1.mkv"), b"video1").expect("write ep1");
+    std::fs::write(sitcoms1.join("ep2.mkv"), b"video2").expect("write ep2");
+
+    // sitcoms2 has 3 files
+    std::fs::write(sitcoms2.join("ep3.mkv"), b"video3").expect("write ep3");
+    std::fs::write(sitcoms2.join("ep4.mkv"), b"video4").expect("write ep4");
+    std::fs::write(sitcoms2.join("ep5.mkv"), b"video5").expect("write ep5");
+
+    // Untracked video file in root1 (not inserted into media_repo)
+    let untracked_tv = root1.join("UntrackedShow.mkv");
+    std::fs::write(&untracked_tv, b"untracked bytes").expect("write untracked");
+
+    // Create a Show library with multiple roots, including a duplicate root entry
+    let tv_lib = Library {
+        id: "lib-tv-multiroot".to_string(),
+        name: "TV MultiRoot".to_string(),
+        path: root1.clone(),
+        paths: vec![root1.clone(), root2.clone(), root1.clone()],
+        media_type: MediaType::Show,
+        is_private: false,
+        pin_hash: None,
+        created_at: 1_700_000_000,
+    };
+    ctx.lib_repo.insert(&tv_lib).await.expect("insert tv_lib");
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/libraries/{}/folders", tv_lib.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let body: LibraryFolderResponse =
+        serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
+
+    // "Sitcoms" should aggregate item_count: 2 + 3 = 5
+    let sitcoms_dir = body
+        .directories
+        .iter()
+        .find(|d| d.name == "Sitcoms")
+        .expect("Sitcoms directory exists");
+    assert_eq!(sitcoms_dir.item_count, 5);
+
+    // Untracked item should inherit MediaType::Show ("show") from library
+    let untracked_card = body
+        .items
+        .iter()
+        .find(|i| i.title == "UntrackedShow")
+        .expect("Untracked card exists");
+    assert_eq!(untracked_card.media_type, "show");
+
+    // Also verify deduplication: only 1 instance of UntrackedShow card (even though root1 was duplicated in paths)
+    let untracked_count = body
+        .items
+        .iter()
+        .filter(|i| i.title == "UntrackedShow")
+        .count();
+    assert_eq!(untracked_count, 1);
+}
