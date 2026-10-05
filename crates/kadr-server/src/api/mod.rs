@@ -163,6 +163,10 @@ pub fn create_router_with_ingest(
             get(library_routes::browse_library_folders),
         )
         .route(
+            "/api/v1/libraries/{id}/thumbnail",
+            get(library_routes::get_library_thumbnail),
+        )
+        .route(
             "/api/v1/libraries/{id}/paths",
             post(library_routes::add_library_path)
                 .delete(library_routes::remove_library_path),

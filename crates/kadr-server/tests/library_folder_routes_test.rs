@@ -5,7 +5,6 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
 use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, User, UserRole};
-use kadr_server::api::create_router_with_events;
 use kadr_server::api::library_routes::LibraryFolderResponse;
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
@@ -252,7 +251,15 @@ async fn setup_test_context() -> TestContext {
     ];
     media_repo.upsert_batch(&items).await.expect("upsert media items");
 
-    let app = create_router_with_events(
+    let thumbs_dir = dir.path().join("thumbnails");
+    let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(
+        false,
+        Some(thumbs_dir),
+    ));
+    let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
+    let default_config = Arc::new(tokio::sync::RwLock::new(kadr_server::config::AppConfig::default()));
+
+    let app = kadr_server::api::create_router_with_ingest(
         user_repo,
         playback_repo.clone(),
         media_repo.clone(),
@@ -266,6 +273,9 @@ async fn setup_test_context() -> TestContext {
         opensubtitles_client,
         event_bus,
         telemetry_collector,
+        dummy_tx,
+        pipeline,
+        default_config,
     );
 
     TestContext {
@@ -608,6 +618,13 @@ async fn test_browse_library_multi_root_aggregates_counts_dedups_and_inherits_me
         .find(|i| i.title == "UntrackedShow")
         .expect("Untracked card exists");
     assert_eq!(untracked_card.media_type, "show");
+    assert_eq!(
+        untracked_card.poster_url,
+        Some(format!(
+            "/api/v1/libraries/{}/thumbnail?path=UntrackedShow.mkv",
+            tv_lib.id
+        ))
+    );
 
     // Also verify deduplication: only 1 instance of UntrackedShow card (even though root1 was duplicated in paths)
     let untracked_count = body
@@ -616,4 +633,164 @@ async fn test_browse_library_multi_root_aggregates_counts_dedups_and_inherits_me
         .filter(|i| i.title == "UntrackedShow")
         .count();
     assert_eq!(untracked_count, 1);
+}
+
+fn generate_test_video(path: &std::path::Path) -> bool {
+    let output = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=10",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            path.to_str().unwrap(),
+        ])
+        .output();
+
+    matches!(output, Ok(out) if out.status.success())
+}
+
+#[tokio::test]
+async fn test_library_thumbnail_valid_video() {
+    let ctx = setup_test_context().await;
+
+    let video_path = ctx.public_lib_root.join("Action").join("thumb_test.mp4");
+    assert!(generate_test_video(&video_path), "failed to generate test video");
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/thumbnail?path=Action/thumb_test.mp4",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers().get("content-type").unwrap(), "image/jpeg");
+    assert_eq!(
+        res.headers().get("cache-control").unwrap(),
+        "public, max-age=86400"
+    );
+
+    let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
+    assert!(!body_bytes.is_empty());
+}
+
+#[tokio::test]
+async fn test_library_thumbnail_path_traversal_rejected() {
+    let ctx = setup_test_context().await;
+
+    let traversal_paths = [
+        "../../secret.mp4",
+        "../",
+        "..",
+        "/etc/passwd",
+        "Action/../../secret.mp4",
+        "Action%00hidden.mp4",
+        "",
+        "%20%20%20",
+    ];
+
+    for path in traversal_paths {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/api/v1/libraries/{}/thumbnail?path={}",
+                ctx.public_lib_id, path
+            ))
+            .body(Body::empty())
+            .unwrap();
+
+        let res = ctx.app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "Expected 400 Bad Request for path: {path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_library_thumbnail_non_existent_returns_404() {
+    let ctx = setup_test_context().await;
+
+    // Non-existent path in valid library
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/thumbnail?path=does_not_exist.mp4",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // Non-existent library
+    let req_lib = Request::builder()
+        .method("GET")
+        .uri("/api/v1/libraries/non-existent-lib-id/thumbnail?path=something.mp4")
+        .body(Body::empty())
+        .unwrap();
+
+    let res_lib = ctx.app.clone().oneshot(req_lib).await.unwrap();
+    assert_eq!(res_lib.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_library_thumbnail_private_library_locked_and_unlocked() {
+    let ctx = setup_test_context().await;
+
+    let private_root = ctx.temp_dir.path().join("private_movies");
+    let video_path = private_root.join("private_video.mp4");
+    assert!(generate_test_video(&video_path), "failed to generate test video");
+
+    // Locked private library without token -> 403 Forbidden
+    let req_locked = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/thumbnail?path=private_video.mp4",
+            ctx.private_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+
+    let res_locked = ctx.app.clone().oneshot(req_locked).await.unwrap();
+    assert_eq!(res_locked.status(), StatusCode::FORBIDDEN);
+
+    // Unlock the private library via POST /api/v1/libraries/{id}/unlock
+    let unlock_req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/libraries/{}/unlock", ctx.private_lib_id))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "pin": "1234" }).to_string()))
+        .unwrap();
+
+    let unlock_res = ctx.app.clone().oneshot(unlock_req).await.unwrap();
+    assert_eq!(unlock_res.status(), StatusCode::OK);
+    let unlock_bytes = unlock_res.into_body().collect().await.unwrap().to_bytes();
+    let unlock_data: Value = serde_json::from_slice(&unlock_bytes).unwrap();
+    let unlock_token = unlock_data["token"].as_str().unwrap();
+
+    // With unlock token via x-kadr-unlocked header -> 200 OK
+    let req_unlocked = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/thumbnail?path=private_video.mp4",
+            ctx.private_lib_id
+        ))
+        .header("x-kadr-unlocked", unlock_token)
+        .body(Body::empty())
+        .unwrap();
+
+    let res_unlocked = ctx.app.clone().oneshot(req_unlocked).await.unwrap();
+    assert_eq!(res_unlocked.status(), StatusCode::OK);
+    assert_eq!(res_unlocked.headers().get("content-type").unwrap(), "image/jpeg");
 }

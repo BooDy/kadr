@@ -2,10 +2,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::body::Body;
 use axum::extract::{Extension, Path, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use tokio_util::io::ReaderStream;
 use kadr_core::ast::CardViewModel;
 use kadr_core::events::SystemEvent;
 use kadr_core::models::{Library, MediaItem, MediaType};
@@ -897,12 +899,23 @@ pub async fn browse_library_folders(
                 release_year: None,
                 added_at: 0,
                 file_path: video_path,
-                file_name,
+                file_name: file_name.clone(),
                 file_size: 0,
                 technical: Default::default(),
                 metadata: Default::default(),
             };
-            items.push(to_card_view_model(&synthetic, None));
+            let rel_path = if current_path.is_empty() {
+                file_name.clone()
+            } else {
+                format!("{}/{}", current_path, file_name)
+            };
+            let mut card = to_card_view_model(&synthetic, None);
+            card.poster_url = Some(format!(
+                "/api/v1/libraries/{}/thumbnail?path={}",
+                library.id,
+                urlencoding::encode(&rel_path)
+            ));
+            items.push(card);
         }
     }
 
@@ -919,4 +932,228 @@ pub async fn browse_library_folders(
         directories,
         items,
     }))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ThumbnailQuery {
+    pub path: String,
+}
+
+/// Handler for `GET /api/v1/libraries/{id}/thumbnail?path=...`.
+///
+/// On-demand thumbnail extraction route for unindexed video files in library folders.
+pub async fn get_library_thumbnail(
+    unlocked: UnlockedLibraries,
+    Path(id): Path<String>,
+    Query(query): Query<ThumbnailQuery>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(pipeline): Extension<Arc<IngestPipeline>>,
+) -> Response {
+    let library = match lib_repo.get_by_id(&id).await {
+        Ok(Some(lib)) => lib,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Library not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to load library");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            )
+                .into_response();
+        }
+    };
+
+    if library.is_private && !unlocked.is_unlocked(&library.id) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+        )
+            .into_response();
+    }
+
+    let trimmed = query.path.trim();
+    if trimmed.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Path cannot be empty" })),
+        )
+            .into_response();
+    }
+
+    if trimmed.contains('\0') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid path containing null bytes" })),
+        )
+            .into_response();
+    }
+
+    if trimmed.contains("..") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Path traversal not allowed" })),
+        )
+            .into_response();
+    }
+
+    let rel_path_check = std::path::Path::new(trimmed);
+    if trimmed.starts_with('/')
+        || trimmed.starts_with('\\')
+        || rel_path_check.is_absolute()
+        || rel_path_check.has_root()
+        || trimmed.contains(':')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Absolute path not allowed" })),
+        )
+            .into_response();
+    }
+
+    for comp in rel_path_check.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Path traversal not allowed" })),
+                )
+                    .into_response();
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Absolute path not allowed" })),
+                )
+                    .into_response();
+            }
+            _ => {}
+        }
+    }
+
+    let clean_path = trimmed.trim_matches(|c| c == '/' || c == '\\');
+    if clean_path.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid path" })),
+        )
+            .into_response();
+    }
+
+    let raw_roots = if library.paths.is_empty() {
+        vec![library.path.clone()]
+    } else {
+        library.paths.clone()
+    };
+
+    let mut canonical_roots = Vec::new();
+    for root in &raw_roots {
+        if let Ok(canon) = std::fs::canonicalize(root) {
+            canonical_roots.push(canon);
+        }
+    }
+    canonical_roots.sort();
+    canonical_roots.dedup();
+
+    if canonical_roots.is_empty() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Library path not found on disk" })),
+        )
+            .into_response();
+    }
+
+    let mut matched_target_file: Option<PathBuf> = None;
+    for root in &canonical_roots {
+        let candidate = root.join(clean_path);
+        if candidate.exists() {
+            if let Ok(canon) = std::fs::canonicalize(&candidate) {
+                if !canon.starts_with(root) {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({ "error": "Path outside library root" })),
+                    )
+                        .into_response();
+                }
+                if canon.is_file() {
+                    matched_target_file = Some(canon);
+                    break;
+                }
+            }
+        }
+    }
+
+    let Some(canonical_file_path) = matched_target_file else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "File not found" })),
+        )
+            .into_response();
+    };
+
+    let Some(extractor) = pipeline.thumbnail_extractor() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Thumbnail extractor not available" })),
+        )
+            .into_response();
+    };
+
+    let thumb_path = match extractor.extract_thumbnail(&canonical_file_path, 0).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Thumbnail not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            error!(error = %e, path = ?canonical_file_path, "Failed to extract thumbnail");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to extract thumbnail" })),
+            )
+                .into_response();
+        }
+    };
+
+    let file = match tokio::fs::File::open(&thumb_path).await {
+        Ok(f) => f,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Thumbnail not found" })),
+            )
+                .into_response();
+        }
+    };
+
+    let total_size = match file.metadata().await {
+        Ok(m) => m.len(),
+        Err(err) => {
+            error!("Failed to read metadata for thumbnail {}: {err}", thumb_path.display());
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to read thumbnail file metadata" })),
+            )
+                .into_response();
+        }
+    };
+
+    let stream = ReaderStream::with_capacity(file, 64 * 1024);
+    let body = Body::from_stream(stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "image/jpeg")
+        .header(axum::http::header::CACHE_CONTROL, "public, max-age=86400")
+        .header(axum::http::header::ACCEPT_RANGES, "bytes")
+        .header(axum::http::header::CONTENT_LENGTH, total_size.to_string())
+        .body(body)
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     body::Body,
     extract::{Extension, Path},
@@ -5,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use kadr_ingest::watcher::IngestPipeline;
 use kadr_storage::repos::MediaItemRepository;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
@@ -39,6 +42,7 @@ async fn stream_artwork(
     item_id: i64,
     artwork_type: ArtworkType,
     media_repo: MediaItemRepository,
+    pipeline: Arc<IngestPipeline>,
 ) -> Response {
     let item = match media_repo.get_by_id(item_id).await {
         Ok(Some(i)) => i,
@@ -59,12 +63,38 @@ async fn stream_artwork(
         }
     };
 
-    let path_opt = match artwork_type {
-        ArtworkType::Poster => item.metadata.poster_path,
-        ArtworkType::Backdrop => item.metadata.backdrop_path,
+    let artwork_path = match artwork_type {
+        ArtworkType::Poster => {
+            let mut resolved_path: Option<String> = None;
+            if let Some(ref p) = item.metadata.poster_path {
+                let trimmed = p.trim();
+                if !trimmed.is_empty() && tokio::fs::metadata(trimmed).await.is_ok() {
+                    resolved_path = Some(trimmed.to_string());
+                }
+            }
+
+            if resolved_path.is_none() && tokio::fs::metadata(&item.file_path).await.is_ok() {
+                if let Some(extractor) = pipeline.thumbnail_extractor() {
+                    if let Ok(Some(thumb_path)) = extractor
+                        .extract_thumbnail(&item.file_path, item.technical.duration_seconds)
+                        .await
+                    {
+                        let thumb_str = thumb_path.to_string_lossy().to_string();
+                        let mut updated = item.clone();
+                        updated.metadata.poster_path = Some(thumb_str.clone());
+                        let repo = media_repo.clone();
+                        let _ = repo.upsert_batch(&[updated]).await;
+                        resolved_path = Some(thumb_str);
+                    }
+                }
+            }
+
+            resolved_path
+        }
+        ArtworkType::Backdrop => item.metadata.backdrop_path.filter(|s| !s.trim().is_empty()),
     };
 
-    let Some(artwork_path) = path_opt.filter(|s| !s.trim().is_empty()) else {
+    let Some(artwork_path) = artwork_path else {
         return (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": "Artwork not found" })),
@@ -113,14 +143,16 @@ async fn stream_artwork(
 pub async fn get_poster(
     Path(item_id): Path<i64>,
     Extension(media_repo): Extension<MediaItemRepository>,
+    Extension(pipeline): Extension<Arc<IngestPipeline>>,
 ) -> Response {
-    stream_artwork(item_id, ArtworkType::Poster, media_repo).await
+    stream_artwork(item_id, ArtworkType::Poster, media_repo, pipeline).await
 }
 
 /// Handler for `GET /api/v1/artwork/{item_id}/backdrop`.
 pub async fn get_backdrop(
     Path(item_id): Path<i64>,
     Extension(media_repo): Extension<MediaItemRepository>,
+    Extension(pipeline): Extension<Arc<IngestPipeline>>,
 ) -> Response {
-    stream_artwork(item_id, ArtworkType::Backdrop, media_repo).await
+    stream_artwork(item_id, ArtworkType::Backdrop, media_repo, pipeline).await
 }

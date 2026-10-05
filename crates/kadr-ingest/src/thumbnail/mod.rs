@@ -3,6 +3,10 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 #[derive(Debug, Clone)]
 pub struct ThumbnailExtractor {
     output_dir: PathBuf,
@@ -41,27 +45,8 @@ impl ThumbnailExtractor {
             return Ok(None);
         }
 
-        tokio::fs::create_dir_all(&self.output_dir).await?;
-
         let target_path = self.cache_path(media_path);
-        if let Ok(meta) = tokio::fs::metadata(&target_path).await {
-            if meta.is_file() && meta.len() > 0 {
-                return Ok(Some(target_path));
-            }
-        }
-
-        let seek_secs = Self::calculate_seek_seconds(duration_seconds);
-
-        let mut success = self.run_ffmpeg(media_path, &target_path, seek_secs).await;
-        if !success && seek_secs > 0.0 {
-            debug!(
-                path = ?media_path,
-                "Dynamic seek offset failed or yielded no output; retrying at timestamp 0.0s"
-            );
-            success = self.run_ffmpeg(media_path, &target_path, 0.0).await;
-        }
-
-        if success {
+        if target_path.is_file() {
             if let Ok(meta) = tokio::fs::metadata(&target_path).await {
                 if meta.is_file() && meta.len() > 0 {
                     return Ok(Some(target_path));
@@ -69,8 +54,45 @@ impl ThumbnailExtractor {
             }
         }
 
+        tokio::fs::create_dir_all(&self.output_dir).await?;
+
+        let target_file_name = target_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("thumbnail.jpg");
+        let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp_file_name = format!(".tmp.{}.{}.{}", std::process::id(), counter, target_file_name);
+        let tmp_path = self.output_dir.join(tmp_file_name);
+
+        let seek_secs = Self::calculate_seek_seconds(duration_seconds);
+
+        let mut success = self.run_ffmpeg(media_path, &tmp_path, seek_secs).await;
+        if !success && seek_secs > 0.0 {
+            debug!(
+                path = ?media_path,
+                "Dynamic seek offset failed or yielded no output; retrying at timestamp 0.0s"
+            );
+            success = self.run_ffmpeg(media_path, &tmp_path, 0.0).await;
+        }
+
+        if success {
+            if let Ok(meta) = tokio::fs::metadata(&tmp_path).await {
+                if meta.is_file() && meta.len() > 0 {
+                    if tokio::fs::rename(&tmp_path, &target_path).await.is_ok() {
+                        return Ok(Some(target_path));
+                    }
+                    if let Ok(m) = tokio::fs::metadata(&target_path).await {
+                        if m.is_file() && m.len() > 0 {
+                            let _ = tokio::fs::remove_file(&tmp_path).await;
+                            return Ok(Some(target_path));
+                        }
+                    }
+                }
+            }
+        }
+
         // Clean up partial or empty file if any
-        let _ = tokio::fs::remove_file(&target_path).await;
+        let _ = tokio::fs::remove_file(&tmp_path).await;
         Ok(None)
     }
 

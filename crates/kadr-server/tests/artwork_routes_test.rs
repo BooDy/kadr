@@ -383,3 +383,174 @@ fn test_resolve_artwork_mime_types() {
     assert_eq!(resolve_artwork_mime("image.unknown"), "image/jpeg");
     assert_eq!(resolve_artwork_mime("image_no_ext"), "image/jpeg");
 }
+
+fn generate_test_video(path: &std::path::Path) -> bool {
+    let output = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=10",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            path.to_str().unwrap(),
+        ])
+        .output();
+
+    matches!(output, Ok(out) if out.status.success())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_test_router_with_pipeline(
+    user_repo: UserRepository,
+    playback_repo: PlaybackRepository,
+    media_repo: MediaItemRepository,
+    lib_repo: LibraryRepository,
+    jwt_svc: JwtService,
+    limiter: RateLimiter,
+    session_registry: Arc<SessionRegistry>,
+    pipeline: Arc<kadr_ingest::watcher::IngestPipeline>,
+) -> axum::Router {
+    let layout_registry = kadr_server::layout::LayoutRegistry::new();
+    let widget_resolver = Arc::new(kadr_server::resolver::WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
+    let subtitle_repo = kadr_storage::repos::SubtitleRepository::new(media_repo.pool().clone());
+    let temp_cache = std::env::temp_dir().join(format!("kadr-subtitles-{}", uuid::Uuid::new_v4()));
+    let subtitle_service = Arc::new(kadr_server::subtitles::SubtitleDeliveryService::new(
+        temp_cache,
+        subtitle_repo,
+        media_repo.clone(),
+    ));
+    let opensubtitles_client = Arc::new(kadr_server::subtitles::OpenSubtitlesClient::new(None, None));
+    let event_bus = Arc::new(kadr_server::events::EventBus::default_bus());
+    let telemetry_collector = Arc::new(kadr_server::telemetry::TelemetryCollector::new(
+        std::path::PathBuf::from(":memory:"),
+        session_registry.clone(),
+        event_bus.clone(),
+    ));
+    let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
+    let default_config = Arc::new(tokio::sync::RwLock::new(kadr_server::config::AppConfig::default()));
+
+    kadr_server::api::create_router_with_ingest(
+        user_repo,
+        playback_repo,
+        media_repo,
+        lib_repo,
+        jwt_svc,
+        limiter,
+        session_registry,
+        layout_registry,
+        widget_resolver,
+        subtitle_service,
+        opensubtitles_client,
+        event_bus,
+        telemetry_collector,
+        dummy_tx,
+        pipeline,
+        default_config,
+    )
+}
+
+#[tokio::test]
+async fn test_on_demand_thumbnail_fallback_when_poster_missing() {
+    let pool = create_in_memory_pool().expect("failed to create pool");
+    initialize_database(&pool).await.expect("failed to initialize db");
+
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+
+    let dir = tempdir().expect("tempdir failed");
+    let video_path = dir.path().join("sample_video.mp4");
+    assert!(generate_test_video(&video_path), "failed to generate test video");
+
+    let thumbs_dir = dir.path().join("thumbnails");
+    let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(
+        false,
+        Some(thumbs_dir.clone()),
+    ));
+
+    lib_repo
+        .insert(&Library {
+            id: "lib1".to_string(),
+            name: "Movies".to_string(),
+            path: dir.path().to_path_buf(),
+            paths: vec![dir.path().to_path_buf()],
+            media_type: MediaType::Movie,
+            created_at: 1000,
+            ..Default::default()
+        })
+        .await
+        .expect("create lib failed");
+
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "On Demand Movie".to_string(),
+            original_title: None,
+            release_year: Some(2025),
+            added_at: 1000,
+            file_path: video_path.clone(),
+            file_name: "sample_video.mp4".to_string(),
+            file_size: 100,
+            technical: TechnicalInfo {
+                duration_seconds: 10,
+                ..Default::default()
+            },
+            metadata: MediaMetadata {
+                poster_path: None,
+                ..Default::default()
+            },
+        }])
+        .await
+        .expect("upsert failed");
+
+    let items = media_repo.list_by_library("lib1", 10, 0).await.unwrap();
+    let item_id = items[0].id.unwrap();
+
+    let jwt = JwtService::new("super-secret-key-that-is-at-least-32-bytes-long", 3600);
+    let app = create_test_router_with_pipeline(
+        user_repo,
+        playback_repo,
+        media_repo.clone(),
+        lib_repo,
+        jwt,
+        RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300)),
+        Arc::new(SessionRegistry::new()),
+        pipeline,
+    )
+    .await;
+
+    let req = Request::builder()
+        .uri(format!("/api/v1/artwork/{}/poster", item_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers().get("content-type").unwrap(), "image/jpeg");
+    assert_eq!(
+        res.headers().get("cache-control").unwrap(),
+        "public, max-age=86400"
+    );
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    assert!(!body_bytes.is_empty());
+
+    // Verify DB update
+    let updated_item = media_repo.get_by_id(item_id).await.unwrap().unwrap();
+    assert!(updated_item.metadata.poster_path.is_some());
+    let poster_path = PathBuf::from(updated_item.metadata.poster_path.unwrap());
+    assert!(poster_path.exists());
+    assert!(poster_path.starts_with(&thumbs_dir));
+}
