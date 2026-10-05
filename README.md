@@ -1,14 +1,24 @@
-# Kadr (كادر)
+<div align="center">
 
-[![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
-[![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
-[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20musl-lightgrey.svg?logo=linux)](#quick-install-for-users-linux)
-[![Architectures](https://img.shields.io/badge/Arch-x86__64%20%7C%20aarch64-blueviolet.svg)](#quick-install-for-users-linux)
-[![Memory Budget](https://img.shields.io/badge/RSS%20Memory-%E2%89%A4%2030%20MB-emerald.svg)](#performance--constraints)
-[![Zero C Dependencies](https://img.shields.io/badge/Dependencies-Zero%20Native%20C%20(musl)-purple.svg)](#portability)
+  <img src="assets/kadr-logo.png" alt="Kadr Logo" width="140" />
+
+  # Kadr (كادر)
+
+  **Minimalist, ultra-high-performance self-hosted media server written in pure Rust**
+
+  [![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
+  [![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
+  [![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
+  [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
+  [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+  [![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20musl-lightgrey.svg?logo=linux)](#quick-install-for-users-linux)
+  [![Architectures](https://img.shields.io/badge/Arch-x86__64%20%7C%20aarch64-blueviolet.svg)](#quick-install-for-users-linux)
+  [![Memory Budget](https://img.shields.io/badge/RSS%20Memory-%E2%89%A4%2030%20MB-emerald.svg)](#performance--constraints)
+  [![Zero C Dependencies](https://img.shields.io/badge/Dependencies-Zero%20Native%20C%20(musl)-purple.svg)](#portability)
+
+</div>
+
+---
 
 **Kadr (كادر)** is a minimalist, ultra-high-performance self-hosted media server written in pure Rust with embedded SQLite (WAL mode) and a responsive, cinema-grade React web client. 
 
