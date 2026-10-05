@@ -1,8 +1,9 @@
 use futures::future::join_all;
 use kadr_core::ast::{
-    CardViewModel, ItemDetailsPayload, QueryMacro, ScreenLayout, WidgetNode, WidgetQueryBinding,
+    CardViewModel, ItemDetailsPayload, QueryMacro, ScreenLayout, WidgetFilterConfig, WidgetNode,
+    WidgetQueryBinding,
 };
-use kadr_core::models::MediaType;
+use kadr_core::models::{MediaItem, MediaType};
 use kadr_storage::error::Result;
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
 
@@ -49,6 +50,64 @@ impl WidgetResolver {
                 false
             }
         }
+    }
+
+    /// Evaluates if a media item matches given widget filters and library privacy.
+    async fn is_item_matching_filters(
+        &self,
+        item: &MediaItem,
+        filters: Option<&WidgetFilterConfig>,
+        unlocked_ids: &[String],
+    ) -> bool {
+        // 1. Private check: if filters.exclude_private is true, item must not be in a private library
+        if let Ok(Some(lib)) = self.lib_repo.get_by_id(&item.library_id).await {
+            if lib.is_private {
+                if filters.map(|f| f.exclude_private).unwrap_or(false) {
+                    return false;
+                }
+                if !unlocked_ids.contains(&lib.id) {
+                    return false;
+                }
+            }
+        }
+
+        if let Some(f) = filters {
+            // 2. Exclude library IDs
+            if f.exclude_library_ids.iter().any(|id| id == &item.library_id) {
+                return false;
+            }
+
+            // 3. Exclude genres (case-insensitive)
+            if !f.exclude_genres.is_empty() {
+                let item_genres: Vec<String> = item
+                    .metadata
+                    .genres
+                    .iter()
+                    .map(|g| g.trim().to_lowercase())
+                    .collect();
+                for excluded in &f.exclude_genres {
+                    if item_genres.contains(&excluded.trim().to_lowercase()) {
+                        return false;
+                    }
+                }
+            }
+
+            // 4. Max age cutoff
+            if let Some(days) = f.max_age_days {
+                if days > 0 {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    let cutoff = now - (days as i64 * 86_400);
+                    if item.added_at < cutoff {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
     }
 
     /// Resolves an entire screen layout concurrently.
@@ -178,7 +237,10 @@ impl WidgetResolver {
         let candidate = match binding.macro_type {
             QueryMacro::SpotlightItem { item_id: Some(id) } => {
                 let item = self.media_repo.get_by_id(id).await.ok().flatten()?;
-                if self.is_item_visible(&item, unlocked_ids).await {
+                if self
+                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids)
+                    .await
+                {
                     Some(item)
                 } else {
                     None
@@ -186,13 +248,16 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate(unlocked_ids, None)
+                .find_spotlight_candidate(unlocked_ids, binding.filters.as_ref())
                 .await
                 .ok()
                 .flatten(),
             QueryMacro::ItemDetails { item_id } => {
                 let item = self.media_repo.get_by_id(item_id).await.ok().flatten()?;
-                if self.is_item_visible(&item, unlocked_ids).await {
+                if self
+                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids)
+                    .await
+                {
                     Some(item)
                 } else {
                     None
@@ -264,7 +329,10 @@ impl WidgetResolver {
                 let mut cards = Vec::with_capacity(page_states.len());
                 for state in &page_states {
                     if let Some(item) = items_map.get(&state.media_item_id) {
-                        if self.is_item_visible(item, unlocked_ids).await {
+                        if self
+                            .is_item_matching_filters(item, binding.filters.as_ref(), unlocked_ids)
+                            .await
+                        {
                             cards.push(to_card_view_model(item, Some(state)));
                         }
                     }
@@ -281,7 +349,13 @@ impl WidgetResolver {
             QueryMacro::RecentlyAdded => {
                 let items = self
                     .media_repo
-                    .find_recently_added_paginated(None, binding.limit, offset, unlocked_ids, None)
+                    .find_recently_added_paginated(
+                        None,
+                        binding.limit,
+                        offset,
+                        unlocked_ids,
+                        binding.filters.as_ref(),
+                    )
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -298,7 +372,12 @@ impl WidgetResolver {
             QueryMacro::TopRated => {
                 let items = self
                     .media_repo
-                    .find_top_rated_paginated(binding.limit, offset, unlocked_ids, None)
+                    .find_top_rated_paginated(
+                        binding.limit,
+                        offset,
+                        unlocked_ids,
+                        binding.filters.as_ref(),
+                    )
                     .await?;
                 let has_more = items.len() == binding.limit as usize;
                 let cards = self.hydrate_items_to_cards(items, user_id).await;
@@ -314,7 +393,13 @@ impl WidgetResolver {
             QueryMacro::GenreShelf { genre } => {
                 let items = self
                     .media_repo
-                    .find_by_genre_paginated(genre, binding.limit, offset, unlocked_ids, None)
+                    .find_by_genre_paginated(
+                        genre,
+                        binding.limit,
+                        offset,
+                        unlocked_ids,
+                        binding.filters.as_ref(),
+                    )
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -337,7 +422,7 @@ impl WidgetResolver {
                         offset,
                         binding.sort.as_deref(),
                         unlocked_ids,
-                        None,
+                        binding.filters.as_ref(),
                     )
                     .await?;
 
@@ -357,7 +442,10 @@ impl WidgetResolver {
                 let candidate = if let Some(id) = item_id {
                     let item = self.media_repo.get_by_id(*id).await?;
                     if let Some(i) = item {
-                        if self.is_item_visible(&i, unlocked_ids).await {
+                        if self
+                            .is_item_matching_filters(&i, binding.filters.as_ref(), unlocked_ids)
+                            .await
+                        {
                             Some(i)
                         } else {
                             None
@@ -366,7 +454,9 @@ impl WidgetResolver {
                         None
                     }
                 } else {
-                    self.media_repo.find_spotlight_candidate(unlocked_ids, None).await?
+                    self.media_repo
+                        .find_spotlight_candidate(unlocked_ids, binding.filters.as_ref())
+                        .await?
                 };
 
                 if let Some(item) = candidate {
@@ -383,7 +473,10 @@ impl WidgetResolver {
             }
             QueryMacro::ItemDetails { item_id } => {
                 if let Some(item) = self.media_repo.get_by_id(*item_id).await? {
-                    if self.is_item_visible(&item, unlocked_ids).await {
+                    if self
+                        .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids)
+                        .await
+                    {
                         let playback = self.playback_repo.get_state(user_id, *item_id).await?;
                         let card = to_card_view_model(&item, playback.as_ref());
                         Ok((vec![card], None, None))

@@ -2,7 +2,9 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use kadr_core::ast::{QueryMacro, ScreenId, WidgetNode, WidgetQueryBinding};
+use kadr_core::ast::{
+    QueryMacro, ScreenId, ScreenLayout, WidgetFilterConfig, WidgetNode, WidgetQueryBinding,
+};
 use kadr_core::models::{
     Library, MediaItem, MediaMetadata, MediaType, PlaybackState, TechnicalInfo, User, UserRole,
     WatchState,
@@ -566,3 +568,225 @@ async fn test_resolve_item_details_movie_and_show() {
         .expect("resolve missing item returned error");
     assert!(missing.is_none());
 }
+
+#[tokio::test]
+async fn test_resolve_widget_data_recently_added_exclude_genres() {
+    let (resolver, media_repo, _, _, _, _) = setup_test_environment().await;
+    let now = now_secs();
+
+    // Insert a horror movie
+    let horror_movie = MediaItem {
+        id: None,
+        library_id: "movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "The Shining".to_string(),
+        original_title: None,
+        release_year: Some(1980),
+        added_at: now - 5 * 86400,
+        file_path: PathBuf::from("/media/movies/TheShining.mkv"),
+        file_name: "TheShining.mkv".to_string(),
+        file_size: 15_000_000_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            genres: vec!["Horror".to_string(), "Mystery".to_string()],
+            ..Default::default()
+        },
+    };
+    media_repo.upsert_batch(&[horror_movie]).await.unwrap();
+
+    // Query without filter -> The Shining is present
+    let unfiltered_binding = WidgetQueryBinding::new(QueryMacro::RecentlyAdded).with_limit(10);
+    let (unfiltered_cards, _, _) = resolver
+        .resolve_widget_data(&unfiltered_binding, "user-1", 0)
+        .await
+        .expect("unfiltered query failed");
+    assert!(unfiltered_cards.iter().any(|c| c.title == "The Shining"));
+
+    // Query with exclude_genres: ["Horror"] -> The Shining is excluded
+    let filtered_binding = WidgetQueryBinding::new(QueryMacro::RecentlyAdded)
+        .with_limit(10)
+        .with_filters(WidgetFilterConfig {
+            exclude_genres: vec!["Horror".to_string()],
+            ..Default::default()
+        });
+    let (filtered_cards, _, _) = resolver
+        .resolve_widget_data(&filtered_binding, "user-1", 0)
+        .await
+        .expect("filtered query failed");
+    assert!(!filtered_cards.iter().any(|c| c.title == "The Shining"));
+    assert!(!filtered_cards.is_empty());
+}
+
+#[tokio::test]
+async fn test_resolve_widget_data_continue_watching_exclude_library() {
+    let (resolver, _, _, _, cont_movie_id, _) = setup_test_environment().await;
+
+    // Without filters: continue_watching has "Continue Movie" (from "movies" library)
+    let binding_unfiltered = WidgetQueryBinding::new(QueryMacro::ContinueWatching).with_limit(10);
+    let (cards, _, _) = resolver
+        .resolve_widget_data(&binding_unfiltered, "user-1", 0)
+        .await
+        .expect("resolve failed");
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0].id, cont_movie_id);
+
+    // With exclude_library_ids: ["movies"] -> "Continue Movie" is excluded
+    let binding_filtered = WidgetQueryBinding::new(QueryMacro::ContinueWatching)
+        .with_limit(10)
+        .with_filters(WidgetFilterConfig {
+            exclude_library_ids: vec!["movies".to_string()],
+            ..Default::default()
+        });
+    let (filtered_cards, _, _) = resolver
+        .resolve_widget_data(&binding_filtered, "user-1", 0)
+        .await
+        .expect("resolve failed");
+    assert!(filtered_cards.is_empty());
+
+    // With max_age_days = 10 -> "Continue Movie" (added 21 days ago) is excluded
+    let binding_max_age_fail = WidgetQueryBinding::new(QueryMacro::ContinueWatching)
+        .with_limit(10)
+        .with_filters(WidgetFilterConfig {
+            max_age_days: Some(10),
+            ..Default::default()
+        });
+    let (max_age_cards_fail, _, _) = resolver
+        .resolve_widget_data(&binding_max_age_fail, "user-1", 0)
+        .await
+        .expect("resolve failed");
+    assert!(max_age_cards_fail.is_empty());
+
+    // With max_age_days = 30 -> "Continue Movie" (added 21 days ago) is included
+    let binding_max_age_pass = WidgetQueryBinding::new(QueryMacro::ContinueWatching)
+        .with_limit(10)
+        .with_filters(WidgetFilterConfig {
+            max_age_days: Some(30),
+            ..Default::default()
+        });
+    let (max_age_cards_pass, _, _) = resolver
+        .resolve_widget_data(&binding_max_age_pass, "user-1", 0)
+        .await
+        .expect("resolve failed");
+    assert_eq!(max_age_cards_pass.len(), 1);
+}
+
+#[tokio::test]
+async fn test_resolve_widget_data_exclude_private_even_when_unlocked() {
+    let (resolver, media_repo, _, _, _, _) = setup_test_environment().await;
+    let pool = media_repo.pool().clone();
+    let lib_repo = LibraryRepository::new(pool);
+    let now = now_secs();
+
+    // Create a private library
+    lib_repo
+        .insert(&Library {
+            id: "vault".to_string(),
+            name: "Private Vault".to_string(),
+            path: PathBuf::from("/media/vault"),
+            media_type: MediaType::Movie,
+            is_private: true,
+            created_at: 1000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let private_item = MediaItem {
+        id: None,
+        library_id: "vault".to_string(),
+        item_type: MediaType::Movie,
+        title: "Secret Documentary".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: now - 86400,
+        file_path: PathBuf::from("/media/vault/secret.mkv"),
+        file_name: "secret.mkv".to_string(),
+        file_size: 5_000_000_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata::default(),
+    };
+    media_repo.upsert_batch(&[private_item]).await.unwrap();
+
+    let unlocked = vec!["vault".to_string()];
+
+    // With unlocked token and exclude_private = false -> item is visible
+    let binding_allow_private = WidgetQueryBinding::new(QueryMacro::RecentlyAdded).with_limit(10);
+    let (unfiltered_cards, _, _) = resolver
+        .resolve_widget_data_with_unlocked(&binding_allow_private, "user-1", 0, &unlocked)
+        .await
+        .expect("resolve failed");
+    assert!(unfiltered_cards.iter().any(|c| c.title == "Secret Documentary"));
+
+    // With unlocked token and filters.exclude_private: true -> item is EXCLUDED
+    let binding_exclude_private = WidgetQueryBinding::new(QueryMacro::RecentlyAdded)
+        .with_limit(10)
+        .with_filters(WidgetFilterConfig {
+            exclude_private: true,
+            ..Default::default()
+        });
+    let (filtered_cards, _, _) = resolver
+        .resolve_widget_data_with_unlocked(&binding_exclude_private, "user-1", 0, &unlocked)
+        .await
+        .expect("resolve failed");
+    assert!(!filtered_cards.iter().any(|c| c.title == "Secret Documentary"));
+}
+
+#[tokio::test]
+async fn test_hero_banner_spotlight_respects_filters() {
+    let (resolver, _, _, spotlight_id, _, _) = setup_test_environment().await;
+
+    // 1. Dynamic candidate (item_id: None) with filter excluding Sci-Fi
+    // Spotlight Movie has genres: ["Sci-Fi", "Action"]
+    let binding_filtered_genre = WidgetQueryBinding::new(QueryMacro::SpotlightItem { item_id: None })
+        .with_filters(WidgetFilterConfig {
+            exclude_genres: vec!["Sci-Fi".to_string()],
+            ..Default::default()
+        });
+
+    let layout_filtered = ScreenLayout {
+        id: ScreenId::Home,
+        title: "Home".to_string(),
+        widgets: vec![WidgetNode::HeroBanner {
+            id: "hero".to_string(),
+            binding: binding_filtered_genre,
+            data: None,
+        }],
+    };
+
+    let resolved = resolver.resolve_screen(layout_filtered, "user-1").await;
+    if let Some(WidgetNode::HeroBanner { data, .. }) = resolved.widgets.first() {
+        // Spotlight Movie was excluded, so no candidate should match (or not spotlight_id)
+        if let Some(card) = data {
+            assert_ne!(card.id, spotlight_id);
+        }
+    } else {
+        panic!("expected hero banner");
+    }
+
+    // 2. Explicit item_id with filter excluding Action
+    let binding_explicit_filtered = WidgetQueryBinding::new(QueryMacro::SpotlightItem {
+        item_id: Some(spotlight_id),
+    })
+    .with_filters(WidgetFilterConfig {
+        exclude_genres: vec!["Action".to_string()],
+        ..Default::default()
+    });
+
+    let layout_explicit = ScreenLayout {
+        id: ScreenId::Home,
+        title: "Home".to_string(),
+        widgets: vec![WidgetNode::HeroBanner {
+            id: "hero_explicit".to_string(),
+            binding: binding_explicit_filtered,
+            data: None,
+        }],
+    };
+
+    let resolved_explicit = resolver.resolve_screen(layout_explicit, "user-1").await;
+    if let Some(WidgetNode::HeroBanner { data, .. }) = resolved_explicit.widgets.first() {
+        assert!(data.is_none(), "Hero card should be None because genre was excluded");
+    } else {
+        panic!("expected hero banner");
+    }
+}
+
