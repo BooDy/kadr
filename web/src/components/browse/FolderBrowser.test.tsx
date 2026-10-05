@@ -249,4 +249,38 @@ describe('FolderBrowser Component', () => {
       expect(screen.getByText('Action')).toBeInTheDocument();
     });
   });
+
+  it('resets currentPath to root when libraryId prop changes', async () => {
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders')
+      .mockResolvedValueOnce(mockRootResponse)
+      .mockResolvedValueOnce(mockSubfolderResponse)
+      .mockResolvedValueOnce({
+        ...mockRootResponse,
+        library_id: 'lib-shows-2',
+        library_name: 'TV Shows',
+      });
+
+    const { rerender } = render(
+      <FolderBrowser libraryId={mockLibraryId} onPlayItem={mockOnPlayItem} />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Sci-Fi')).toBeInTheDocument();
+    });
+
+    // Navigate to subfolder
+    fireEvent.click(screen.getByText('Sci-Fi'));
+
+    await waitFor(() => {
+      expect(getFoldersSpy).toHaveBeenCalledWith(mockLibraryId, 'Sci-Fi');
+      expect(screen.getByText('Cyberpunk')).toBeInTheDocument();
+    });
+
+    // Change libraryId prop
+    rerender(<FolderBrowser libraryId="lib-shows-2" onPlayItem={mockOnPlayItem} />);
+
+    await waitFor(() => {
+      expect(getFoldersSpy).toHaveBeenLastCalledWith('lib-shows-2', '');
+    });
+  });
 });

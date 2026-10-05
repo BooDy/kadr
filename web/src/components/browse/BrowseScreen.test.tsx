@@ -7,6 +7,7 @@ import type {
   ItemDetailsPayload,
   SubtitleTrack,
   OnlineSubtitleSearchResponse,
+  LibraryFolderResponse,
 } from '../../types';
 
 describe('BrowseScreen & Declarative Widgets', () => {
@@ -327,5 +328,112 @@ describe('BrowseScreen & Declarative Widgets', () => {
     await waitFor(() => {
       expect(screen.getByText('Blade Runner 2049')).toBeDefined();
     });
+  });
+
+  const mockLibraryLayout: ScreenLayout = {
+    id: 'movies',
+    title: 'Movies Library',
+    widgets: [
+      {
+        type: 'grid',
+        id: 'movies_grid',
+        title: 'All Movies',
+        columns: 4,
+        binding: { macro_type: 'top_rated', limit: 20 },
+        items: [
+          {
+            id: 201,
+            title: 'Inception',
+            media_type: 'movie',
+            release_year: 2010,
+          },
+        ],
+      },
+    ],
+  };
+
+  const mockFolderResponse: LibraryFolderResponse = {
+    library_id: 'movies',
+    library_name: 'Movies Library',
+    current_path: '',
+    parent_path: null,
+    breadcrumbs: [{ name: 'Root', path: '' }],
+    directories: [{ name: 'Sci-Fi', path: 'Sci-Fi', item_count: 5 }],
+    items: [],
+  };
+
+  it('renders Catalog and Folders view mode toggle buttons when screenId !== "home"', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(mockLibraryLayout);
+
+    render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeDefined();
+    });
+
+    const catalogBtn = screen.getByRole('button', { name: /catalog/i });
+    const foldersBtn = screen.getByRole('button', { name: /folders/i });
+    expect(catalogBtn).toBeDefined();
+    expect(foldersBtn).toBeDefined();
+  });
+
+  it('clicking "Folders" switches view to FolderBrowser', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(mockLibraryLayout);
+    vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce(mockFolderResponse);
+
+    render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeDefined();
+    });
+
+    const foldersBtn = screen.getByRole('button', { name: /folders/i });
+    fireEvent.click(foldersBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sci-Fi')).toBeDefined();
+      expect(screen.getByText('5 items')).toBeDefined();
+    });
+
+    expect(screen.queryByText('All Movies')).toBeNull();
+  });
+
+  it('clicking "Catalog" switches view back to declarative widget layout', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValue(mockLibraryLayout);
+    vi.spyOn(api, 'getLibraryFolders').mockResolvedValue(mockFolderResponse);
+
+    render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeDefined();
+    });
+
+    // Switch to folders
+    fireEvent.click(screen.getByRole('button', { name: /folders/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Sci-Fi')).toBeDefined();
+    });
+
+    // Switch back to catalog
+    fireEvent.click(screen.getByRole('button', { name: /catalog/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeDefined();
+      expect(screen.getByText('All Movies')).toBeDefined();
+    });
+
+    expect(screen.queryByText('Sci-Fi')).toBeNull();
+  });
+
+  it('does not display view mode toggle when screenId === "home"', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(mockHomeLayout);
+
+    render(<BrowseScreen screenId="home" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Blade Runner 2049')).toBeDefined();
+    });
+
+    expect(screen.queryByRole('button', { name: /catalog/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /folders/i })).toBeNull();
   });
 });

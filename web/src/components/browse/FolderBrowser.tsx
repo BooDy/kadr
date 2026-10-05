@@ -65,7 +65,7 @@ const MediaCard: FC<MediaCardProps> = ({ item, onSelect, onPlay }) => {
         )}
 
         {/* Hover Action Overlay: Play CTA Button */}
-        <div className="absolute inset-0 bg-canvas/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200">
+        <div className="absolute inset-0 bg-canvas/40 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center justify-center transition-opacity duration-200">
           <button
             type="button"
             aria-label={`Play ${item.title}`}
@@ -73,12 +73,11 @@ const MediaCard: FC<MediaCardProps> = ({ item, onSelect, onPlay }) => {
               e.stopPropagation();
               onPlay(item.id);
             }}
-            className="w-11 h-11 rounded-full bg-cta hover:bg-cta-hover text-white flex items-center justify-center shadow-lg shadow-cta/30 transform scale-90 group-hover:scale-100 transition-transform duration-200 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none cursor-pointer"
+            className="w-11 h-11 rounded-full bg-cta hover:bg-cta-hover text-white flex items-center justify-center shadow-lg shadow-cta/30 transform scale-90 group-hover:scale-100 group-focus-within:scale-100 transition-transform duration-200 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none cursor-pointer"
           >
             <Play className="w-5 h-5 fill-white text-white ml-0.5" />
           </button>
         </div>
-
         {/* Badge Overlay */}
         {item.badge && (
           <div className="absolute top-2 left-2 pointer-events-none">
@@ -147,8 +146,9 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
   );
 
   useEffect(() => {
-    navigateTo(currentPath);
-  }, [libraryId]);
+    setCurrentPath('');
+    navigateTo('');
+  }, [libraryId, navigateTo]);
 
   const hasParent = data?.parent_path !== null && data?.parent_path !== undefined;
 
@@ -225,8 +225,15 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
       )}
 
       {/* Main Content Area */}
-      {!loading && !error && data && (
-        <>
+      {!error && data && (
+        <div className="relative space-y-6">
+          {/* Subtle loading spinner overlay when navigating subfolders */}
+          {loading && (
+            <div className="absolute inset-0 bg-canvas/30 backdrop-blur-[1px] flex items-center justify-center z-10 transition-opacity">
+              <Loader2 className="w-8 h-8 animate-spin text-accent" />
+            </div>
+          )}
+
           {/* Empty State Banner */}
           {data.directories.length === 0 && data.items.length === 0 && (
             <div className="p-16 rounded-xl bg-panel border border-border-subtle flex flex-col items-center justify-center text-center space-y-3">
@@ -285,7 +292,7 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
               </div>
             </section>
           )}
-        </>
+        </div>
       )}
 
       {/* Item Details Inspection Modal */}
