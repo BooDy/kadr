@@ -283,4 +283,97 @@ describe('FolderBrowser Component', () => {
       expect(getFoldersSpy).toHaveBeenLastCalledWith('lib-shows-2', '');
     });
   });
+
+  it('renders dynamic thumbnail endpoint for unindexed synthetic media card', async () => {
+    const mockThumbnailResponse: LibraryFolderResponse = {
+      library_id: 'lib-movies-1',
+      library_name: 'Movies Library',
+      current_path: '',
+      parent_path: null,
+      breadcrumbs: [{ name: 'Root', path: '' }],
+      directories: [],
+      items: [
+        {
+          id: 201,
+          title: 'clip',
+          poster_url: '/api/v1/libraries/lib-movies-1/thumbnail?path=clip.mp4',
+          media_type: 'video',
+        },
+      ],
+    };
+
+    vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce(mockThumbnailResponse);
+
+    render(<FolderBrowser libraryId={mockLibraryId} onPlayItem={mockOnPlayItem} />);
+
+    await waitFor(() => {
+      const img = screen.getByRole('img', { name: 'clip' });
+      expect(img).toBeInTheDocument();
+      expect(img).toHaveAttribute('src', '/api/v1/libraries/lib-movies-1/thumbnail?path=clip.mp4');
+      expect(img).toHaveAttribute('alt', 'clip');
+    });
+  });
+
+  it('gracefully degrades to Film icon placeholder on thumbnail error while preserving interactions and play button', async () => {
+    const mockThumbnailResponse: LibraryFolderResponse = {
+      library_id: 'lib-movies-1',
+      library_name: 'Movies Library',
+      current_path: '',
+      parent_path: null,
+      breadcrumbs: [{ name: 'Root', path: '' }],
+      directories: [],
+      items: [
+        {
+          id: 201,
+          title: 'clip',
+          poster_url: '/api/v1/libraries/lib-movies-1/thumbnail?path=clip.mp4',
+          media_type: 'video',
+        },
+      ],
+    };
+
+    vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce(mockThumbnailResponse);
+    vi.spyOn(api, 'getItemDetails').mockResolvedValueOnce({
+      card: mockThumbnailResponse.items[0],
+      genres: [],
+      stream_url: '/api/v1/stream/201',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValueOnce([]);
+
+    const { container } = render(
+      <FolderBrowser libraryId={mockLibraryId} onPlayItem={mockOnPlayItem} />
+    );
+
+    // Initial render displays the thumbnail image
+    const img = await screen.findByRole('img', { name: 'clip' });
+    expect(img).toBeInTheDocument();
+    expect(img).toHaveAttribute('src', '/api/v1/libraries/lib-movies-1/thumbnail?path=clip.mp4');
+
+    // Trigger image error
+    fireEvent.error(img);
+
+    // The image should no longer be present
+    expect(screen.queryByRole('img', { name: 'clip' })).not.toBeInTheDocument();
+
+    // Film icon placeholder is displayed
+    const filmIcon = container.querySelector('svg.lucide-film');
+    expect(filmIcon).toBeInTheDocument();
+
+    // Title is still visible (rendered in fallback placeholder and card footer)
+    const titleElements = screen.getAllByText('clip');
+    expect(titleElements.length).toBeGreaterThanOrEqual(1);
+
+    // Play action button is preserved and callable
+    const playBtn = screen.getByRole('button', { name: 'Play clip' });
+    expect(playBtn).toBeInTheDocument();
+    fireEvent.click(playBtn);
+    expect(mockOnPlayItem).toHaveBeenCalledWith(201);
+
+    // Card click interaction still opens item details modal
+    fireEvent.click(titleElements[0]);
+    await waitFor(() => {
+      expect(api.getItemDetails).toHaveBeenCalledWith(201);
+    });
+  });
 });
+
