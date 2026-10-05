@@ -186,7 +186,7 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate(unlocked_ids)
+                .find_spotlight_candidate(unlocked_ids, None)
                 .await
                 .ok()
                 .flatten(),
@@ -281,7 +281,7 @@ impl WidgetResolver {
             QueryMacro::RecentlyAdded => {
                 let items = self
                     .media_repo
-                    .find_recently_added_paginated(None, binding.limit, offset, unlocked_ids)
+                    .find_recently_added_paginated(None, binding.limit, offset, unlocked_ids, None)
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -298,7 +298,7 @@ impl WidgetResolver {
             QueryMacro::TopRated => {
                 let items = self
                     .media_repo
-                    .find_top_rated_paginated(binding.limit, offset, unlocked_ids)
+                    .find_top_rated_paginated(binding.limit, offset, unlocked_ids, None)
                     .await?;
                 let has_more = items.len() == binding.limit as usize;
                 let cards = self.hydrate_items_to_cards(items, user_id).await;
@@ -314,7 +314,7 @@ impl WidgetResolver {
             QueryMacro::GenreShelf { genre } => {
                 let items = self
                     .media_repo
-                    .find_by_genre_paginated(genre, binding.limit, offset, unlocked_ids)
+                    .find_by_genre_paginated(genre, binding.limit, offset, unlocked_ids, None)
                     .await?;
 
                 let has_more = items.len() == binding.limit as usize;
@@ -337,6 +337,7 @@ impl WidgetResolver {
                         offset,
                         binding.sort.as_deref(),
                         unlocked_ids,
+                        None,
                     )
                     .await?;
 
@@ -365,7 +366,7 @@ impl WidgetResolver {
                         None
                     }
                 } else {
-                    self.media_repo.find_spotlight_candidate(unlocked_ids).await?
+                    self.media_repo.find_spotlight_candidate(unlocked_ids, None).await?
                 };
 
                 if let Some(item) = candidate {

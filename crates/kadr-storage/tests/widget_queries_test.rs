@@ -1,4 +1,5 @@
 // crates/kadr-storage/tests/widget_queries_test.rs
+use kadr_core::ast::WidgetFilterConfig;
 use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
@@ -229,7 +230,7 @@ async fn test_find_recently_added() {
 
     // 1. Without library filter (global)
     let global_recent = media_repo
-        .find_recently_added_paginated(None, 3, 0, &[])
+        .find_recently_added_paginated(None, 3, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(global_recent.len(), 3);
@@ -244,7 +245,7 @@ async fn test_find_recently_added() {
 
     // Offset test
     let global_recent_page2 = media_repo
-        .find_recently_added_paginated(None, 2, 3, &[])
+        .find_recently_added_paginated(None, 2, 3, &[], None)
         .await
         .unwrap();
     assert_eq!(global_recent_page2.len(), 2);
@@ -256,7 +257,7 @@ async fn test_find_recently_added() {
 
     // 2. With library filter
     let movie_recent = media_repo
-        .find_recently_added_paginated(Some("movies"), 2, 0, &[])
+        .find_recently_added_paginated(Some("movies"), 2, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(movie_recent.len(), 2);
@@ -269,7 +270,7 @@ async fn test_find_top_rated() {
     let (media_repo, _) = setup_test_data().await;
 
     let top = media_repo
-        .find_top_rated_paginated(4, 0, &[])
+        .find_top_rated_paginated(4, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(top.len(), 4);
@@ -284,7 +285,7 @@ async fn test_find_top_rated() {
 
     // With offset
     let top_page2 = media_repo
-        .find_top_rated_paginated(2, 4, &[])
+        .find_top_rated_paginated(2, 4, &[], None)
         .await
         .unwrap();
     assert_eq!(top_page2.len(), 2);
@@ -299,7 +300,7 @@ async fn test_find_by_genre() {
 
     // 1. Query "Mystery"
     let mystery = media_repo
-        .find_by_genre_paginated("Mystery", 10, 0, &[])
+        .find_by_genre_paginated("Mystery", 10, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(mystery.len(), 2);
@@ -309,7 +310,7 @@ async fn test_find_by_genre() {
 
     // 2. Query case-insensitive "action"
     let action = media_repo
-        .find_by_genre_paginated("action", 10, 0, &[])
+        .find_by_genre_paginated("action", 10, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(action.len(), 1);
@@ -317,12 +318,12 @@ async fn test_find_by_genre() {
 
     // 3. Query "Sci-Fi" with pagination
     let scifi_page1 = media_repo
-        .find_by_genre_paginated("Sci-Fi", 2, 0, &[])
+        .find_by_genre_paginated("Sci-Fi", 2, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(scifi_page1.len(), 2);
     let scifi_page2 = media_repo
-        .find_by_genre_paginated("Sci-Fi", 2, 2, &[])
+        .find_by_genre_paginated("Sci-Fi", 2, 2, &[], None)
         .await
         .unwrap();
     assert_eq!(scifi_page2.len(), 2);
@@ -334,7 +335,7 @@ async fn test_find_by_library_paginated() {
 
     // 1. Default / title:asc
     let (items, total) = media_repo
-        .find_by_library_paginated("movies", 2, 0, Some("title:asc"), &[])
+        .find_by_library_paginated("movies", 2, 0, Some("title:asc"), &[], None)
         .await
         .unwrap();
     assert_eq!(total, 5);
@@ -344,7 +345,7 @@ async fn test_find_by_library_paginated() {
 
     // 2. release_year:desc
     let (items_by_year, total_year) = media_repo
-        .find_by_library_paginated("movies", 5, 0, Some("release_year:desc"), &[])
+        .find_by_library_paginated("movies", 5, 0, Some("release_year:desc"), &[], None)
         .await
         .unwrap();
     assert_eq!(total_year, 5);
@@ -356,7 +357,7 @@ async fn test_find_by_library_paginated() {
 
     // 3. added_at:desc
     let (items_by_added, _) = media_repo
-        .find_by_library_paginated("movies", 2, 0, Some("added_at:desc"), &[])
+        .find_by_library_paginated("movies", 2, 0, Some("added_at:desc"), &[], None)
         .await
         .unwrap();
     assert_eq!(items_by_added[0].title, "Primer"); // 7000
@@ -367,7 +368,7 @@ async fn test_find_by_library_paginated() {
 async fn test_find_spotlight_candidate() {
     let (media_repo, _) = setup_test_data().await;
 
-    let candidate = media_repo.find_spotlight_candidate(&[]).await.unwrap();
+    let candidate = media_repo.find_spotlight_candidate(&[], None).await.unwrap();
     assert!(candidate.is_some());
     let item = candidate.unwrap();
     // Inception has backdrop_path and highest rating among items with backdrop (8.8)
@@ -391,3 +392,334 @@ async fn test_find_episodes_by_series() {
     assert_eq!(episodes[1].title, "Severance - S01E02 - Half Loop");
     assert_eq!(episodes[2].title, "Severance - S02E01 - Hello Lumon");
 }
+
+#[tokio::test]
+async fn test_filter_exclude_private() {
+    let (media_repo, lib_repo) = setup_test_data().await;
+
+    let priv_lib = Library {
+        id: "private_vault".to_string(),
+        name: "Private Vault".to_string(),
+        path: PathBuf::from("/media/private"),
+        media_type: MediaType::Movie,
+        is_private: true,
+        created_at: 1000,
+        ..Default::default()
+    };
+    lib_repo.insert(&priv_lib).await.unwrap();
+
+    let priv_item = MediaItem {
+        id: None,
+        library_id: "private_vault".to_string(),
+        item_type: MediaType::Movie,
+        title: "Confidential Project".to_string(),
+        added_at: 8000,
+        file_path: PathBuf::from("/media/private/confidential.mkv"),
+        file_name: "confidential.mkv".to_string(),
+        metadata: MediaMetadata {
+            rating: Some(9.9),
+            backdrop_path: Some("/media/private/backdrop.jpg".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    media_repo.upsert_batch(&[priv_item]).await.unwrap();
+
+    let unlocked = vec!["private_vault".to_string()];
+
+    // 1. Without exclude_private, unlocked library shows up in recently added
+    let results_unlocked = media_repo
+        .find_recently_added_paginated(None, 10, 0, &unlocked, None)
+        .await
+        .unwrap();
+    assert!(results_unlocked
+        .iter()
+        .any(|m| m.title == "Confidential Project"));
+
+    // 2. With exclude_private = true, private media is EXCLUDED even though library is unlocked
+    let filter = WidgetFilterConfig {
+        exclude_private: true,
+        ..Default::default()
+    };
+    let results_filtered = media_repo
+        .find_recently_added_paginated(None, 10, 0, &unlocked, Some(&filter))
+        .await
+        .unwrap();
+    assert!(!results_filtered
+        .iter()
+        .any(|m| m.title == "Confidential Project"));
+
+    // 3. Spotlight candidate with exclude_private = true ignores the higher-rated private item
+    let spotlight_unfiltered = media_repo
+        .find_spotlight_candidate(&unlocked, None)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(spotlight_unfiltered.title, "Confidential Project");
+
+    let spotlight_filtered = media_repo
+        .find_spotlight_candidate(&unlocked, Some(&filter))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(spotlight_filtered.title, "Inception");
+}
+
+#[tokio::test]
+async fn test_filter_exclude_library_ids() {
+    let (media_repo, _) = setup_test_data().await;
+
+    // Filter out "shows" library
+    let filter = WidgetFilterConfig {
+        exclude_library_ids: vec!["shows".to_string()],
+        ..Default::default()
+    };
+
+    let items = media_repo
+        .find_recently_added_paginated(None, 20, 0, &[], Some(&filter))
+        .await
+        .unwrap();
+
+    assert!(!items.is_empty());
+    for item in &items {
+        assert_ne!(item.library_id, "shows");
+        assert_eq!(item.library_id, "movies");
+    }
+    assert!(!items.iter().any(|m| m.title.starts_with("Severance")));
+}
+
+#[tokio::test]
+async fn test_filter_exclude_genres() {
+    let (media_repo, _) = setup_test_data().await;
+
+    // Exclude "Sci-Fi" with different casing ("sci-fi")
+    let filter = WidgetFilterConfig {
+        exclude_genres: vec!["sci-fi".to_string()],
+        ..Default::default()
+    };
+
+    let items = media_repo
+        .find_recently_added_paginated(None, 20, 0, &[], Some(&filter))
+        .await
+        .unwrap();
+
+    assert!(!items.is_empty());
+    for item in &items {
+        let has_scifi = item
+            .metadata
+            .genres
+            .iter()
+            .any(|g| g.eq_ignore_ascii_case("sci-fi"));
+        assert!(
+            !has_scifi,
+            "Item {} has genre sci-fi but was not excluded",
+            item.title
+        );
+    }
+
+    let titles: Vec<&str> = items.iter().map(|m| m.title.as_str()).collect();
+    assert!(titles.contains(&"The Prestige"));
+    assert!(titles.contains(&"Memento"));
+}
+
+#[tokio::test]
+async fn test_filter_max_age_days() {
+    let (media_repo, _) = setup_test_data().await;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let recent_item = MediaItem {
+        id: None,
+        library_id: "movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "Recent Release".to_string(),
+        added_at: now - 3 * 86_400, // 3 days ago
+        file_path: PathBuf::from("/media/movies/recent.mkv"),
+        file_name: "recent.mkv".to_string(),
+        ..Default::default()
+    };
+    let old_item = MediaItem {
+        id: None,
+        library_id: "movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "Old Release".to_string(),
+        added_at: now - 60 * 86_400, // 60 days ago
+        file_path: PathBuf::from("/media/movies/old.mkv"),
+        file_name: "old.mkv".to_string(),
+        ..Default::default()
+    };
+    media_repo
+        .upsert_batch(&[recent_item, old_item])
+        .await
+        .unwrap();
+
+    let filter = WidgetFilterConfig {
+        max_age_days: Some(30), // Cutoff 30 days
+        ..Default::default()
+    };
+
+    let items = media_repo
+        .find_recently_added_paginated(Some("movies"), 20, 0, &[], Some(&filter))
+        .await
+        .unwrap();
+
+    let titles: Vec<&str> = items.iter().map(|m| m.title.as_str()).collect();
+    assert!(titles.contains(&"Recent Release"));
+    assert!(!titles.contains(&"Old Release"));
+    assert!(!titles.contains(&"Primer"));
+}
+
+#[tokio::test]
+async fn test_filter_combined_filters() {
+    let (media_repo, lib_repo) = setup_test_data().await;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let priv_lib = Library {
+        id: "private_stream".to_string(),
+        name: "Private Stream".to_string(),
+        path: PathBuf::from("/media/priv_stream"),
+        media_type: MediaType::Movie,
+        is_private: true,
+        ..Default::default()
+    };
+    lib_repo.insert(&priv_lib).await.unwrap();
+
+    let items = vec![
+        MediaItem {
+            id: None,
+            library_id: "movies".to_string(),
+            item_type: MediaType::Movie,
+            title: "Fresh Drama".to_string(),
+            added_at: now - 2 * 86_400,
+            file_path: PathBuf::from("/media/movies/fresh_drama.mkv"),
+            file_name: "fresh_drama.mkv".to_string(),
+            metadata: MediaMetadata {
+                genres: vec!["Drama".to_string()],
+                rating: Some(9.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        MediaItem {
+            id: None,
+            library_id: "movies".to_string(),
+            item_type: MediaType::Movie,
+            title: "Fresh SciFi".to_string(),
+            added_at: now - 2 * 86_400,
+            file_path: PathBuf::from("/media/movies/fresh_scifi.mkv"),
+            file_name: "fresh_scifi.mkv".to_string(),
+            metadata: MediaMetadata {
+                genres: vec!["Sci-Fi".to_string()],
+                rating: Some(9.2),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        MediaItem {
+            id: None,
+            library_id: "movies".to_string(),
+            item_type: MediaType::Movie,
+            title: "Stale Drama".to_string(),
+            added_at: now - 40 * 86_400,
+            file_path: PathBuf::from("/media/movies/stale_drama.mkv"),
+            file_name: "stale_drama.mkv".to_string(),
+            metadata: MediaMetadata {
+                genres: vec!["Drama".to_string()],
+                rating: Some(9.1),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        MediaItem {
+            id: None,
+            library_id: "private_stream".to_string(),
+            item_type: MediaType::Movie,
+            title: "Private Fresh Drama".to_string(),
+            added_at: now - 2 * 86_400,
+            file_path: PathBuf::from("/media/priv_stream/priv_drama.mkv"),
+            file_name: "priv_drama.mkv".to_string(),
+            metadata: MediaMetadata {
+                genres: vec!["Drama".to_string()],
+                rating: Some(9.9),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ];
+    media_repo.upsert_batch(&items).await.unwrap();
+
+    let unlocked = vec!["private_stream".to_string()];
+    let combined_filter = WidgetFilterConfig {
+        exclude_private: true,
+        exclude_genres: vec!["Sci-Fi".to_string()],
+        max_age_days: Some(10),
+        exclude_library_ids: vec!["shows".to_string()],
+    };
+
+    let results = media_repo
+        .find_recently_added_paginated(None, 20, 0, &unlocked, Some(&combined_filter))
+        .await
+        .unwrap();
+
+    let titles: Vec<&str> = results.iter().map(|m| m.title.as_str()).collect();
+    assert_eq!(titles, vec!["Fresh Drama"]);
+}
+
+#[test]
+fn test_build_filter_clauses_logic() {
+    use kadr_storage::repos::widget_queries::build_filter_clauses;
+
+    // 1. None filter with unlocked
+    let (clause, params) = build_filter_clauses(None, &["lib1".to_string()], 1_000_000);
+    assert!(clause.contains("l.is_private = 0 OR l.id IN (?)"));
+    assert_eq!(params.len(), 1);
+
+    // 2. exclude_private = true overrides unlocked_ids
+    let f1 = WidgetFilterConfig {
+        exclude_private: true,
+        ..Default::default()
+    };
+    let (clause, params) = build_filter_clauses(Some(&f1), &["lib1".to_string()], 1_000_000);
+    assert_eq!(clause, "(l.is_private = 0)");
+    assert_eq!(params.len(), 0);
+
+    // 3. exclude_library_ids
+    let f2 = WidgetFilterConfig {
+        exclude_library_ids: vec!["libA".to_string(), "libB".to_string()],
+        ..Default::default()
+    };
+    let (clause, params) = build_filter_clauses(Some(&f2), &[], 1_000_000);
+    assert!(clause.contains("m.library_id NOT IN (?, ?)"));
+    assert_eq!(params.len(), 2);
+
+    // 4. exclude_genres lowercase
+    let f3 = WidgetFilterConfig {
+        exclude_genres: vec!["Action".to_string(), "Horror".to_string()],
+        ..Default::default()
+    };
+    let (clause, params) = build_filter_clauses(Some(&f3), &[], 1_000_000);
+    assert!(clause.contains("NOT EXISTS"));
+    assert!(clause.contains("json_each(json_extract(m.metadata, '$.genres'))"));
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[0], rusqlite::types::Value::Text("action".to_string()));
+    assert_eq!(params[1], rusqlite::types::Value::Text("horror".to_string()));
+
+    // 5. max_age_days
+    let f4 = WidgetFilterConfig {
+        max_age_days: Some(7),
+        ..Default::default()
+    };
+    let (clause, params) = build_filter_clauses(Some(&f4), &[], 1_000_000);
+    assert!(clause.contains("m.added_at >= ?"));
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0], rusqlite::types::Value::Integer(1_000_000 - 7 * 86_400));
+}
+
+

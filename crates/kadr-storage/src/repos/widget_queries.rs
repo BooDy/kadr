@@ -1,5 +1,6 @@
 use crate::error::Result;
 use deadpool_sqlite::Pool;
+use kadr_core::ast::WidgetFilterConfig;
 use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use std::path::PathBuf;
 
@@ -7,6 +8,13 @@ pub const SELECT_JOINED_COLUMNS: &str =
     "m.id, m.library_id, m.item_type, m.title, m.original_title, m.release_year, \
  m.duration_seconds, m.added_at, m.file_path, m.file_name, m.file_size, \
  m.resolution, m.video_codec, m.audio_codec, m.audio_channels, m.container, m.metadata";
+
+fn current_epoch_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
 
 pub fn privacy_clause(unlocked_ids: &[String]) -> (String, Vec<rusqlite::types::Value>) {
     if unlocked_ids.is_empty() {
@@ -24,6 +32,70 @@ pub fn privacy_clause(unlocked_ids: &[String]) -> (String, Vec<rusqlite::types::
             .collect();
         (clause, params)
     }
+}
+
+pub fn build_filter_clauses(
+    filters: Option<&WidgetFilterConfig>,
+    unlocked_ids: &[String],
+    current_time_epoch_secs: i64,
+) -> (String, Vec<rusqlite::types::Value>) {
+    let mut clauses = Vec::new();
+    let mut params = Vec::new();
+
+    // 1. Privacy filter
+    if filters.map(|f| f.exclude_private).unwrap_or(false) {
+        clauses.push("(l.is_private = 0)".to_string());
+    } else {
+        let (priv_clause, priv_params) = privacy_clause(unlocked_ids);
+        clauses.push(priv_clause);
+        params.extend(priv_params);
+    }
+
+    if let Some(f) = filters {
+        // 2. Exclude specific library IDs
+        if !f.exclude_library_ids.is_empty() {
+            let placeholders = f
+                .exclude_library_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("m.library_id NOT IN ({placeholders})"));
+            for lib_id in &f.exclude_library_ids {
+                params.push(rusqlite::types::Value::Text(lib_id.clone()));
+            }
+        }
+
+        // 3. Exclude specific genres
+        if !f.exclude_genres.is_empty() {
+            let placeholders = f
+                .exclude_genres
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!(
+                "NOT EXISTS (
+                    SELECT 1 FROM json_each(json_extract(m.metadata, '$.genres'))
+                    WHERE LOWER(value) IN ({placeholders})
+                )"
+            ));
+            for genre in &f.exclude_genres {
+                params.push(rusqlite::types::Value::Text(genre.trim().to_lowercase()));
+            }
+        }
+
+        // 4. Exclude by date added (max age cutoff)
+        if let Some(days) = f.max_age_days {
+            if days > 0 {
+                let cutoff = current_time_epoch_secs - (days as i64 * 86_400);
+                clauses.push("m.added_at >= ?".to_string());
+                params.push(rusqlite::types::Value::Integer(cutoff));
+            }
+        }
+    }
+
+    (clauses.join(" AND "), params)
 }
 
 pub fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
@@ -91,7 +163,7 @@ impl WidgetQueries {
         limit: u32,
         unlocked_ids: &[String],
     ) -> Result<Vec<MediaItem>> {
-        self.find_recently_added_paginated(None, limit, 0, unlocked_ids)
+        self.find_recently_added_paginated(None, limit, 0, unlocked_ids, None)
             .await
     }
 
@@ -101,20 +173,24 @@ impl WidgetQueries {
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         let lib_id = library_id.map(|s| s.to_string());
         let unlocked = unlocked_ids.to_vec();
+        let filters_owned = filters.cloned();
+        let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let (priv_clause, priv_params) = privacy_clause(&unlocked);
+            let (filter_clause, filter_params) =
+                build_filter_clauses(filters_owned.as_ref(), &unlocked, now);
             let mut sql_params = Vec::new();
             let where_clause = if let Some(lid) = lib_id {
                 sql_params.push(rusqlite::types::Value::Text(lid));
-                format!("WHERE m.library_id = ? AND {priv_clause}")
+                format!("WHERE m.library_id = ? AND {filter_clause}")
             } else {
-                format!("WHERE {priv_clause}")
+                format!("WHERE {filter_clause}")
             };
-            sql_params.extend(priv_params);
+            sql_params.extend(filter_params);
             sql_params.push(rusqlite::types::Value::Integer(limit as i64));
             sql_params.push(rusqlite::types::Value::Integer(offset as i64));
 
@@ -142,7 +218,7 @@ impl WidgetQueries {
         limit: u32,
         unlocked_ids: &[String],
     ) -> Result<Vec<MediaItem>> {
-        self.find_top_rated_paginated(limit, 0, unlocked_ids).await
+        self.find_top_rated_paginated(limit, 0, unlocked_ids, None).await
     }
 
     pub async fn find_top_rated_paginated(
@@ -150,11 +226,15 @@ impl WidgetQueries {
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         let unlocked = unlocked_ids.to_vec();
+        let filters_owned = filters.cloned();
+        let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let (priv_clause, mut sql_params) = privacy_clause(&unlocked);
+            let (filter_clause, mut sql_params) =
+                build_filter_clauses(filters_owned.as_ref(), &unlocked, now);
             sql_params.push(rusqlite::types::Value::Integer(limit as i64));
             sql_params.push(rusqlite::types::Value::Integer(offset as i64));
 
@@ -162,7 +242,7 @@ impl WidgetQueries {
                 "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
                  JOIN libraries l ON m.library_id = l.id \
                  WHERE json_extract(m.metadata, '$.rating') IS NOT NULL \
-                   AND {priv_clause} \
+                   AND {filter_clause} \
                  ORDER BY CAST(json_extract(m.metadata, '$.rating') AS REAL) DESC, m.id DESC \
                  LIMIT ? OFFSET ?"
             );
@@ -184,7 +264,7 @@ impl WidgetQueries {
         limit: u32,
         unlocked_ids: &[String],
     ) -> Result<Vec<MediaItem>> {
-        self.find_by_genre_paginated(genre, limit, 0, unlocked_ids)
+        self.find_by_genre_paginated(genre, limit, 0, unlocked_ids, None)
             .await
     }
 
@@ -194,17 +274,21 @@ impl WidgetQueries {
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         let genre_str = genre.to_string();
         let unlocked = unlocked_ids.to_vec();
+        let filters_owned = filters.cloned();
+        let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let (priv_clause, priv_params) = privacy_clause(&unlocked);
+            let (filter_clause, filter_params) =
+                build_filter_clauses(filters_owned.as_ref(), &unlocked, now);
             let mut sql_params = vec![
                 rusqlite::types::Value::Text(genre_str.clone()),
                 rusqlite::types::Value::Text(genre_str),
             ];
-            sql_params.extend(priv_params);
+            sql_params.extend(filter_params);
             sql_params.push(rusqlite::types::Value::Integer(limit as i64));
             sql_params.push(rusqlite::types::Value::Integer(offset as i64));
 
@@ -218,7 +302,7 @@ impl WidgetQueries {
                     OR (json_extract(m.metadata, '$.tags') IS NOT NULL AND EXISTS ( \
                         SELECT 1 FROM json_each(json_extract(m.metadata, '$.tags')) WHERE LOWER(value) = LOWER(?) \
                     )) \
-                 ) AND {priv_clause} \
+                 ) AND {filter_clause} \
                  ORDER BY m.title ASC, m.id ASC \
                  LIMIT ? OFFSET ?"
             );
@@ -233,18 +317,99 @@ impl WidgetQueries {
         .await?
     }
 
-    pub async fn find_spotlight_candidate(
+    pub async fn find_by_library_paginated(
         &self,
+        library_id: &str,
+        limit: u32,
+        offset: u32,
+        sort: Option<&str>,
         unlocked_ids: &[String],
-    ) -> Result<Option<MediaItem>> {
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<(Vec<MediaItem>, u64)> {
+        let lib_id = library_id.to_string();
+        let order_clause = match sort.map(|s| s.trim().to_lowercase()).as_deref() {
+            Some("title:desc") | Some("title_desc") => "m.title DESC, m.id DESC",
+            Some("release_year:asc")
+            | Some("release_year_asc")
+            | Some("year:asc")
+            | Some("year_asc") => "m.release_year ASC NULLS LAST, m.id ASC",
+            Some("release_year:desc")
+            | Some("release_year_desc")
+            | Some("year:desc")
+            | Some("year_desc") => "m.release_year DESC NULLS LAST, m.id DESC",
+            Some("added_at:asc") | Some("added_at_asc") => "m.added_at ASC, m.id ASC",
+            Some("added_at:desc") | Some("added_at_desc") => "m.added_at DESC, m.id DESC",
+            Some("rating:desc") | Some("rating_desc") => {
+                "CAST(json_extract(m.metadata, '$.rating') AS REAL) DESC NULLS LAST, m.id DESC"
+            }
+            Some("rating:asc") | Some("rating_asc") => {
+                "CAST(json_extract(m.metadata, '$.rating') AS REAL) ASC NULLS LAST, m.id ASC"
+            }
+            _ => "m.title ASC, m.id ASC",
+        };
+
         let unlocked = unlocked_ids.to_vec();
+        let filters_owned = filters.cloned();
+        let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let (priv_clause, sql_params) = privacy_clause(&unlocked);
+            let (filter_clause, filter_params) =
+                build_filter_clauses(filters_owned.as_ref(), &unlocked, now);
+
+            let mut count_params = vec![rusqlite::types::Value::Text(lib_id.clone())];
+            count_params.extend(filter_params.clone());
+
+            let count_sql = format!(
+                "SELECT COUNT(*) FROM media_items m \
+                 JOIN libraries l ON m.library_id = l.id \
+                 WHERE m.library_id = ? AND {filter_clause}"
+            );
+            let mut count_stmt = c.prepare(&count_sql)?;
+            let count: i64 =
+                count_stmt.query_row(rusqlite::params_from_iter(count_params), |row| row.get(0))?;
+
+            let mut select_params = vec![rusqlite::types::Value::Text(lib_id)];
+            select_params.extend(filter_params);
+            select_params.push(rusqlite::types::Value::Integer(limit as i64));
+            select_params.push(rusqlite::types::Value::Integer(offset as i64));
+
             let sql = format!(
                 "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
                  JOIN libraries l ON m.library_id = l.id \
-                 WHERE {priv_clause} \
+                 WHERE m.library_id = ? AND {filter_clause} \
+                 ORDER BY {order_clause} \
+                 LIMIT ? OFFSET ?"
+            );
+            let mut stmt = c.prepare(&sql)?;
+            let rows = stmt.query_map(
+                rusqlite::params_from_iter(select_params),
+                map_media_item_row,
+            )?;
+            let mut result = Vec::new();
+            for row in rows {
+                result.push(row?);
+            }
+            Ok((result, count as u64))
+        })
+        .await?
+    }
+
+    pub async fn find_spotlight_candidate(
+        &self,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<Option<MediaItem>> {
+        let unlocked = unlocked_ids.to_vec();
+        let filters_owned = filters.cloned();
+        let now = current_epoch_secs();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let (filter_clause, sql_params) =
+                build_filter_clauses(filters_owned.as_ref(), &unlocked, now);
+            let sql = format!(
+                "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
+                 JOIN libraries l ON m.library_id = l.id \
+                 WHERE {filter_clause} \
                  ORDER BY \
                     CASE \
                         WHEN json_extract(m.metadata, '$.backdrop_path') IS NOT NULL \

@@ -10,4 +10,4 @@ pub use media_item_repo::{MediaItemRepo, MediaItemRepository};
 pub use playback_repo::PlaybackRepository;
 pub use subtitle_repo::SubtitleRepository;
 pub use user_repo::UserRepository;
-pub use widget_queries::WidgetQueries;
+pub use widget_queries::{build_filter_clauses, WidgetQueries};

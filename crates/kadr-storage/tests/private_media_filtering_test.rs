@@ -140,11 +140,11 @@ async fn test_widget_queries_and_media_isolation() {
     assert_eq!(top_unlocked[0].title, "Private Action");
 
     // 2. Spotlight candidate query
-    let spot_locked = widget_queries.find_spotlight_candidate(&[]).await.unwrap();
+    let spot_locked = widget_queries.find_spotlight_candidate(&[], None).await.unwrap();
     assert_eq!(spot_locked.unwrap().title, "Public Action");
 
     let spot_unlocked = widget_queries
-        .find_spotlight_candidate(&["priv".to_string()])
+        .find_spotlight_candidate(&["priv".to_string()], None)
         .await
         .unwrap();
     assert_eq!(spot_unlocked.unwrap().title, "Private Action");
@@ -165,14 +165,14 @@ async fn test_widget_queries_and_media_isolation() {
 
     // 4. Library paginated query
     let (priv_lib_locked, total_locked) = item_repo
-        .find_by_library_paginated("priv", 10, 0, None, &[])
+        .find_by_library_paginated("priv", 10, 0, None, &[], None)
         .await
         .unwrap();
     assert_eq!(total_locked, 0);
     assert!(priv_lib_locked.is_empty());
 
     let (priv_lib_unlocked, total_unlocked) = item_repo
-        .find_by_library_paginated("priv", 10, 0, None, &["priv".to_string()])
+        .find_by_library_paginated("priv", 10, 0, None, &["priv".to_string()], None)
         .await
         .unwrap();
     assert_eq!(total_unlocked, 1);

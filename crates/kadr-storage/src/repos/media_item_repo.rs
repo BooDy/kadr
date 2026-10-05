@@ -1,6 +1,7 @@
 use crate::error::Result;
-use crate::repos::widget_queries::{privacy_clause, WidgetQueries, SELECT_JOINED_COLUMNS};
+use crate::repos::widget_queries::WidgetQueries;
 use deadpool_sqlite::Pool;
+use kadr_core::ast::WidgetFilterConfig;
 use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use rusqlite::params;
 use std::collections::HashMap;
@@ -274,9 +275,10 @@ impl MediaItemRepository {
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         self.widget_queries()
-            .find_recently_added_paginated(library_id, limit, offset, unlocked_ids)
+            .find_recently_added_paginated(library_id, limit, offset, unlocked_ids, filters)
             .await
     }
 
@@ -295,9 +297,10 @@ impl MediaItemRepository {
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         self.widget_queries()
-            .find_top_rated_paginated(limit, offset, unlocked_ids)
+            .find_top_rated_paginated(limit, offset, unlocked_ids, filters)
             .await
     }
 
@@ -318,9 +321,10 @@ impl MediaItemRepository {
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         self.widget_queries()
-            .find_by_genre_paginated(genre, limit, offset, unlocked_ids)
+            .find_by_genre_paginated(genre, limit, offset, unlocked_ids, filters)
             .await
     }
 
@@ -331,70 +335,11 @@ impl MediaItemRepository {
         offset: u32,
         sort_by: Option<&str>,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<(Vec<MediaItem>, u64)> {
-        let lib_id = library_id.to_string();
-        let order_clause = match sort_by.map(|s| s.trim().to_lowercase()).as_deref() {
-            Some("title:desc") | Some("title_desc") => "m.title DESC, m.id DESC",
-            Some("release_year:asc")
-            | Some("release_year_asc")
-            | Some("year:asc")
-            | Some("year_asc") => "m.release_year ASC NULLS LAST, m.id ASC",
-            Some("release_year:desc")
-            | Some("release_year_desc")
-            | Some("year:desc")
-            | Some("year_desc") => "m.release_year DESC NULLS LAST, m.id DESC",
-            Some("added_at:asc") | Some("added_at_asc") => "m.added_at ASC, m.id ASC",
-            Some("added_at:desc") | Some("added_at_desc") => "m.added_at DESC, m.id DESC",
-            Some("rating:desc") | Some("rating_desc") => {
-                "CAST(json_extract(m.metadata, '$.rating') AS REAL) DESC NULLS LAST, m.id DESC"
-            }
-            Some("rating:asc") | Some("rating_asc") => {
-                "CAST(json_extract(m.metadata, '$.rating') AS REAL) ASC NULLS LAST, m.id ASC"
-            }
-            _ => "m.title ASC, m.id ASC",
-        };
-
-        let unlocked = unlocked_ids.to_vec();
-        let conn = self.pool.get().await?;
-        conn.interact(move |c| {
-            let (priv_clause, priv_params) = privacy_clause(&unlocked);
-
-            let mut count_params = vec![rusqlite::types::Value::Text(lib_id.clone())];
-            count_params.extend(priv_params.clone());
-
-            let count_sql = format!(
-                "SELECT COUNT(*) FROM media_items m \
-                 JOIN libraries l ON m.library_id = l.id \
-                 WHERE m.library_id = ? AND {priv_clause}"
-            );
-            let mut count_stmt = c.prepare(&count_sql)?;
-            let count: i64 =
-                count_stmt.query_row(rusqlite::params_from_iter(count_params), |row| row.get(0))?;
-
-            let mut select_params = vec![rusqlite::types::Value::Text(lib_id)];
-            select_params.extend(priv_params);
-            select_params.push(rusqlite::types::Value::Integer(limit as i64));
-            select_params.push(rusqlite::types::Value::Integer(offset as i64));
-
-            let sql = format!(
-                "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
-                 JOIN libraries l ON m.library_id = l.id \
-                 WHERE m.library_id = ? AND {priv_clause} \
-                 ORDER BY {order_clause} \
-                 LIMIT ? OFFSET ?"
-            );
-            let mut stmt = c.prepare(&sql)?;
-            let rows = stmt.query_map(
-                rusqlite::params_from_iter(select_params),
-                map_media_item_row,
-            )?;
-            let mut result = Vec::new();
-            for row in rows {
-                result.push(row?);
-            }
-            Ok((result, count as u64))
-        })
-        .await?
+        self.widget_queries()
+            .find_by_library_paginated(library_id, limit, offset, sort_by, unlocked_ids, filters)
+            .await
     }
 
     pub async fn find_by_library(
@@ -405,21 +350,22 @@ impl MediaItemRepository {
         unlocked_ids: &[String],
     ) -> Result<(Vec<MediaItem>, u64)> {
         let offset = page.saturating_sub(1) * page_size;
-        self.find_by_library_paginated(library_id, page_size, offset, None, unlocked_ids)
+        self.find_by_library_paginated(library_id, page_size, offset, None, unlocked_ids, None)
             .await
     }
 
     pub async fn find_spotlight_candidate(
         &self,
         unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
     ) -> Result<Option<MediaItem>> {
         self.widget_queries()
-            .find_spotlight_candidate(unlocked_ids)
+            .find_spotlight_candidate(unlocked_ids, filters)
             .await
     }
 
     pub async fn find_spotlight_candidate_default(&self) -> Result<Option<MediaItem>> {
-        self.find_spotlight_candidate(&[]).await
+        self.find_spotlight_candidate(&[], None).await
     }
 
     pub async fn find_episodes_by_series(&self, series_title: &str) -> Result<Vec<MediaItem>> {
