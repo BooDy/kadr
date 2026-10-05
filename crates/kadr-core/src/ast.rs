@@ -141,6 +141,26 @@ pub enum QueryMacro {
     ItemDetails { item_id: i64 },
 }
 
+/// Configuration for filtering items returned by a widget query.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WidgetFilterConfig {
+    /// When true, always excludes items from private libraries, even if unlocked.
+    #[serde(default)]
+    pub exclude_private: bool,
+
+    /// Library IDs to exclude from results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_library_ids: Vec<String>,
+
+    /// Genres to exclude from results (case-insensitive matching).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_genres: Vec<String>,
+
+    /// Maximum age in days from current time; excludes items added before (now - max_age_days).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age_days: Option<u32>,
+}
+
 /// Query binding configuration linking a widget to a data source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WidgetQueryBinding {
@@ -149,6 +169,8 @@ pub struct WidgetQueryBinding {
     pub limit: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filters: Option<WidgetFilterConfig>,
 }
 
 pub fn default_widget_limit() -> u32 {
@@ -161,6 +183,7 @@ impl WidgetQueryBinding {
             macro_type,
             limit: default_widget_limit(),
             sort: None,
+            filters: None,
         }
     }
 
@@ -171,6 +194,11 @@ impl WidgetQueryBinding {
 
     pub fn with_sort(mut self, sort: impl Into<String>) -> Self {
         self.sort = Some(sort.into());
+        self
+    }
+
+    pub fn with_filters(mut self, filters: WidgetFilterConfig) -> Self {
+        self.filters = Some(filters);
         self
     }
 }

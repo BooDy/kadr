@@ -1,7 +1,7 @@
 // crates/kadr-core/tests/ast_test.rs
 use kadr_core::ast::{
     default_widget_limit, CardViewModel, ItemDetailsPayload, QueryMacro, ScreenId, ScreenLayout,
-    WidgetNode, WidgetQueryBinding,
+    WidgetFilterConfig, WidgetNode, WidgetQueryBinding,
 };
 use kadr_core::models::TechnicalInfo;
 
@@ -140,6 +140,7 @@ fn test_widget_query_binding_defaults() {
         macro_type: QueryMacro::TopRated,
         limit: 50,
         sort: Some("rating_desc".to_string()),
+        filters: None,
     };
     let serialized = serde_json::to_string(&custom_binding).unwrap();
     let deserialized: WidgetQueryBinding = serde_json::from_str(&serialized).unwrap();
@@ -152,6 +153,7 @@ fn test_widget_node_hero_banner() {
         macro_type: QueryMacro::SpotlightItem { item_id: None },
         limit: 1,
         sort: None,
+        filters: None,
     };
 
     // Unhydrated HeroBanner
@@ -201,6 +203,7 @@ fn test_widget_node_carousel() {
         macro_type: QueryMacro::ContinueWatching,
         limit: 10,
         sort: None,
+        filters: None,
     };
 
     // Unhydrated Carousel
@@ -253,6 +256,7 @@ fn test_widget_node_grid() {
         },
         limit: 24,
         sort: Some("title_asc".to_string()),
+        filters: None,
     };
 
     let grid = WidgetNode::Grid {
@@ -328,6 +332,7 @@ fn test_screen_layout_serialization_roundtrip() {
             macro_type: QueryMacro::SpotlightItem { item_id: None },
             limit: 1,
             sort: None,
+            filters: None,
         },
         data: None,
     };
@@ -339,6 +344,7 @@ fn test_screen_layout_serialization_roundtrip() {
             macro_type: QueryMacro::ContinueWatching,
             limit: 10,
             sort: None,
+            filters: None,
         },
         items: None,
         next_cursor: None,
@@ -351,6 +357,7 @@ fn test_screen_layout_serialization_roundtrip() {
             macro_type: QueryMacro::RecentlyAdded,
             limit: 20,
             sort: None,
+            filters: None,
         },
         items: None,
         next_cursor: None,
@@ -371,3 +378,146 @@ fn test_screen_layout_serialization_roundtrip() {
         serde_json::from_str(&serialized).expect("deserialization failed");
     assert_eq!(layout, deserialized);
 }
+
+#[test]
+fn test_widget_filter_config_defaults() {
+    let config = WidgetFilterConfig::default();
+    assert!(!config.exclude_private);
+    assert!(config.exclude_library_ids.is_empty());
+    assert!(config.exclude_genres.is_empty());
+    assert_eq!(config.max_age_days, None);
+
+    let serialized = serde_json::to_string(&config).expect("serialization failed");
+    // exclude_library_ids and exclude_genres are skipped if empty, max_age_days is skipped if None.
+    // exclude_private defaults to false.
+    assert_eq!(serialized, "{\"exclude_private\":false}");
+
+    let deserialized: WidgetFilterConfig =
+        serde_json::from_str(&serialized).expect("deserialization failed");
+    assert_eq!(config, deserialized);
+
+    // Deserialization from empty JSON object "{}" produces default values
+    let from_empty: WidgetFilterConfig =
+        serde_json::from_str("{}").expect("deserialization from empty object failed");
+    assert_eq!(config, from_empty);
+}
+
+#[test]
+fn test_widget_filter_config_full() {
+    let config = WidgetFilterConfig {
+        exclude_private: true,
+        exclude_library_ids: vec!["lib-1".to_string(), "lib-2".to_string()],
+        exclude_genres: vec!["Horror".to_string(), "Action".to_string()],
+        max_age_days: Some(30),
+    };
+
+    let serialized = serde_json::to_string(&config).expect("serialization failed");
+    let deserialized: WidgetFilterConfig =
+        serde_json::from_str(&serialized).expect("deserialization failed");
+    assert_eq!(config, deserialized);
+
+    let json_val: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(json_val["exclude_private"], true);
+    assert_eq!(json_val["exclude_library_ids"], serde_json::json!(["lib-1", "lib-2"]));
+    assert_eq!(json_val["exclude_genres"], serde_json::json!(["Horror", "Action"]));
+    assert_eq!(json_val["max_age_days"], 30);
+}
+
+#[test]
+fn test_widget_query_binding_backward_compatibility() {
+    let legacy_json = r#"{"macro_type":"recently_added","limit":15,"sort":"date_desc"}"#;
+    let binding: WidgetQueryBinding =
+        serde_json::from_str(legacy_json).expect("deserialization failed");
+    assert_eq!(binding.macro_type, QueryMacro::RecentlyAdded);
+    assert_eq!(binding.limit, 15);
+    assert_eq!(binding.sort, Some("date_desc".to_string()));
+    assert_eq!(binding.filters, None);
+
+    // Legacy JSON without optional limit/sort
+    let minimal_legacy_json = r#"{"macro_type":"top_rated"}"#;
+    let binding_min: WidgetQueryBinding =
+        serde_json::from_str(minimal_legacy_json).expect("deserialization failed");
+    assert_eq!(binding_min.macro_type, QueryMacro::TopRated);
+    assert_eq!(binding_min.limit, default_widget_limit());
+    assert_eq!(binding_min.sort, None);
+    assert_eq!(binding_min.filters, None);
+
+    // Serializing a binding with filters = None should omit the "filters" field
+    let serialized = serde_json::to_string(&binding).unwrap();
+    assert!(!serialized.contains("\"filters\""));
+}
+
+#[test]
+fn test_widget_query_binding_with_filters() {
+    let filters = WidgetFilterConfig {
+        exclude_private: true,
+        exclude_library_ids: vec!["hidden-lib".to_string()],
+        exclude_genres: vec!["Talk-Show".to_string()],
+        max_age_days: Some(7),
+    };
+
+    let binding = WidgetQueryBinding::new(QueryMacro::RecentlyAdded)
+        .with_limit(10)
+        .with_sort("recent")
+        .with_filters(filters.clone());
+
+    assert_eq!(binding.macro_type, QueryMacro::RecentlyAdded);
+    assert_eq!(binding.limit, 10);
+    assert_eq!(binding.sort, Some("recent".to_string()));
+    assert_eq!(binding.filters, Some(filters.clone()));
+
+    let serialized = serde_json::to_string(&binding).expect("serialization failed");
+    assert!(serialized.contains("\"filters\":"));
+    let deserialized: WidgetQueryBinding =
+        serde_json::from_str(&serialized).expect("deserialization failed");
+    assert_eq!(binding, deserialized);
+}
+
+#[test]
+fn test_widget_nodes_roundtrip_with_filters() {
+    let filters = WidgetFilterConfig {
+        exclude_private: true,
+        exclude_library_ids: vec!["private-lib".to_string()],
+        exclude_genres: vec!["Reality".to_string()],
+        max_age_days: Some(14),
+    };
+
+    let carousel_binding = WidgetQueryBinding::new(QueryMacro::ContinueWatching)
+        .with_filters(filters.clone());
+
+    let carousel = WidgetNode::Carousel {
+        id: "continue_watching".to_string(),
+        title: "Continue Watching".to_string(),
+        binding: carousel_binding,
+        items: None,
+        next_cursor: None,
+    };
+
+    let carousel_json = serde_json::to_string(&carousel).expect("serialization failed");
+    assert!(carousel_json.contains("\"filters\":"));
+    let carousel_deserialized: WidgetNode =
+        serde_json::from_str(&carousel_json).expect("deserialization failed");
+    assert_eq!(carousel, carousel_deserialized);
+
+    let grid_binding = WidgetQueryBinding::new(QueryMacro::LibraryItems {
+        library_id: "lib-movies".to_string(),
+    })
+    .with_filters(filters);
+
+    let grid = WidgetNode::Grid {
+        id: "movies_grid".to_string(),
+        title: "Movies".to_string(),
+        binding: grid_binding,
+        columns: 4,
+        items: None,
+        next_cursor: None,
+        total_count: None,
+    };
+
+    let grid_json = serde_json::to_string(&grid).expect("serialization failed");
+    assert!(grid_json.contains("\"filters\":"));
+    let grid_deserialized: WidgetNode =
+        serde_json::from_str(&grid_json).expect("deserialization failed");
+    assert_eq!(grid, grid_deserialized);
+}
+
