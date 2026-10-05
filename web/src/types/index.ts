@@ -263,6 +263,27 @@ export interface FsBrowseResponse {
 }
 
 // Library Management Types
+export interface FolderEntry {
+  name: string;
+  path: string;
+  item_count: number;
+}
+
+export interface BreadcrumbItem {
+  name: string;
+  path: string;
+}
+
+export interface LibraryFolderResponse {
+  library_id: string;
+  library_name: string;
+  current_path: string;
+  parent_path: string | null;
+  breadcrumbs: BreadcrumbItem[];
+  directories: FolderEntry[];
+  items: CardViewModel[];
+}
+
 export interface Library {
   id: string;
   name: string;

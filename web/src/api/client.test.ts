@@ -446,6 +446,47 @@ describe('ApiClient', () => {
       expect(options.headers['X-Kadr-Unlocked']).toContain('token-def');
     });
 
+    it('getLibraryFolders requests folders with or without path parameter', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          library_id: 'lib-1',
+          library_name: 'Movies',
+          current_path: '',
+          parent_path: null,
+          breadcrumbs: [],
+          directories: [],
+          items: [],
+        }),
+      });
+
+      await client.getLibraryFolders('lib-1');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/libraries/lib-1/folders', expect.anything());
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          library_id: 'lib-1',
+          library_name: 'Movies',
+          current_path: 'Sci-Fi/Cyberpunk',
+          parent_path: 'Sci-Fi',
+          breadcrumbs: [],
+          directories: [],
+          items: [],
+        }),
+      });
+
+      await client.getLibraryFolders('lib-1', 'Sci-Fi/Cyberpunk');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/libraries/lib-1/folders?path=Sci-Fi%2FCyberpunk',
+        expect.anything()
+      );
+    });
+
     it('appends unlocked query param to getStreamUrl when tokens exist', () => {
       client.storeUnlockToken('lib-1', 'token-stream-123');
       const url = client.getStreamUrl(42);

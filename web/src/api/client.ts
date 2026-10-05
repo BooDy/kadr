@@ -7,6 +7,7 @@ import type {
   FsBrowseResponse,
   ItemDetailsPayload,
   Library,
+  LibraryFolderResponse,
   OnlineSubtitleSearchResponse,
   PlaybackSessionResponse,
   PlaybackState,
@@ -442,6 +443,16 @@ export class ApiClient {
   // Libraries Management
   public async getLibraries(): Promise<Library[]> {
     return this.request<Library[]>('/api/v1/libraries');
+  }
+
+  public async getLibraryFolders(
+    libraryId: string,
+    path?: string
+  ): Promise<LibraryFolderResponse> {
+    const query = path ? `?path=${encodeURIComponent(path)}` : '';
+    return this.request<LibraryFolderResponse>(
+      `/api/v1/libraries/${encodeURIComponent(libraryId)}/folders${query}`
+    );
   }
 
   public async unlockLibrary(
