@@ -2,7 +2,7 @@ use crate::sidecars::{DiscoveredSubtitle, SidecarScanner};
 use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_core::subtitles::SubtitleTrack;
 use kadr_storage::repos::{MediaItemRepository, SubtitleRepository};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -101,23 +101,29 @@ impl IngestWorker {
         }
 
         // Collect distinct series from episodes in this batch
-        let mut distinct_series: HashMap<(String, String), MediaItem> = HashMap::new();
+        // Key by (library_id, lowercase series_title) to normalize case differences
+        let mut distinct_series: HashMap<(String, String), (String, MediaItem)> = HashMap::new();
         for (item, _) in batch.iter() {
             if item.item_type == MediaType::Episode || item.metadata.series_title.is_some() {
                 if let Some(ref series_title) = item.metadata.series_title {
                     let trimmed = series_title.trim();
                     if !trimmed.is_empty() {
                         distinct_series
-                            .entry((item.library_id.clone(), trimmed.to_string()))
-                            .or_insert_with(|| item.clone());
+                            .entry((item.library_id.clone(), trimmed.to_lowercase()))
+                            .or_insert_with(|| (trimmed.to_string(), item.clone()));
                     }
                 }
             }
         }
 
         // For each series_title, ensure a MediaType::Show record exists in that library
+        let mut queued_series_titles: HashSet<(String, String)> = HashSet::new();
         let mut parent_shows_to_create = Vec::new();
-        for ((lib_id, series_title), ep) in distinct_series {
+        for ((lib_id, lower_series), (series_title, ep)) in distinct_series {
+            if !queued_series_titles.insert((lib_id.clone(), lower_series)) {
+                continue;
+            }
+
             match self.repo.find_show_by_title(&lib_id, &series_title).await {
                 Ok(Some(_)) => {
                     // Show record already exists
@@ -289,11 +295,7 @@ fn determine_series_folder(episode_path: &std::path::Path, series_title: &str) -
         return candidate;
     }
 
-    if !is_season_folder(parent_name) && parent.is_dir() {
-        return parent.to_path_buf();
-    }
-
-    candidate
+    parent.join(series_title)
 }
 
 fn is_season_folder(name: &str) -> bool {

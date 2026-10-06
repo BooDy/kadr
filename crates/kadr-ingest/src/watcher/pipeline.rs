@@ -95,10 +95,13 @@ impl IngestPipeline {
             meta.series_title = parsed.series_title.clone();
             meta.season = parsed.season;
             meta.episode = parsed.episode;
-            final_title = parsed
-                .episode_title
-                .clone()
-                .unwrap_or_else(|| format!("Episode {}", parsed.episode.unwrap_or(1)));
+            if let Some(ep_title) = parsed.episode_title.clone() {
+                final_title = ep_title;
+            } else if let Some(ep_num) = parsed.episode {
+                final_title = format!("Episode {}", ep_num);
+            } else if parsed.is_episode {
+                final_title = "Episode 1".to_string();
+            }
 
             if meta.series_title.is_none() && library.media_type == MediaType::Show {
                 if let Some(parent) = path.parent() {

@@ -254,3 +254,196 @@ async fn test_worker_preserves_existing_parent_show() {
         Some("Pre-existing show overview")
     );
 }
+
+#[tokio::test]
+async fn test_pipeline_show_library_non_episode_preserves_title() {
+    let pipeline = IngestPipeline::new(false, None);
+    let temp_dir = tempfile::tempdir().unwrap();
+    let lib = Library {
+        id: "shows".to_string(),
+        name: "TV Shows".to_string(),
+        path: temp_dir.path().to_path_buf(),
+        media_type: MediaType::Show,
+        ..Default::default()
+    };
+
+    let temp_file = temp_dir.path().join("Special.Feature.2023.1080p.mkv");
+    std::fs::write(&temp_file, b"dummy").unwrap();
+
+    let res = pipeline.process_file(&lib, &temp_file).await.unwrap();
+    assert!(res.is_some());
+    let (item, _) = res.unwrap();
+    assert_eq!(item.item_type, MediaType::Episode);
+    assert_eq!(item.title, "Special Feature");
+}
+
+#[tokio::test]
+async fn test_worker_handles_multiple_flat_shows_in_shared_dir_without_collision() {
+    let pool = kadr_storage::create_in_memory_pool().unwrap();
+    kadr_storage::initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let temp_dir = tempfile::tempdir().unwrap();
+    let library = Library {
+        id: "shows".to_string(),
+        name: "TV Shows".to_string(),
+        path: temp_dir.path().to_path_buf(),
+        media_type: MediaType::Show,
+        created_at: 1700000000,
+        ..Default::default()
+    };
+    lib_repo.insert(&library).await.unwrap();
+
+    let repo = MediaItemRepository::new(pool.clone());
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
+    let worker = IngestWorker::new(rx, repo.clone());
+    tokio::spawn(worker.run());
+
+    let ep1_file = temp_dir.path().join("Show One - S01E01 - Pilot.mkv");
+    let ep2_file = temp_dir.path().join("Show Two - S01E01 - Premiere.mkv");
+    std::fs::write(&ep1_file, b"ep1").unwrap();
+    std::fs::write(&ep2_file, b"ep2").unwrap();
+
+    let ep1 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Pilot".to_string(),
+        original_title: None,
+        release_year: Some(2021),
+        added_at: 1700000010,
+        file_path: ep1_file,
+        file_name: "Show One - S01E01 - Pilot.mkv".to_string(),
+        file_size: 1024,
+        technical: Default::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Show One".to_string()),
+            season: Some(1),
+            episode: Some(1),
+            ..Default::default()
+        },
+    };
+
+    let ep2 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Premiere".to_string(),
+        original_title: None,
+        release_year: Some(2022),
+        added_at: 1700000020,
+        file_path: ep2_file,
+        file_name: "Show Two - S01E01 - Premiere.mkv".to_string(),
+        file_size: 1024,
+        technical: Default::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Show Two".to_string()),
+            season: Some(1),
+            episode: Some(1),
+            ..Default::default()
+        },
+    };
+
+    tx.send(IngestMessage::Upsert(ep1, vec![])).await.unwrap();
+    tx.send(IngestMessage::Upsert(ep2, vec![])).await.unwrap();
+    sleep(Duration::from_millis(150)).await;
+
+    let show1 = repo
+        .find_show_by_title("shows", "Show One")
+        .await
+        .unwrap()
+        .expect("show1 should exist");
+    let show2 = repo
+        .find_show_by_title("shows", "Show Two")
+        .await
+        .unwrap()
+        .expect("show2 should exist");
+
+    assert_ne!(show1.file_path, show2.file_path);
+    assert_eq!(show1.file_path, temp_dir.path().join("Show One"));
+    assert_eq!(show2.file_path, temp_dir.path().join("Show Two"));
+}
+
+#[tokio::test]
+async fn test_worker_deduplicates_case_variation_series_titles_in_same_batch() {
+    let pool = kadr_storage::create_in_memory_pool().unwrap();
+    kadr_storage::initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let temp_dir = tempfile::tempdir().unwrap();
+    let library = Library {
+        id: "shows".to_string(),
+        name: "TV Shows".to_string(),
+        path: temp_dir.path().to_path_buf(),
+        media_type: MediaType::Show,
+        created_at: 1700000000,
+        ..Default::default()
+    };
+    lib_repo.insert(&library).await.unwrap();
+
+    let repo = MediaItemRepository::new(pool.clone());
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
+    let worker = IngestWorker::new(rx, repo.clone());
+    tokio::spawn(worker.run());
+
+    let ep1_file = temp_dir.path().join("The.Wire.S01E01.mkv");
+    let ep2_file = temp_dir.path().join("the.wire.S01E02.mkv");
+    std::fs::write(&ep1_file, b"wire1").unwrap();
+    std::fs::write(&ep2_file, b"wire2").unwrap();
+
+    let ep1 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Episode 1".to_string(),
+        original_title: None,
+        release_year: Some(2002),
+        added_at: 1700000010,
+        file_path: ep1_file,
+        file_name: "The.Wire.S01E01.mkv".to_string(),
+        file_size: 1024,
+        technical: Default::default(),
+        metadata: MediaMetadata {
+            series_title: Some("The Wire".to_string()),
+            season: Some(1),
+            episode: Some(1),
+            ..Default::default()
+        },
+    };
+
+    let ep2 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Episode 2".to_string(),
+        original_title: None,
+        release_year: Some(2002),
+        added_at: 1700000020,
+        file_path: ep2_file,
+        file_name: "the.wire.S01E02.mkv".to_string(),
+        file_size: 1024,
+        technical: Default::default(),
+        metadata: MediaMetadata {
+            series_title: Some("the wire".to_string()),
+            season: Some(1),
+            episode: Some(2),
+            ..Default::default()
+        },
+    };
+
+    // Both sent in the same batch
+    tx.send(IngestMessage::Upsert(ep1, vec![])).await.unwrap();
+    tx.send(IngestMessage::Upsert(ep2, vec![])).await.unwrap();
+    sleep(Duration::from_millis(150)).await;
+
+    let show = repo
+        .find_show_by_title("shows", "The Wire")
+        .await
+        .unwrap()
+        .expect("The Wire show should exist");
+    assert_eq!(show.item_type, MediaType::Show);
+
+    // Total items: 1 parent show + 2 episodes = 3
+    let count = repo.count_by_library("shows").await.unwrap();
+    assert_eq!(count, 3);
+}
