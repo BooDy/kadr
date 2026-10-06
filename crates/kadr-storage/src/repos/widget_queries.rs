@@ -186,9 +186,9 @@ impl WidgetQueries {
             let mut sql_params = Vec::new();
             let where_clause = if let Some(lid) = lib_id {
                 sql_params.push(rusqlite::types::Value::Text(lid));
-                format!("WHERE m.library_id = ? AND {filter_clause}")
+                format!("WHERE m.library_id = ? AND m.item_type != 'episode' AND {filter_clause}")
             } else {
-                format!("WHERE {filter_clause}")
+                format!("WHERE m.item_type != 'episode' AND {filter_clause}")
             };
             sql_params.extend(filter_params);
             sql_params.push(rusqlite::types::Value::Integer(limit as i64));
@@ -242,6 +242,7 @@ impl WidgetQueries {
                 "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
                  JOIN libraries l ON m.library_id = l.id \
                  WHERE json_extract(m.metadata, '$.rating') IS NOT NULL \
+                   AND m.item_type != 'episode' \
                    AND {filter_clause} \
                  ORDER BY CAST(json_extract(m.metadata, '$.rating') AS REAL) DESC, m.id DESC \
                  LIMIT ? OFFSET ?"
@@ -302,7 +303,7 @@ impl WidgetQueries {
                     OR (json_extract(m.metadata, '$.tags') IS NOT NULL AND EXISTS ( \
                         SELECT 1 FROM json_each(json_extract(m.metadata, '$.tags')) WHERE LOWER(value) = LOWER(?) \
                     )) \
-                 ) AND {filter_clause} \
+                 ) AND m.item_type != 'episode' AND {filter_clause} \
                  ORDER BY m.title ASC, m.id ASC \
                  LIMIT ? OFFSET ?"
             );
@@ -362,7 +363,7 @@ impl WidgetQueries {
             let count_sql = format!(
                 "SELECT COUNT(*) FROM media_items m \
                  JOIN libraries l ON m.library_id = l.id \
-                 WHERE m.library_id = ? AND {filter_clause}"
+                 WHERE m.library_id = ? AND m.item_type != 'episode' AND {filter_clause}"
             );
             let mut count_stmt = c.prepare(&count_sql)?;
             let count: i64 =
@@ -376,7 +377,7 @@ impl WidgetQueries {
             let sql = format!(
                 "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
                  JOIN libraries l ON m.library_id = l.id \
-                 WHERE m.library_id = ? AND {filter_clause} \
+                 WHERE m.library_id = ? AND m.item_type != 'episode' AND {filter_clause} \
                  ORDER BY {order_clause} \
                  LIMIT ? OFFSET ?"
             );
@@ -409,7 +410,7 @@ impl WidgetQueries {
             let sql = format!(
                 "SELECT {SELECT_JOINED_COLUMNS} FROM media_items m \
                  JOIN libraries l ON m.library_id = l.id \
-                 WHERE {filter_clause} \
+                 WHERE m.item_type != 'episode' AND {filter_clause} \
                  ORDER BY \
                     CASE \
                         WHEN json_extract(m.metadata, '$.backdrop_path') IS NOT NULL \

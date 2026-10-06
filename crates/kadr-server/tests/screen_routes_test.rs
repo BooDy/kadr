@@ -37,6 +37,7 @@ struct TestContext {
     spotlight_id: i64,
     show_id: i64,
     lib_repo: LibraryRepository,
+    media_repo: MediaItemRepository,
 }
 
 async fn setup_test_app() -> TestContext {
@@ -279,7 +280,7 @@ async fn setup_test_app() -> TestContext {
     let app = create_router_with_layout(
         user_repo,
         playback_repo,
-        media_repo,
+        media_repo.clone(),
         lib_repo.clone(),
         jwt_svc,
         limiter,
@@ -295,6 +296,7 @@ async fn setup_test_app() -> TestContext {
         spotlight_id,
         show_id,
         lib_repo: lib_repo.clone(),
+        media_repo: media_repo.clone(),
     }
 }
 
@@ -948,6 +950,148 @@ async fn test_dynamic_library_default_screen_generation() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_show_details_returns_hydrated_episodes_with_season() {
+    let ctx = setup_test_app().await;
+
+    // 1. Details endpoint returns hydrated episodes with season and episode numbers
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/items/{}/details", ctx.show_id))
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 32)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap();
+
+    let episodes = json["episodes"]
+        .as_array()
+        .expect("episodes should be an array");
+    assert_eq!(episodes.len(), 2);
+
+    for ep in episodes {
+        assert!(ep["season"].is_number(), "season should be Some(u32)");
+        assert!(ep["episode"].is_number(), "episode should be Some(u32)");
+        assert_eq!(ep["media_type"], "episode");
+        let subtitle = ep["subtitle"].as_str().unwrap();
+        assert!(
+            subtitle.starts_with("S01E0"),
+            "subtitle should start with SxxExx: {subtitle}"
+        );
+    }
+
+    // 2. Library grid for shows library excludes loose episodes and contains only the Show
+    let tv_lib_id = "test_tv_catalog";
+    ctx.lib_repo
+        .insert(&Library {
+            id: tv_lib_id.to_string(),
+            name: "TV Catalog".to_string(),
+            path: PathBuf::from("/media/tv_catalog"),
+            media_type: MediaType::Show,
+            created_at: 1000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let tv_show = MediaItem {
+        id: None,
+        library_id: tv_lib_id.to_string(),
+        item_type: MediaType::Show,
+        title: "Succession".to_string(),
+        original_title: None,
+        release_year: Some(2018),
+        added_at: 1000,
+        file_path: PathBuf::from("/media/tv_catalog/Succession"),
+        file_name: "Succession".to_string(),
+        file_size: 0,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata::default(),
+    };
+    let tv_ep1 = MediaItem {
+        id: None,
+        library_id: tv_lib_id.to_string(),
+        item_type: MediaType::Episode,
+        title: "Succession - S01E01 - Celebration".to_string(),
+        original_title: None,
+        release_year: Some(2018),
+        added_at: 1010,
+        file_path: PathBuf::from("/media/tv_catalog/Succession/S01E01.mkv"),
+        file_name: "S01E01.mkv".to_string(),
+        file_size: 1_000_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Succession".to_string()),
+            season: Some(1),
+            episode: Some(1),
+            ..Default::default()
+        },
+    };
+    let tv_ep2 = MediaItem {
+        id: None,
+        library_id: tv_lib_id.to_string(),
+        item_type: MediaType::Episode,
+        title: "Succession - S01E02 - Sh*tshow at the PO-Fuk".to_string(),
+        original_title: None,
+        release_year: Some(2018),
+        added_at: 1020,
+        file_path: PathBuf::from("/media/tv_catalog/Succession/S01E02.mkv"),
+        file_name: "S01E02.mkv".to_string(),
+        file_size: 1_000_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Succession".to_string()),
+            season: Some(1),
+            episode: Some(2),
+            ..Default::default()
+        },
+    };
+    ctx.media_repo.upsert_batch(&[tv_show, tv_ep1, tv_ep2]).await.unwrap();
+
+    // Trigger library default screen creation
+    let req_screen = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/screens/{tv_lib_id}"))
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res_screen = ctx.app.clone().oneshot(req_screen).await.unwrap();
+    assert_eq!(res_screen.status(), StatusCode::OK);
+
+    // Fetch the grid widget data for the TV library
+    let req_grid = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/widgets/{tv_lib_id}_grid/data?screen_id={tv_lib_id}"))
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+
+    let res_grid = ctx.app.clone().oneshot(req_grid).await.unwrap();
+    assert_eq!(res_grid.status(), StatusCode::OK);
+
+    let bytes_grid = axum::body::to_bytes(res_grid.into_body(), 1024 * 32)
+        .await
+        .unwrap();
+    let grid_json: Value = serde_json::from_slice(&bytes_grid).unwrap();
+    let grid_items = grid_json["items"]
+        .as_array()
+        .expect("items should be an array");
+    assert_eq!(
+        grid_items.len(),
+        1,
+        "Shows grid must contain only parent Show records, excluding loose episodes"
+    );
+    assert_eq!(grid_items[0]["title"], "Succession");
+    assert_eq!(grid_items[0]["media_type"], "show");
+}
+
 
 
 

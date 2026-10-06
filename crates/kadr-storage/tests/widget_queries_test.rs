@@ -135,6 +135,24 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
         MediaItem {
             id: None,
             library_id: "shows".to_string(),
+            item_type: MediaType::Show,
+            title: "Severance".to_string(),
+            original_title: None,
+            release_year: Some(2022),
+            added_at: 6500,
+            file_path: PathBuf::from("/media/shows/Severance"),
+            file_name: "Severance".to_string(),
+            file_size: 0,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata {
+                rating: Some(8.9),
+                genres: vec!["Sci-Fi".to_string(), "Thriller".to_string()],
+                ..Default::default()
+            },
+        },
+        MediaItem {
+            id: None,
+            library_id: "shows".to_string(),
             item_type: MediaType::Episode,
             title: "Severance - S01E02 - Half Loop".to_string(),
             original_title: None,
@@ -235,8 +253,8 @@ async fn test_find_recently_added() {
         .unwrap();
     assert_eq!(global_recent.len(), 3);
     assert_eq!(global_recent[0].title, "Primer"); // added_at 7000
-    assert_eq!(global_recent[1].title, "Severance - S02E01 - Hello Lumon"); // added_at 6000
-    assert_eq!(global_recent[2].title, "Severance - S01E02 - Half Loop"); // added_at 5000
+    assert_eq!(global_recent[1].title, "Severance"); // added_at 6500 (Show, loose episodes excluded)
+    assert_eq!(global_recent[2].title, "The Prestige"); // added_at 4000
 
     // Direct widget query helper test
     let direct_recent = media_repo.find_recently_added(3, &[]).await.unwrap();
@@ -249,11 +267,8 @@ async fn test_find_recently_added() {
         .await
         .unwrap();
     assert_eq!(global_recent_page2.len(), 2);
-    assert_eq!(
-        global_recent_page2[0].title,
-        "Severance - S01E01 - Good News About Hell"
-    ); // added_at 4900
-    assert_eq!(global_recent_page2[1].title, "The Prestige"); // added_at 4000
+    assert_eq!(global_recent_page2[0].title, "Memento"); // added_at 3000
+    assert_eq!(global_recent_page2[1].title, "Interstellar"); // added_at 2000
 
     // 2. With library filter
     let movie_recent = media_repo
@@ -274,10 +289,10 @@ async fn test_find_top_rated() {
         .await
         .unwrap();
     assert_eq!(top.len(), 4);
-    assert_eq!(top[0].title, "Severance - S02E01 - Hello Lumon"); // rating 8.9
+    assert_eq!(top[0].title, "Severance"); // rating 8.9 (Show, loose episodes excluded)
     assert_eq!(top[1].title, "Inception"); // rating 8.8
     assert_eq!(top[2].title, "Interstellar"); // rating 8.7
-    assert_eq!(top[3].title, "Severance - S01E02 - Half Loop"); // rating 8.6
+    assert_eq!(top[3].title, "The Prestige"); // rating 8.5
 
     // Direct widget query helper test
     let direct_top = media_repo.find_top_rated(4, &[]).await.unwrap();
@@ -288,10 +303,9 @@ async fn test_find_top_rated() {
         .find_top_rated_paginated(2, 4, &[], None)
         .await
         .unwrap();
-    assert_eq!(top_page2.len(), 2);
+    assert_eq!(top_page2.len(), 1);
     let page2_titles: Vec<&str> = top_page2.iter().map(|m| m.title.as_str()).collect();
-    assert!(page2_titles.contains(&"The Prestige"));
-    assert!(page2_titles.contains(&"Severance - S01E01 - Good News About Hell"));
+    assert_eq!(page2_titles, vec!["Memento"]); // rating 8.4
 }
 
 #[tokio::test]
@@ -721,5 +735,183 @@ fn test_build_filter_clauses_logic() {
     assert_eq!(params.len(), 1);
     assert_eq!(params[0], rusqlite::types::Value::Integer(1_000_000 - 7 * 86_400));
 }
+
+#[tokio::test]
+async fn test_catalog_queries_exclude_loose_episodes() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+    let repo = MediaItemRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool);
+
+    lib_repo
+        .insert(&Library {
+            id: "movies".to_string(),
+            name: "Movies".to_string(),
+            path: PathBuf::from("/media/movies"),
+            media_type: MediaType::Movie,
+            created_at: 1000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    lib_repo
+        .insert(&Library {
+            id: "shows".to_string(),
+            name: "Shows".to_string(),
+            path: PathBuf::from("/media/shows"),
+            media_type: MediaType::Show,
+            created_at: 1000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let movie = MediaItem {
+        id: None,
+        library_id: "movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "Test Movie".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 2000,
+        file_path: PathBuf::from("/media/movies/movie.mkv"),
+        file_name: "movie.mkv".to_string(),
+        file_size: 1_000_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            rating: Some(8.5),
+            genres: vec!["Sci-Fi".to_string()],
+            ..Default::default()
+        },
+    };
+
+    let show = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Show,
+        title: "Test Show".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 2010,
+        file_path: PathBuf::from("/media/shows/show"),
+        file_name: "show".to_string(),
+        file_size: 0,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            rating: Some(9.0),
+            genres: vec!["Sci-Fi".to_string()],
+            ..Default::default()
+        },
+    };
+
+    let ep1 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Test Show S01E01".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 2020,
+        file_path: PathBuf::from("/media/shows/show/s01e01.mkv"),
+        file_name: "s01e01.mkv".to_string(),
+        file_size: 500_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Test Show".to_string()),
+            season: Some(1),
+            episode: Some(1),
+            rating: Some(8.8),
+            genres: vec!["Sci-Fi".to_string()],
+            ..Default::default()
+        },
+    };
+
+    let ep2 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Test Show S01E02".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 2030,
+        file_path: PathBuf::from("/media/shows/show/s01e02.mkv"),
+        file_name: "s01e02.mkv".to_string(),
+        file_size: 500_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Test Show".to_string()),
+            season: Some(1),
+            episode: Some(2),
+            rating: Some(8.9),
+            genres: vec!["Sci-Fi".to_string()],
+            ..Default::default()
+        },
+    };
+
+    let ep3 = MediaItem {
+        id: None,
+        library_id: "shows".to_string(),
+        item_type: MediaType::Episode,
+        title: "Test Show S01E03".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 2040,
+        file_path: PathBuf::from("/media/shows/show/s01e03.mkv"),
+        file_name: "s01e03.mkv".to_string(),
+        file_size: 500_000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            series_title: Some("Test Show".to_string()),
+            season: Some(1),
+            episode: Some(3),
+            rating: Some(9.1),
+            genres: vec!["Sci-Fi".to_string()],
+            ..Default::default()
+        },
+    };
+
+    repo.upsert_batch(&[movie, show, ep1, ep2, ep3]).await.unwrap();
+
+    // 1. find_by_library_paginated returns only Show, not Episodes
+    let (shows, total) = repo
+        .find_by_library_paginated("shows", 10, 0, None, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(total, 1, "Total shows count should exclude loose episodes");
+    assert_eq!(shows.len(), 1);
+    assert_eq!(shows[0].title, "Test Show");
+    assert_eq!(shows[0].item_type, MediaType::Show);
+
+    // 2. find_recently_added_paginated excludes episodes
+    let recent = repo
+        .find_recently_added_paginated(None, 10, 0, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(
+        recent.len(),
+        2,
+        "Recently added should only contain Movie and Show"
+    );
+    assert!(recent.iter().all(|item| item.item_type != MediaType::Episode));
+
+    // 3. find_top_rated_paginated excludes episodes
+    let top = repo.find_top_rated_paginated(10, 0, &[], None).await.unwrap();
+    assert_eq!(top.len(), 2, "Top rated should only contain Movie and Show");
+    assert!(top.iter().all(|item| item.item_type != MediaType::Episode));
+
+    // 4. find_by_genre_paginated excludes episodes
+    let sci_fi = repo
+        .find_by_genre_paginated("Sci-Fi", 10, 0, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(
+        sci_fi.len(),
+        2,
+        "Genre Sci-Fi should only contain Movie and Show"
+    );
+    assert!(sci_fi.iter().all(|item| item.item_type != MediaType::Episode));
+}
+
 
 
