@@ -151,12 +151,17 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 
   return (
     <div
-      className={`absolute inset-0 z-30 flex flex-col justify-between p-6 bg-gradient-to-t from-canvas via-canvas/80 to-transparent transition-opacity duration-300 pointer-events-auto ${
-        isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+      data-testid="player-controls"
+      className={`absolute inset-0 z-30 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
+        isVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
       {/* Top Bar: Back to Browse and Title */}
-      <div className="flex items-center justify-between gap-4">
+      <div
+        className={`w-full p-6 pb-12 bg-gradient-to-b from-canvas/90 via-canvas/40 to-transparent flex items-center justify-between gap-4 transition-all ${
+          isVisible ? 'pointer-events-auto' : 'pointer-events-none'
+        }`}
+      >
         <div className="flex items-center gap-3">
           <button
             onClick={onClose}
@@ -179,8 +184,15 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         </div>
       </div>
 
+      {/* Middle transparent area: no dimming or overlay */}
+      <div className="flex-1 pointer-events-none" />
+
       {/* Bottom Bar: Timeline slider & player controls */}
-      <div className="flex flex-col gap-3">
+      <div
+        className={`w-full p-6 pt-12 bg-gradient-to-t from-canvas/95 via-canvas/50 to-transparent flex flex-col gap-3 transition-all ${
+          isVisible ? 'pointer-events-auto' : 'pointer-events-none'
+        }`}
+      >
         {/* Seek Progress Slider & Timestamps */}
         <div className="flex items-center gap-3 w-full">
           <span className="font-mono text-xs text-text-main min-w-12 text-right select-none drop-shadow">

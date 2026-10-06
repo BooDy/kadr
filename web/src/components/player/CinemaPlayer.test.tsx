@@ -316,7 +316,7 @@ describe('CinemaPlayer Component', () => {
       await Promise.resolve();
     });
 
-    const controlsContainer = document.querySelector('.bg-gradient-to-t');
+    const controlsContainer = screen.getByTestId('player-controls');
     expect(controlsContainer?.className).toContain('opacity-100');
 
     // Advance 3 seconds
@@ -436,7 +436,7 @@ describe('CinemaPlayer Component', () => {
       await Promise.resolve();
     });
 
-    const controlsContainer = document.querySelector('.bg-gradient-to-t');
+    const controlsContainer = screen.getByTestId('player-controls');
     expect(controlsContainer?.className).toContain('opacity-100');
 
     // Open subtitles popover
