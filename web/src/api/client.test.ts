@@ -604,6 +604,31 @@ describe('ApiClient', () => {
       );
     });
   });
+
+  describe('Discovery', () => {
+    it('getDiscoveryInfo fetches /api/v1/discovery and returns DiscoveryResponse', async () => {
+      const mockDiscovery = {
+        app: 'kadr',
+        server_id: '550e8400-e29b-41d4-a716-446655440000',
+        name: 'Living Room Kadr',
+        version: '0.1.0',
+        protocol_version: 1,
+        port: 8492,
+        setup_completed: true,
+        status: 'online',
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => mockDiscovery,
+      });
+
+      const res = await client.getDiscoveryInfo();
+      expect(res).toEqual(mockDiscovery);
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/discovery', expect.anything());
+    });
+  });
 });
 
 

@@ -64,6 +64,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
   // Config edit state
+  const [editName, setEditName] = useState('Kadr Media Server');
   const [editHost, setEditHost] = useState('');
   const [editPort, setEditPort] = useState(8492);
   const [editDebounce, setEditDebounce] = useState(500);
@@ -83,6 +84,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setUsers(userList);
       if (cfg) {
         setConfig(cfg);
+        setEditName(cfg.name || 'Kadr Media Server');
         setEditHost(cfg.host);
         setEditPort(cfg.port);
         setEditDebounce(cfg.debounce_millis);
@@ -227,6 +229,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsSavingConfig(true);
     try {
       const updated = await api.updateSystemConfig({
+        name: editName.trim() || undefined,
         host: editHost,
         port: Number(editPort),
         debounce_millis: Number(editDebounce),
@@ -589,6 +592,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <Server className="w-4 h-4" />
                 Network Binding
               </h3>
+              <div>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+                  Server Name
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="e.g. Living Room Kadr"
+                  className="w-full bg-canvas border border-border-subtle rounded-lg px-3 py-2 text-text-main text-sm focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-text-main mb-1">Listening Host</label>

@@ -324,8 +324,20 @@ export interface ScanResultResponse {
   queued: boolean;
 }
 
+export interface DiscoveryResponse {
+  app: 'kadr';
+  server_id: string;
+  name: string;
+  version: string;
+  protocol_version: number;
+  port: number;
+  setup_completed: boolean;
+  status: 'online';
+}
+
 // System Configuration Types
 export interface SystemConfig {
+  name: string;
   host: string;
   port: number;
   data_dir: string;
@@ -337,6 +349,7 @@ export interface SystemConfig {
 }
 
 export interface UpdateConfigPayload {
+  name?: string;
   host?: string;
   port?: number;
   debounce_millis?: number;

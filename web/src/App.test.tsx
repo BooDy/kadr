@@ -73,6 +73,7 @@ describe('App Shell', () => {
     ];
     vi.spyOn(api, 'getLibraries').mockResolvedValue(mockLibraries as any);
     vi.spyOn(api, 'getSystemConfig').mockResolvedValue({
+      name: 'Kadr Media Server',
       host: '0.0.0.0',
       port: 8080,
       data_dir: '/data',

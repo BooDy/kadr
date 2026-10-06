@@ -28,6 +28,7 @@ describe('AdminDashboard Component', () => {
   ];
 
   const mockConfig: SystemConfig = {
+    name: 'Kadr Media Server',
     host: '0.0.0.0',
     port: 8492,
     data_dir: '/var/lib/kadr',
@@ -74,6 +75,7 @@ describe('AdminDashboard Component', () => {
     vi.spyOn(api, 'updateSystemConfig').mockImplementation(async (payload) => ({
       ...mockConfig,
       ...payload,
+      name: payload.name ?? mockConfig.name,
       port: payload.port ?? mockConfig.port,
       debounce_millis: payload.debounce_millis ?? mockConfig.debounce_millis,
       use_ffprobe: payload.use_ffprobe ?? mockConfig.use_ffprobe,
@@ -389,6 +391,44 @@ describe('AdminDashboard Component', () => {
     await waitFor(() => {
       expect(api.updateSystemConfig).toHaveBeenCalled();
       expect(screen.getByText(/Server configuration updated successfully/i)).toBeDefined();
+    });
+  });
+
+  it('renders Server Name input in Server Configuration tab with loaded value', async () => {
+    render(<AdminDashboard />);
+
+    const configTab = screen.getByRole('button', { name: /Server Configuration/i });
+    fireEvent.click(configTab);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Server & Pipeline Configuration/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Kadr Media Server')).toBeInTheDocument();
+    });
+  });
+
+  it('updates Server Name and dispatches api.updateSystemConfig when saved', async () => {
+    render(<AdminDashboard />);
+
+    const configTab = screen.getByRole('button', { name: /Server Configuration/i });
+    fireEvent.click(configTab);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Kadr Media Server')).toBeInTheDocument();
+    });
+
+    const nameInput = screen.getByDisplayValue('Kadr Media Server');
+    fireEvent.change(nameInput, { target: { value: 'Cinema Room' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Save Configuration/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(api.updateSystemConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Cinema Room',
+        })
+      );
+      expect(screen.getByText(/Server configuration updated successfully/i)).toBeInTheDocument();
     });
   });
 

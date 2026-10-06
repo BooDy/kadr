@@ -3,6 +3,7 @@ import type {
   CreateLibraryPayload,
   CreateScreenPayload,
   CreateUserPayload,
+  DiscoveryResponse,
   DownloadSubtitleRequest,
   FsBrowseResponse,
   ItemDetailsPayload,
@@ -526,6 +527,11 @@ export class ApiClient {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
+  }
+
+  // Autodiscovery
+  public async getDiscoveryInfo(): Promise<DiscoveryResponse> {
+    return this.request<DiscoveryResponse>('/api/v1/discovery');
   }
 
   // User Management
