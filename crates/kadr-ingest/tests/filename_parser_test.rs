@@ -172,3 +172,34 @@ fn test_parse_folder_cue_fallback() {
     assert_eq!(res.season, Some(1));
     assert_eq!(res.episode, Some(2));
 }
+
+#[test]
+fn test_parse_with_path_movie_not_dropped() {
+    let parser = FilenameParser::new();
+
+    // Standard movie in /media/movies
+    let path = Path::new("/media/movies/Bab.El-Hadid.1958.mkv");
+    let res = parser.parse_with_path(path).unwrap();
+    assert!(!res.is_episode);
+    assert_eq!(res.title, "Bab El-Hadid");
+    assert_eq!(res.year, Some(1958));
+    assert_eq!(res.container, "mkv");
+
+    // Movie in nested titled folder
+    let nested_path = Path::new("/media/movies/Interstellar (2014)/Interstellar.mkv");
+    let res2 = parser.parse_with_path(nested_path).unwrap();
+    assert!(!res2.is_episode);
+    assert_eq!(res2.title, "Interstellar");
+    assert_eq!(res2.container, "mkv");
+}
+
+#[test]
+fn test_parse_folder_cue_with_standalone_sxx_exx() {
+    let parser = FilenameParser::new();
+    let path = Path::new("/media/shows/Dexter/Season 01/S01E02.mkv");
+    let res = parser.parse_with_path(path).unwrap();
+    assert!(res.is_episode);
+    assert_eq!(res.series_title.as_deref(), Some("Dexter"));
+    assert_eq!(res.season, Some(1));
+    assert_eq!(res.episode, Some(2));
+}

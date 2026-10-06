@@ -85,7 +85,7 @@ impl FilenameParser {
         ).unwrap();
 
         let ep_file_regex = Regex::new(
-            r"(?i)^(?:(?:e|ep)[._\s\-]*)?(?P<ep>\d{1,3})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
+            r"(?i)^(?:(?:s\d{1,2}[eE]|e|ep)[._\s\-]*)?(?P<ep>\d{1,3})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
         ).unwrap();
 
         Self {
@@ -255,27 +255,51 @@ impl FilenameParser {
         let filename = path.file_name()?.to_str()?;
         let mut parsed = self.parse(filename)?;
 
-        if parsed.is_episode {
-            return Some(parsed);
+        if !parsed.is_episode {
+            self.apply_folder_cues(path, filename, &mut parsed);
         }
 
-        // Folder cue fallback: inspect parent folder for Season (\d+) or S(\d+)
-        let parent = path.parent()?;
-        let parent_name = parent.file_name()?.to_str()?;
-        let season_caps = self.season_folder_regex.captures(parent_name)?;
-        let season_num = season_caps.get(1)?.as_str().parse::<u32>().ok()?;
+        Some(parsed)
+    }
+
+    fn apply_folder_cues(&self, path: &Path, filename: &str, parsed: &mut ParsedFilename) {
+        let parent = match path.parent() {
+            Some(p) => p,
+            None => return,
+        };
+        let parent_name = match parent.file_name().and_then(|f| f.to_str()) {
+            Some(name) => name,
+            None => return,
+        };
+        let season_caps = match self.season_folder_regex.captures(parent_name) {
+            Some(caps) => caps,
+            None => return,
+        };
+        let season_num = match season_caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok()) {
+            Some(num) => num,
+            None => return,
+        };
 
         // Grandparent folder provides the series title
-        let grandparent = parent.parent()?;
-        let grandparent_name = grandparent.file_name()?.to_str()?;
+        let grandparent = match parent.parent() {
+            Some(gp) => gp,
+            None => return,
+        };
+        let grandparent_name = match grandparent.file_name().and_then(|f| f.to_str()) {
+            Some(name) => name,
+            None => return,
+        };
         let (series_title, series_year) = self.clean_series_title(grandparent_name);
         if series_title.is_empty() {
-            return Some(parsed);
+            return;
         }
 
-        // Filename in season folder matches episode number and optional title (e.g. "02 - Crocodile.mkv", "02.mkv", "E02.mkv")
+        // Filename in season folder matches episode number and optional title (e.g. "02 - Crocodile.mkv", "02.mkv", "E02.mkv", "S01E02.mkv")
         if let Some(caps) = self.ep_file_regex.captures(filename) {
-            let ep_num = caps.name("ep")?.as_str().parse::<u32>().ok()?;
+            let ep_num = match caps.name("ep").and_then(|m| m.as_str().parse::<u32>().ok()) {
+                Some(num) => num,
+                None => return,
+            };
             let rest = caps.name("rest").map(|m| m.as_str());
             let rest_meta = self.parse_episode_rest(rest);
 
@@ -306,8 +330,6 @@ impl FilenameParser {
                 parsed.release_group = rest_meta.release_group;
             }
         }
-
-        Some(parsed)
     }
 
     fn clean_series_title(&self, raw: &str) -> (String, Option<i32>) {
