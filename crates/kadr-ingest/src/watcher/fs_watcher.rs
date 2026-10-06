@@ -35,12 +35,12 @@ pub async fn start_library_watcher(
     tx: mpsc::Sender<IngestMessage>,
     debounce_duration: Duration,
 ) -> notify::Result<RecommendedWatcher> {
-    let (notify_tx, mut notify_rx) = mpsc::channel(100);
+    let (notify_tx, mut notify_rx) = mpsc::unbounded_channel();
 
     let mut watcher = RecommendedWatcher::new(
         move |res: notify::Result<Event>| {
             if let Ok(event) = res {
-                let _ = notify_tx.blocking_send(event);
+                let _ = notify_tx.send(event);
             }
         },
         Config::default(),
@@ -51,6 +51,95 @@ pub async fn start_library_watcher(
     } else {
         library.paths.clone()
     };
+
+    // Reactive watcher task with debouncing spawned first so notify_rx is actively drained
+    let lib_for_debouncer = library.clone();
+    let pipe_for_debouncer = pipeline.clone();
+    let tx_for_debouncer = tx.clone();
+    tokio::spawn(async move {
+        let mut debouncer = DebounceQueue::new(debounce_duration);
+        let mut interval = tokio::time::interval(Duration::from_millis(200));
+
+        loop {
+            tokio::select! {
+                maybe_event = notify_rx.recv() => {
+                    match maybe_event {
+                        Some(event) => {
+                            match event.kind {
+                                EventKind::Create(_) => {
+                                    for path in event.paths {
+                                        debouncer.record_event(path);
+                                    }
+                                }
+                                EventKind::Modify(ModifyKind::Name(mode)) => {
+                                    match mode {
+                                        RenameMode::From => {
+                                            for path in event.paths {
+                                                debouncer.remove(&path);
+                                                let _ = tx_for_debouncer.send(IngestMessage::Delete(path)).await;
+                                            }
+                                        }
+                                        RenameMode::To => {
+                                            for path in event.paths {
+                                                debouncer.record_event(path);
+                                            }
+                                        }
+                                        RenameMode::Both if event.paths.len() >= 2 => {
+                                            let from = event.paths[0].clone();
+                                            let to = event.paths[1].clone();
+                                            debouncer.remove(&from);
+                                            let _ = tx_for_debouncer.send(IngestMessage::Delete(from)).await;
+                                            debouncer.record_event(to);
+                                        }
+                                        _ => {
+                                            for path in event.paths {
+                                                if !path.exists() {
+                                                    debouncer.remove(&path);
+                                                    let _ = tx_for_debouncer.send(IngestMessage::Delete(path)).await;
+                                                } else {
+                                                    debouncer.record_event(path);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                EventKind::Modify(_) => {
+                                    for path in event.paths {
+                                        debouncer.record_event(path);
+                                    }
+                                }
+                                EventKind::Remove(_) => {
+                                    for path in event.paths {
+                                        debouncer.remove(&path);
+                                        let _ = tx_for_debouncer.send(IngestMessage::Delete(path)).await;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                _ = interval.tick() => {
+                    let settled = debouncer.extract_settled();
+                    for path in settled {
+                        if path.is_file() {
+                            match pipe_for_debouncer.process_file(&lib_for_debouncer, &path).await {
+                                Ok(Some((item, subs))) => {
+                                    let _ = tx_for_debouncer.send(IngestMessage::Upsert(item, subs)).await;
+                                }
+                                Ok(None) => {}
+                                Err(e) => {
+                                    warn!(path = ?path, error = ?e, "Failed to ingest media file");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     for p in &paths {
         if p.exists() {
             let _ = watcher.watch(p, RecursiveMode::Recursive);
@@ -75,91 +164,6 @@ pub async fn start_library_watcher(
                 for file in initial_files {
                     if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
                         let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
-                    }
-                }
-            }
-        }
-    });
-
-    // Reactive watcher task with debouncing
-    tokio::spawn(async move {
-        let mut debouncer = DebounceQueue::new(debounce_duration);
-        let mut interval = tokio::time::interval(Duration::from_millis(200));
-
-        loop {
-            tokio::select! {
-                maybe_event = notify_rx.recv() => {
-                    match maybe_event {
-                        Some(event) => {
-                            match event.kind {
-                                EventKind::Create(_) => {
-                                    for path in event.paths {
-                                        debouncer.record_event(path);
-                                    }
-                                }
-                                EventKind::Modify(ModifyKind::Name(mode)) => {
-                                    match mode {
-                                        RenameMode::From => {
-                                            for path in event.paths {
-                                                debouncer.remove(&path);
-                                                let _ = tx.send(IngestMessage::Delete(path)).await;
-                                            }
-                                        }
-                                        RenameMode::To => {
-                                            for path in event.paths {
-                                                debouncer.record_event(path);
-                                            }
-                                        }
-                                        RenameMode::Both if event.paths.len() >= 2 => {
-                                            let from = event.paths[0].clone();
-                                            let to = event.paths[1].clone();
-                                            debouncer.remove(&from);
-                                            let _ = tx.send(IngestMessage::Delete(from)).await;
-                                            debouncer.record_event(to);
-                                        }
-                                        _ => {
-                                            for path in event.paths {
-                                                if !path.exists() {
-                                                    debouncer.remove(&path);
-                                                    let _ = tx.send(IngestMessage::Delete(path)).await;
-                                                } else {
-                                                    debouncer.record_event(path);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                EventKind::Modify(_) => {
-                                    for path in event.paths {
-                                        debouncer.record_event(path);
-                                    }
-                                }
-                                EventKind::Remove(_) => {
-                                    for path in event.paths {
-                                        debouncer.remove(&path);
-                                        let _ = tx.send(IngestMessage::Delete(path)).await;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        None => break,
-                    }
-                }
-                _ = interval.tick() => {
-                    let settled = debouncer.extract_settled();
-                    for path in settled {
-                        if path.is_file() {
-                            match pipeline.process_file(&library, &path).await {
-                                Ok(Some((item, subs))) => {
-                                    let _ = tx.send(IngestMessage::Upsert(item, subs)).await;
-                                }
-                                Ok(None) => {}
-                                Err(e) => {
-                                    warn!(path = ?path, error = ?e, "Failed to ingest media file");
-                                }
-                            }
-                        }
                     }
                 }
             }
