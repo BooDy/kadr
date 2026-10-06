@@ -84,6 +84,29 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
     expect(onPlayItem).toHaveBeenCalledWith(101);
   });
 
+  it('clicking or pressing Enter on the episode thumbnail triggers onPlayItem with episode id', async () => {
+    const onPlayItem = vi.fn();
+    render(
+      <ItemDetailsModal
+        itemId={10}
+        initialDetails={mockShowDetails}
+        onClose={vi.fn()}
+        onPlayItem={onPlayItem}
+      />
+    );
+
+    const thumbBtn = screen.getByRole('button', { name: /Play episode Reunited/i });
+
+    // Click thumbnail container
+    fireEvent.click(thumbBtn);
+    expect(onPlayItem).toHaveBeenCalledWith(101);
+
+    // Press Enter on thumbnail container
+    onPlayItem.mockClear();
+    fireEvent.keyDown(thumbBtn, { key: 'Enter', code: 'Enter' });
+    expect(onPlayItem).toHaveBeenCalledWith(101);
+  });
+
   it('does not render season tabs or episodes section when item has no episodes', () => {
     const mockMovieDetails: ItemDetailsPayload = {
       card: {

@@ -50,10 +50,26 @@ const EpisodeCard: FC<EpisodeCardProps> = ({ episode, onPlay, formatDuration }) 
     ? formatDuration(episode.duration_seconds)
     : null;
 
+  const handlePlay = () => {
+    onPlay(episode.id);
+  };
+
   return (
     <div className="group relative flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 rounded-2xl bg-canvas/40 border border-border-subtle hover:bg-canvas/70 transition-all duration-200">
       {/* Thumbnail Container */}
-      <div className="relative w-full sm:w-44 aspect-video rounded-xl overflow-hidden bg-canvas border border-border-subtle flex-shrink-0">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`Play episode ${episode.title}`}
+        onClick={handlePlay}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handlePlay();
+          }
+        }}
+        className="relative w-full sm:w-44 aspect-video rounded-xl overflow-hidden bg-canvas border border-border-subtle flex-shrink-0 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+      >
         {!thumbFailed && thumbUrl ? (
           <img
             src={thumbUrl}
@@ -124,7 +140,7 @@ const EpisodeCard: FC<EpisodeCardProps> = ({ episode, onPlay, formatDuration }) 
         <button
           type="button"
           aria-label={`Play ${episode.title}`}
-          onClick={() => onPlay(episode.id)}
+          onClick={handlePlay}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cta hover:bg-cta-hover text-white text-xs font-bold shadow-md shadow-cta/20 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
         >
           <Play className="w-3.5 h-3.5 fill-white text-white" />
@@ -649,7 +665,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                             handleSearchSubtitles();
                           }
                         }}
-                        className="flex-1 px-4 py-2.5 rounded-xl bg-canvas/60 border border-border-subtle text-text-main placeholder-muted text-sm focus:outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+                        className="flex-1 px-4 py-2.5 rounded-xl bg-canvas/60 border border-border-subtle text-text-main placeholder-muted text-sm focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                       />
                       <button
                         onClick={handleSearchSubtitles}
