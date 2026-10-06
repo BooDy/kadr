@@ -8,11 +8,13 @@ use axum::{
 use kadr_core::ast::{ScreenId, ScreenLayout};
 use serde::{Deserialize, Serialize};
 
+use kadr_storage::repos::LibraryRepository;
+
 pub use crate::api::item_routes::get_item_details;
 use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::{AuthUser, RequireAdmin};
 use crate::config::AppConfig;
-use crate::layout::LayoutRegistry;
+use crate::layout::{default_library_layout, LayoutRegistry};
 use crate::resolver::WidgetResolver;
 
 /// Summary representation of a registered screen.
@@ -34,7 +36,17 @@ pub struct ScreenQuery {
 pub async fn list_screens(
     _auth_user: AuthUser,
     Extension(registry): Extension<LayoutRegistry>,
+    Extension(lib_repo): Extension<LibraryRepository>,
 ) -> Json<Vec<ScreenSummary>> {
+    if let Ok(libs) = lib_repo.get_all().await {
+        for lib in libs {
+            let screen_id: ScreenId = lib.id.parse().unwrap();
+            if registry.get_screen(&screen_id).is_none() {
+                registry.register_screen(default_library_layout(&lib.id, &lib.name));
+            }
+        }
+    }
+
     let screens = registry
         .list_screens()
         .into_iter()
@@ -72,6 +84,7 @@ pub async fn get_screen(
     Query(query): Query<ScreenQuery>,
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,
+    Extension(lib_repo): Extension<LibraryRepository>,
 ) -> Result<Json<ScreenLayout>, (StatusCode, Json<serde_json::Value>)> {
     if let Err(err_msg) = validate_screen_id(&screen_id) {
         return Err((
@@ -84,10 +97,16 @@ pub async fn get_screen(
     let layout = match registry.get_screen(&parsed_id) {
         Some(l) => l,
         None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "Screen not found" })),
-            ));
+            if let Ok(Some(lib)) = lib_repo.get_by_id(&screen_id).await {
+                let default_layout = default_library_layout(&lib.id, &lib.name);
+                registry.register_screen(default_layout.clone());
+                default_layout
+            } else {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": "Screen not found" })),
+                ));
+            }
         }
     };
 

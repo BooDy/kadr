@@ -36,6 +36,7 @@ struct TestContext {
     admin_token: String,
     spotlight_id: i64,
     show_id: i64,
+    lib_repo: LibraryRepository,
 }
 
 async fn setup_test_app() -> TestContext {
@@ -279,7 +280,7 @@ async fn setup_test_app() -> TestContext {
         user_repo,
         playback_repo,
         media_repo,
-        lib_repo,
+        lib_repo.clone(),
         jwt_svc,
         limiter,
         session_registry,
@@ -293,6 +294,7 @@ async fn setup_test_app() -> TestContext {
         admin_token,
         spotlight_id,
         show_id,
+        lib_repo: lib_repo.clone(),
     }
 }
 
@@ -885,5 +887,67 @@ async fn test_custom_screen_put_serde_and_validation() {
     let res = ctx.app.clone().oneshot(req_del).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_dynamic_library_default_screen_generation() {
+    let ctx = setup_test_app().await;
+
+    let custom_lib_id = "c2033bde-ea09-481e-aa4a-eb4414d2820b";
+    let custom_lib = Library {
+        id: custom_lib_id.to_string(),
+        name: "My Custom Library".to_string(),
+        path: PathBuf::from("/media/custom"),
+        media_type: MediaType::Movie,
+        created_at: 1000,
+        ..Default::default()
+    };
+    ctx.lib_repo.insert(&custom_lib).await.unwrap();
+
+    // 1. GET /api/v1/screens/{custom_lib_id} should automatically resolve the default screen layout
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/screens/{custom_lib_id}"))
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let layout: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(layout.id, ScreenId::Custom(custom_lib_id.to_string()));
+    assert_eq!(layout.title, "My Custom Library");
+    assert_eq!(layout.widgets.len(), 1);
+    let widget_id = layout.widgets[0].id().to_string();
+    assert_eq!(widget_id, format!("{custom_lib_id}_grid"));
+
+    // 2. GET /api/v1/screens should now list the custom library screen
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let screens: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
+    assert!(screens
+        .iter()
+        .any(|s| s["id"] == custom_lib_id && s["title"] == "My Custom Library"));
+
+    // 3. GET /api/v1/widgets/{widget_id}/data should return 200 OK
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/widgets/{widget_id}/data?screen_id={custom_lib_id}"
+        ))
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
 
 

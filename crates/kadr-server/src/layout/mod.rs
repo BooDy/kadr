@@ -1,5 +1,6 @@
 pub mod registry;
 
 pub use registry::{
-    default_home_layout, default_movies_layout, default_shows_layout, LayoutError, LayoutRegistry,
+    default_home_layout, default_library_layout, default_movies_layout, default_shows_layout,
+    LayoutError, LayoutRegistry,
 };

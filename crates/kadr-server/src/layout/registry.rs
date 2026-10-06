@@ -319,3 +319,26 @@ pub fn default_shows_layout() -> ScreenLayout {
         }],
     )
 }
+
+/// Builds the default screen layout for a library.
+pub fn default_library_layout(library_id: &str, library_name: &str) -> ScreenLayout {
+    let screen_id: ScreenId = library_id.parse().unwrap();
+    ScreenLayout::new(
+        screen_id,
+        library_name,
+        vec![WidgetNode::Grid {
+            id: format!("{library_id}_grid"),
+            title: format!("All {library_name}"),
+            binding: WidgetQueryBinding::new(QueryMacro::LibraryItems {
+                library_id: library_id.to_string(),
+            })
+            .with_limit(30)
+            .with_sort("title:asc".to_string()),
+            columns: 6,
+            items: None,
+            next_cursor: None,
+            total_count: None,
+        }],
+    )
+}
+

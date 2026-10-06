@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
-use crate::layout::LayoutRegistry;
+use crate::layout::{default_library_layout, LayoutRegistry};
 use crate::resolver::WidgetResolver;
+use kadr_storage::repos::LibraryRepository;
 
 fn default_widget_limit() -> u32 {
     20
@@ -48,15 +49,25 @@ pub async fn get_widget_data(
     Query(query): Query<WidgetDataQuery>,
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,
+    Extension(lib_repo): Extension<LibraryRepository>,
 ) -> Result<Json<WidgetDataResponse>, (StatusCode, Json<serde_json::Value>)> {
     let widget = if let Some(ref screen_id_str) = query.screen_id {
         let sid: ScreenId = screen_id_str.parse().unwrap();
-        let screen = registry.get_screen(&sid).ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "Widget not found" })),
-            )
-        })?;
+        let screen = match registry.get_screen(&sid) {
+            Some(s) => s,
+            None => {
+                if let Ok(Some(lib)) = lib_repo.get_by_id(screen_id_str).await {
+                    let def = default_library_layout(&lib.id, &lib.name);
+                    registry.register_screen(def.clone());
+                    def
+                } else {
+                    return Err((
+                        StatusCode::NOT_FOUND,
+                        Json(serde_json::json!({ "error": "Widget not found" })),
+                    ));
+                }
+            }
+        };
         screen.widgets.into_iter().find(|w| w.id() == widget_id)
     } else {
         let mut found = None;
