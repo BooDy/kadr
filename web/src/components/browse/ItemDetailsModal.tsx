@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, useEffect, useMemo, type FC } from 'react';
 import {
   X,
   Play,
@@ -9,6 +9,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type {
+  CardViewModel,
   ItemDetailsPayload,
   OnlineSubtitleMatch,
   SubtitleTrack,
@@ -17,21 +18,136 @@ import { api } from '../../api/client';
 
 export interface ItemDetailsModalProps {
   itemId: number | null;
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
-  onPlay: (itemId: number) => void;
+  onPlay?: (itemId: number) => void;
+  onPlayItem?: (itemId: number) => void;
+  initialDetails?: ItemDetailsPayload;
 }
+
+interface EpisodeCardProps {
+  episode: CardViewModel;
+  onPlay: (id: number) => void;
+  formatDuration: (seconds?: number) => string | null;
+}
+
+const EpisodeCard: FC<EpisodeCardProps> = ({ episode, onPlay, formatDuration }) => {
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const thumbUrl =
+    episode.backdrop_url ||
+    episode.poster_url ||
+    (episode.id ? api.getArtworkUrl(episode.id, 'backdrop') : undefined);
+  const hasProgress =
+    typeof episode.playback_progress === 'number' && episode.playback_progress > 0;
+  const progressPercent = hasProgress
+    ? Math.min(100, Math.max(0, Math.round((episode.playback_progress || 0) * 100)))
+    : 0;
+  const epBadge =
+    episode.episode !== undefined
+      ? `E${String(episode.episode).padStart(2, '0')}`
+      : episode.badge;
+  const durationText = episode.duration_seconds
+    ? formatDuration(episode.duration_seconds)
+    : null;
+
+  return (
+    <div className="group relative flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 rounded-2xl bg-canvas/40 border border-border-subtle hover:bg-canvas/70 transition-all duration-200">
+      {/* Thumbnail Container */}
+      <div className="relative w-full sm:w-44 aspect-video rounded-xl overflow-hidden bg-canvas border border-border-subtle flex-shrink-0">
+        {!thumbFailed && thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt={episode.title}
+            onError={() => setThumbFailed(true)}
+            className="w-full h-full object-cover filter brightness-95 group-hover:brightness-105 transition-all duration-200"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-gradient-to-tr from-canvas via-panel to-canvas">
+            <Film className="w-8 h-8 text-muted mb-1 group-hover:text-accent transition-colors" />
+            <span className="text-[11px] text-muted font-medium line-clamp-1">{episode.title}</span>
+          </div>
+        )}
+
+        {/* Play hover overlay */}
+        <div className="absolute inset-0 bg-canvas/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200 pointer-events-none">
+          <div className="w-10 h-10 rounded-full bg-cta text-white flex items-center justify-center shadow-lg shadow-cta/30 transform scale-90 group-hover:scale-100 transition-transform duration-200">
+            <Play className="w-4 h-4 fill-white text-white ml-0.5" />
+          </div>
+        </div>
+
+        {/* Duration Badge on Thumbnail */}
+        {durationText && (
+          <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-canvas/80 text-text-main border border-border-subtle">
+            {durationText}
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {hasProgress && (
+          <div className="absolute bottom-0 inset-x-0 h-1 bg-muted">
+            <div
+              className="h-full bg-accent"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Episode Details */}
+      <div className="flex-1 min-w-0 space-y-1.5 w-full">
+        <div className="flex items-center gap-2 flex-wrap">
+          {epBadge && (
+            <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-highlight/20 text-highlight border border-highlight/40">
+              {epBadge}
+            </span>
+          )}
+          {durationText && (
+            <span className="text-xs text-muted font-medium">
+              {durationText}
+            </span>
+          )}
+        </div>
+
+        <h4 className="text-sm sm:text-base font-bold text-text-main group-hover:text-accent transition-colors line-clamp-1">
+          {episode.title}
+        </h4>
+
+        {episode.subtitle && (
+          <p className="text-xs text-muted line-clamp-2">
+            {episode.subtitle}
+          </p>
+        )}
+      </div>
+
+      {/* 1-Click Play Button */}
+      <div className="self-end sm:self-center flex-shrink-0">
+        <button
+          type="button"
+          aria-label={`Play ${episode.title}`}
+          onClick={() => onPlay(episode.id)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cta hover:bg-cta-hover text-white text-xs font-bold shadow-md shadow-cta/20 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+        >
+          <Play className="w-3.5 h-3.5 fill-white text-white" />
+          <span>Play</span>
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   itemId,
-  isOpen,
+  isOpen = true,
   onClose,
   onPlay,
+  onPlayItem,
+  initialDetails,
 }) => {
-  const [details, setDetails] = useState<ItemDetailsPayload | null>(null);
+  const [details, setDetails] = useState<ItemDetailsPayload | null>(initialDetails ?? null);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'subtitles'>('details');
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
   // Subtitle search state
   const [searchLang, setSearchLang] = useState('');
@@ -55,6 +171,13 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
       setActiveTab('details');
       setBackdropFailed(false);
       setPosterFailed(false);
+      setSelectedSeason(null);
+      return;
+    }
+
+    if (initialDetails) {
+      setDetails(initialDetails);
+      setLoading(false);
       return;
     }
 
@@ -78,7 +201,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, itemId]);
+  }, [isOpen, itemId, initialDetails]);
 
   // Handle escape key
   useEffect(() => {
@@ -90,6 +213,30 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  const episodesBySeason = useMemo(() => {
+    if (!details?.episodes || details.episodes.length === 0) {
+      return new Map<number, CardViewModel[]>();
+    }
+    const map = new Map<number, CardViewModel[]>();
+    for (const ep of details.episodes) {
+      const s = ep.season ?? 1;
+      const list = map.get(s) || [];
+      list.push(ep);
+      map.set(s, list);
+    }
+    return map;
+  }, [details?.episodes]);
+
+  const seasons = useMemo(() => {
+    return Array.from(episodesBySeason.keys()).sort((a, b) => a - b);
+  }, [episodesBySeason]);
+
+  const currentSeason = (selectedSeason !== null && episodesBySeason.has(selectedSeason))
+    ? selectedSeason
+    : (seasons[0] ?? 1);
+
+  const episodesForCurrentSeason = episodesBySeason.get(currentSeason) || [];
 
   if (!isOpen || itemId === null) return null;
 
@@ -140,6 +287,16 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
     return `${minutes}m`;
   };
 
+  const handlePlayItem = (targetId: number | null) => {
+    if (targetId === null) return;
+    if (onPlayItem) {
+      onPlayItem(targetId);
+    } else if (onPlay) {
+      onPlay(targetId);
+    }
+    onClose();
+  };
+
   const card = details?.card;
   const duration =
     details?.duration_seconds || details?.technical?.duration_seconds;
@@ -163,7 +320,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
         <button
           onClick={onClose}
           aria-label="Close modal"
-          className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-canvas/60 hover:bg-panel text-muted hover:text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
+          className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-canvas/60 hover:bg-panel text-muted hover:text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
         >
           <X className="w-5 h-5" />
         </button>
@@ -260,11 +417,8 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                 {/* Quick Play Action Button */}
                 <div className="self-center sm:self-end">
                   <button
-                    onClick={() => {
-                      onPlay(itemId);
-                      onClose();
-                    }}
-                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-lg shadow-cta/25 hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
+                    onClick={() => handlePlayItem(itemId)}
+                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-lg shadow-cta/25 hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                   >
                     <Play className="w-4 h-4 fill-white text-white" />
                     Play
@@ -277,7 +431,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
             <div className="flex items-center border-b border-border-subtle px-6 sm:px-8 bg-panel">
               <button
                 onClick={() => setActiveTab('details')}
-                className={`py-3.5 px-4 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
+                className={`py-3.5 px-4 text-sm font-semibold border-b-2 transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
                   activeTab === 'details'
                     ? 'border-accent text-accent'
                     : 'border-transparent text-muted hover:text-text-main'
@@ -287,7 +441,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
               </button>
               <button
                 onClick={() => setActiveTab('subtitles')}
-                className={`py-3.5 px-4 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
+                className={`py-3.5 px-4 text-sm font-semibold border-b-2 transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
                   activeTab === 'subtitles'
                     ? 'border-accent text-accent'
                     : 'border-transparent text-muted hover:text-text-main'
@@ -325,6 +479,55 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                           >
                             {genre}
                           </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Seasons & Episodes Section */}
+                  {details.episodes && details.episodes.length > 0 && (
+                    <div className="space-y-4 pt-4 border-t border-border-subtle">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold tracking-wider text-muted uppercase">
+                          Episodes
+                        </h3>
+                        <span className="text-xs text-muted">
+                          {details.episodes.length} {details.episodes.length === 1 ? 'Episode' : 'Episodes'}
+                        </span>
+                      </div>
+
+                      {/* Season Pill Selector Tabs */}
+                      {seasons.length > 0 && (
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1" aria-label="Season tabs">
+                          {seasons.map((seasonNum) => {
+                            const isSelected = seasonNum === currentSeason;
+                            return (
+                              <button
+                                key={seasonNum}
+                                type="button"
+                                onClick={() => setSelectedSeason(seasonNum)}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                                  isSelected
+                                    ? 'bg-accent text-white shadow-md shadow-accent/25'
+                                    : 'bg-canvas/60 text-muted hover:text-text-main hover:bg-panel-hover border border-border-subtle'
+                                }`}
+                              >
+                                Season {seasonNum}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Episode Cards List */}
+                      <div className="space-y-3">
+                        {episodesForCurrentSeason.map((ep) => (
+                          <EpisodeCard
+                            key={ep.id}
+                            episode={ep}
+                            onPlay={handlePlayItem}
+                            formatDuration={formatDuration}
+                          />
                         ))}
                       </div>
                     </div>
@@ -451,7 +654,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                       <button
                         onClick={handleSearchSubtitles}
                         disabled={searching}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cta hover:bg-cta-hover text-white font-semibold text-sm transition-colors disabled:opacity-50 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cta hover:bg-cta-hover text-white font-semibold text-sm transition-colors disabled:opacity-50 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                       >
                         {searching ? (
                           <>
@@ -511,7 +714,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                               <button
                                 onClick={() => handleDownloadSubtitle(match)}
                                 disabled={downloadingId === match.id}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cta hover:bg-cta-hover text-white text-xs font-semibold shadow-md transition-colors disabled:opacity-50 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight"
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cta hover:bg-cta-hover text-white text-xs font-semibold shadow-md transition-colors disabled:opacity-50 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                               >
                                 {downloadingId === match.id ? (
                                   <>

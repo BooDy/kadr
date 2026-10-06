@@ -49,6 +49,9 @@ export interface CardViewModel {
   rating?: number;
   release_year?: number;
   badge?: string;
+  season?: number;
+  episode?: number;
+  duration_seconds?: number;
 }
 
 export type QueryMacro =
