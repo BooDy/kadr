@@ -354,12 +354,19 @@ export class ApiClient {
   public async getWidgetData(
     widgetId: string,
     page: number = 0,
-    limit: number = 20
+    limit: number = 20,
+    sort?: string,
+    screenId?: string
   ): Promise<CardViewModel[]> {
     const offset = page * limit;
-    const res = await this.request<WidgetDataResponse>(
-      `/api/v1/widgets/${encodeURIComponent(widgetId)}/data?offset=${offset}&limit=${limit}`
-    );
+    let url = `/api/v1/widgets/${encodeURIComponent(widgetId)}/data?offset=${offset}&limit=${limit}`;
+    if (sort) {
+      url += `&sort=${encodeURIComponent(sort)}`;
+    }
+    if (screenId) {
+      url += `&screen_id=${encodeURIComponent(screenId)}`;
+    }
+    const res = await this.request<WidgetDataResponse>(url);
     return res.items || [];
   }
 

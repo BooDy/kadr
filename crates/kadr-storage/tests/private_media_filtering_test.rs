@@ -140,11 +140,11 @@ async fn test_widget_queries_and_media_isolation() {
     assert_eq!(top_unlocked[0].title, "Private Action");
 
     // 2. Spotlight candidate query
-    let spot_locked = widget_queries.find_spotlight_candidate(&[], None).await.unwrap();
+    let spot_locked = widget_queries.find_spotlight_candidate(None, &[], None).await.unwrap();
     assert_eq!(spot_locked.unwrap().title, "Public Action");
 
     let spot_unlocked = widget_queries
-        .find_spotlight_candidate(&["priv".to_string()], None)
+        .find_spotlight_candidate(None, &["priv".to_string()], None)
         .await
         .unwrap();
     assert_eq!(spot_unlocked.unwrap().title, "Private Action");

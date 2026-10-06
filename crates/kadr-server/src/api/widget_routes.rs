@@ -51,7 +51,7 @@ pub async fn get_widget_data(
     Extension(resolver): Extension<Arc<WidgetResolver>>,
     Extension(lib_repo): Extension<LibraryRepository>,
 ) -> Result<Json<WidgetDataResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let widget = if let Some(ref screen_id_str) = query.screen_id {
+    let (widget, target_screen_id) = if let Some(ref screen_id_str) = query.screen_id {
         let sid: ScreenId = screen_id_str.parse().unwrap();
         let screen = match registry.get_screen(&sid) {
             Some(s) => {
@@ -86,18 +86,21 @@ pub async fn get_widget_data(
                 }
             }
         };
-        screen.widgets.into_iter().find(|w| w.id() == widget_id)
+        let w = screen.widgets.into_iter().find(|w| w.id() == widget_id);
+        (w, Some(sid))
     } else {
         let mut found = None;
+        let mut found_sid = None;
         for (sid, _) in registry.list_screens() {
             if let Some(screen) = registry.get_screen(&sid) {
                 if let Some(w) = screen.widgets.into_iter().find(|w| w.id() == widget_id) {
                     found = Some(w);
+                    found_sid = Some(sid);
                     break;
                 }
             }
         }
-        found
+        (found, found_sid)
     };
 
     let widget = widget.ok_or_else(|| {
@@ -120,13 +123,20 @@ pub async fn get_widget_data(
         query_binding.sort = Some(sort.clone());
     }
 
+    let default_library_id = if let Some(ref sid) = target_screen_id {
+        resolver.resolve_library_id_for_screen(sid).await
+    } else {
+        None
+    };
+
     let unlocked_ids = unlocked.to_vec();
     let (items, next_cursor, total_count) = resolver
-        .resolve_widget_data_with_unlocked(
+        .resolve_widget_data_with_library(
             &query_binding,
             &auth_user.id,
             query.offset,
             &unlocked_ids,
+            default_library_id.as_deref(),
         )
         .await
         .map_err(|err| {

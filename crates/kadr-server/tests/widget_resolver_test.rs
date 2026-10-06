@@ -354,7 +354,7 @@ async fn setup_test_environment() -> (
         .expect("upsert failed");
 
     let spotlight = media_repo
-        .find_spotlight_candidate(&[], None)
+        .find_spotlight_candidate(None, &[], None)
         .await
         .unwrap()
         .expect("spotlight item");
@@ -902,4 +902,95 @@ async fn test_filter_fail_closed_on_missing_or_corrupt_library() {
     // Fail-closed must reject item because its library cannot be verified
     assert!(cards.is_empty(), "Orphan item must be filtered out by fail-closed library check");
 }
+
+#[tokio::test]
+async fn test_widget_resolves_scoped_to_library_screen_by_default() {
+    let (resolver, _media_repo, _playback_repo, _spotlight_id, _continue_id, _show_id) =
+        setup_test_environment().await;
+
+    let user_id = "user-1";
+
+    // 1. A Movies screen layout with Recently Added and Continue Watching widgets
+    let movies_screen = ScreenLayout::new(
+        ScreenId::Movies,
+        "Movies",
+        vec![
+            WidgetNode::Carousel {
+                id: "movies_recent".to_string(),
+                title: "Recently Added".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+                items: None,
+                next_cursor: None,
+            },
+            WidgetNode::Carousel {
+                id: "movies_continue".to_string(),
+                title: "Continue Watching".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::ContinueWatching),
+                items: None,
+                next_cursor: None,
+            },
+            WidgetNode::Carousel {
+                id: "all_libraries_widget".to_string(),
+                title: "All Libraries Recent".to_string(),
+                binding: WidgetQueryBinding {
+                    macro_type: QueryMacro::RecentlyAdded,
+                    limit: 20,
+                    sort: None,
+                    filters: Some(WidgetFilterConfig {
+                        all_libraries: true,
+                        ..Default::default()
+                    }),
+                },
+                items: None,
+                next_cursor: None,
+            },
+        ],
+    );
+
+    let resolved = resolver.resolve_screen(movies_screen, user_id).await;
+
+    // First widget: Recently Added on Movies screen should default to displaying ONLY movies
+    match &resolved.widgets[0] {
+        WidgetNode::Carousel { items, .. } => {
+            let cards = items.as_ref().expect("items must be populated");
+            assert!(!cards.is_empty(), "Movies recent must not be empty");
+            for card in cards {
+                assert_ne!(
+                    card.title, "Dark Matter",
+                    "Shows (Dark Matter) must NOT appear in Movies recently added by default"
+                );
+            }
+        }
+        _ => panic!("Expected carousel"),
+    }
+
+    // Second widget: Continue watching on Movies screen should default to displaying ONLY movies
+    match &resolved.widgets[1] {
+        WidgetNode::Carousel { items, .. } => {
+            let cards = items.as_ref().expect("items must be populated");
+            assert!(!cards.is_empty(), "Movies continue must not be empty");
+            for card in cards {
+                assert_ne!(
+                    card.title, "Dark Matter",
+                    "Shows must NOT appear in Movies continue watching by default"
+                );
+            }
+        }
+        _ => panic!("Expected carousel"),
+    }
+
+    // Third widget: Told otherwise via `all_libraries: true` -> MUST include items from all libraries (including Dark Matter)
+    match &resolved.widgets[2] {
+        WidgetNode::Carousel { items, .. } => {
+            let cards = items.as_ref().expect("items must be populated");
+            let has_dark_matter = cards.iter().any(|c| c.title == "Dark Matter");
+            assert!(
+                has_dark_matter,
+                "Widget with all_libraries: true must include items from other libraries"
+            );
+        }
+        _ => panic!("Expected carousel"),
+    }
+}
+
 

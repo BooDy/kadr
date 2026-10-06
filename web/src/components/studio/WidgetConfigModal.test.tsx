@@ -625,5 +625,66 @@ describe('WidgetConfigModal Component', () => {
         });
       }
     });
+
+    it('allows setting Library Scope to All Libraries', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Expand advanced filters
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      const scopeSelect = screen.getByLabelText(/Library Scope/i) as HTMLSelectElement;
+      expect(scopeSelect.value).toBe('default');
+
+      // Change scope to all
+      fireEvent.change(scopeSelect, { target: { value: 'all' } });
+      expect(scopeSelect.value).toBe('all');
+      expect(screen.getByText(/1 filter active/i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters?.all_libraries).toBe(true);
+        expect(saved.binding.filters?.library_id).toBeUndefined();
+      }
+    });
+
+    it('allows setting Library Scope to a Specific Library', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Expand advanced filters
+      fireEvent.click(screen.getByRole('button', { name: /Advanced Filters/i }));
+
+      const scopeSelect = screen.getByLabelText(/Library Scope/i) as HTMLSelectElement;
+      fireEvent.change(scopeSelect, { target: { value: 'specific' } });
+
+      const targetLibSelect = screen.getByLabelText(/Target Library/i) as HTMLSelectElement;
+      fireEvent.change(targetLibSelect, { target: { value: 'lib-2' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect('binding' in saved).toBe(true);
+      if ('binding' in saved) {
+        expect(saved.binding.filters?.library_id).toBe('lib-2');
+      }
+    });
   });
 });

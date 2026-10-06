@@ -303,3 +303,45 @@ async fn test_ingest_worker_delete_purges_inflight_batch() {
     drop(tx);
     worker_handle.await.unwrap();
 }
+
+#[test]
+fn test_scan_directory_recursive_ignores_symlink_loops_and_avoids_duplicate_files() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    // Create a real movie file
+    let movie_file = root.join("Movie.2023.1080p.mkv");
+    File::create(&movie_file).unwrap();
+
+    // Create a subfolder
+    let subfolder = root.join("subfolder");
+    std::fs::create_dir(&subfolder).unwrap();
+
+    // Create another movie in subfolder
+    let sub_movie = subfolder.join("SubMovie.2024.1080p.mkv");
+    File::create(&sub_movie).unwrap();
+
+    // Create a symlink pointing back to root (circular loop)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let circular_link = subfolder.join("loop_to_root");
+        let _ = symlink(root, &circular_link);
+
+        // Create an alias symlink to subfolder
+        let alias_link = root.join("alias_to_subfolder");
+        let _ = symlink(&subfolder, &alias_link);
+    }
+
+    let files = scan_directory_recursive(root);
+
+    // Verify exactly 2 files returned, no infinite loop, no duplicates
+    assert_eq!(files.len(), 2);
+    let names: Vec<String> = files
+        .iter()
+        .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"Movie.2023.1080p.mkv".to_string()));
+    assert!(names.contains(&"SubMovie.2024.1080p.mkv".to_string()));
+}
+

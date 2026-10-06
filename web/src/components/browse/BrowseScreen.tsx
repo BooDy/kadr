@@ -16,9 +16,10 @@ export interface BrowseScreenProps {
 // Wrapper to handle unhydrated spotlight hero widget
 const HydratedSpotlight: FC<{
   widget: Extract<WidgetNode, { type: 'hero_banner' }>;
+  screenId?: string;
   onPlay: (itemId: number) => void;
   onMoreInfo: (itemId: number) => void;
-}> = ({ widget, onPlay, onMoreInfo }) => {
+}> = ({ widget, screenId, onPlay, onMoreInfo }) => {
   const [item, setItem] = useState<CardViewModel | undefined>(widget.data);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ const HydratedSpotlight: FC<{
 
     let isMounted = true;
     api
-      .getWidgetData(widget.id, 0, 1)
+      .getWidgetData(widget.id, 0, 1, undefined, screenId)
       .then((items) => {
         if (isMounted && items && items.length > 0) {
           setItem(items[0]);
@@ -40,7 +41,7 @@ const HydratedSpotlight: FC<{
     return () => {
       isMounted = false;
     };
-  }, [widget.id, widget.data]);
+  }, [widget.id, widget.data, screenId]);
 
   if (!item) return null;
 
@@ -170,6 +171,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
                     <HydratedSpotlight
                       key={widget.id}
                       widget={widget as Extract<WidgetNode, { type: 'hero_banner' }>}
+                      screenId={screenId}
                       onPlay={onPlayItem}
                       onMoreInfo={(id) => setSelectedItemId(id)}
                     />
@@ -185,6 +187,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
                     <CarouselWidget
                       key={carouselWidget.id}
                       widgetId={carouselWidget.id}
+                      screenId={screenId}
                       title={carouselWidget.title}
                       items={carouselWidget.items}
                       onSelectItem={(item) => setSelectedItemId(item.id)}
@@ -199,6 +202,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
                     <GridWidget
                       key={gridWidget.id}
                       widgetId={gridWidget.id}
+                      screenId={screenId}
                       title={gridWidget.title}
                       columns={gridWidget.columns}
                       items={gridWidget.items}

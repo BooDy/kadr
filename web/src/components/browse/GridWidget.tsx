@@ -8,6 +8,7 @@ export interface GridWidgetProps {
   columns?: number;
   items?: CardViewModel[];
   widgetId?: string;
+  screenId?: string;
   totalCount?: number;
   nextCursor?: string;
   onSelectItem: (item: CardViewModel) => void;
@@ -109,6 +110,7 @@ export const GridWidget: FC<GridWidgetProps> = ({
   columns = 6,
   items: initialItems,
   widgetId,
+  screenId,
   totalCount,
   onSelectItem,
 }) => {
@@ -119,7 +121,15 @@ export const GridWidget: FC<GridWidgetProps> = ({
 
   useEffect(() => {
     if (initialItems) {
-      setItems(initialItems);
+      const seen = new Set<number>();
+      const deduped: CardViewModel[] = [];
+      for (const item of initialItems) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          deduped.push(item);
+        }
+      }
+      setItems(deduped);
       return;
     }
 
@@ -129,11 +139,17 @@ export const GridWidget: FC<GridWidgetProps> = ({
     setLoading(true);
 
     api
-      .getWidgetData(widgetId, 0, 24)
+      .getWidgetData(widgetId, 0, 24, undefined, screenId)
       .then((data) => {
         if (isMounted) {
-          setItems(data);
-          if (data.length < 24) setHasMore(false);
+          const seen = new Set<number>();
+          const deduped = data.filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          });
+          setItems(deduped);
+          if (deduped.length < 24) setHasMore(false);
           setLoading(false);
         }
       })
@@ -144,18 +160,25 @@ export const GridWidget: FC<GridWidgetProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [initialItems, widgetId]);
+  }, [initialItems, widgetId, screenId]);
 
   const loadMore = async () => {
     if (!widgetId || loading) return;
     const nextPage = page + 1;
     setLoading(true);
     try {
-      const moreItems = await api.getWidgetData(widgetId, nextPage, 24);
+      const moreItems = await api.getWidgetData(widgetId, nextPage, 24, undefined, screenId);
       if (moreItems.length < 24) {
         setHasMore(false);
       }
-      setItems((prev) => [...prev, ...moreItems]);
+      setItems((prev) => {
+        const seenIds = new Set(prev.map((i) => i.id));
+        const unique = moreItems.filter((i) => !seenIds.has(i.id));
+        if (unique.length === 0) {
+          setHasMore(false);
+        }
+        return [...prev, ...unique];
+      });
       setPage(nextPage);
     } catch {
       setHasMore(false);

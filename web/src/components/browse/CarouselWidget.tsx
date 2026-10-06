@@ -7,6 +7,7 @@ export interface CarouselWidgetProps {
   title: string;
   items?: CardViewModel[];
   widgetId?: string;
+  screenId?: string;
   onSelectItem: (item: CardViewModel) => void;
   onPlayItem?: (itemId: number) => void;
 }
@@ -105,6 +106,7 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
   title,
   items: initialItems,
   widgetId,
+  screenId,
   onSelectItem,
 }) => {
   const [items, setItems] = useState<CardViewModel[]>(initialItems || []);
@@ -113,7 +115,15 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
 
   useEffect(() => {
     if (initialItems) {
-      setItems(initialItems);
+      const seen = new Set<number>();
+      const deduped: CardViewModel[] = [];
+      for (const item of initialItems) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          deduped.push(item);
+        }
+      }
+      setItems(deduped);
       return;
     }
 
@@ -123,10 +133,16 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
     setLoading(true);
 
     api
-      .getWidgetData(widgetId, 0, 20)
+      .getWidgetData(widgetId, 0, 20, undefined, screenId)
       .then((data) => {
         if (isMounted) {
-          setItems(data);
+          const seen = new Set<number>();
+          const deduped = data.filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          });
+          setItems(deduped);
           setLoading(false);
         }
       })
@@ -137,7 +153,7 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [initialItems, widgetId]);
+  }, [initialItems, widgetId, screenId]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (!railRef.current) return;

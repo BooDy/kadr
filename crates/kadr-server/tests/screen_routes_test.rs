@@ -236,7 +236,7 @@ async fn setup_test_app() -> TestContext {
         .expect("upsert failed");
 
     let spotlight = media_repo
-        .find_spotlight_candidate(&[], None)
+        .find_spotlight_candidate(None, &[], None)
         .await
         .unwrap()
         .expect("spotlight item not found");

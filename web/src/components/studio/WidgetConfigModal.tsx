@@ -59,6 +59,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
 
   // Advanced Filters State
   const [isFiltersOpen, setIsFiltersOpen] = useState<boolean>(false);
+  const [scopeMode, setScopeMode] = useState<'default' | 'all' | 'specific'>('default');
+  const [specificLibraryId, setSpecificLibraryId] = useState<string>('');
   const [excludePrivate, setExcludePrivate] = useState<boolean>(false);
   const [excludeLibraryIds, setExcludeLibraryIds] = useState<string[]>([]);
   const [excludeGenres, setExcludeGenres] = useState<string[]>([]);
@@ -116,11 +118,24 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         }
 
         const filters = binding.filters;
+        if (filters?.all_libraries) {
+          setScopeMode('all');
+          setSpecificLibraryId('');
+        } else if (filters?.library_id) {
+          setScopeMode('specific');
+          setSpecificLibraryId(filters.library_id);
+        } else {
+          setScopeMode('default');
+          setSpecificLibraryId('');
+        }
+
         const hasActiveFilters = Boolean(
           filters?.exclude_private ||
           (filters?.exclude_library_ids && filters.exclude_library_ids.length > 0) ||
           (filters?.exclude_genres && filters.exclude_genres.length > 0) ||
-          (filters?.max_age_days && filters.max_age_days > 0)
+          (filters?.max_age_days && filters.max_age_days > 0) ||
+          filters?.all_libraries ||
+          filters?.library_id
         );
 
         setIsFiltersOpen(hasActiveFilters);
@@ -131,6 +146,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         setMaxAgeDays(filters?.max_age_days ?? null);
       } else {
         setIsFiltersOpen(false);
+        setScopeMode('default');
+        setSpecificLibraryId('');
         setExcludePrivate(false);
         setExcludeLibraryIds([]);
         setExcludeGenres([]);
@@ -148,6 +165,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       setLimit(20);
       setSort('');
       setIsFiltersOpen(false);
+      setScopeMode('default');
+      setSpecificLibraryId('');
       setExcludePrivate(false);
       setExcludeLibraryIds([]);
       setExcludeGenres([]);
@@ -200,7 +219,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
     (excludePrivate ? 1 : 0) +
     (excludeLibraryIds.length > 0 ? 1 : 0) +
     (excludeGenres.length > 0 ? 1 : 0) +
-    (maxAgeDays !== null && maxAgeDays > 0 ? 1 : 0);
+    (maxAgeDays !== null && maxAgeDays > 0 ? 1 : 0) +
+    (scopeMode !== 'default' ? 1 : 0);
 
   // Handle escape key
   useEffect(() => {
@@ -258,6 +278,14 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
 
     const filterConfig: WidgetFilterConfig = {};
     let hasFilters = false;
+
+    if (scopeMode === 'all') {
+      filterConfig.all_libraries = true;
+      hasFilters = true;
+    } else if (scopeMode === 'specific' && specificLibraryId) {
+      filterConfig.library_id = specificLibraryId;
+      hasFilters = true;
+    }
 
     if (excludePrivate) {
       filterConfig.exclude_private = true;
@@ -557,6 +585,45 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
 
             {isFiltersOpen && (
               <div id="advanced-filters-panel" className="mt-4 space-y-4 pl-1">
+                {/* Library Scope */}
+                <div>
+                  <label htmlFor="widget-library-scope" className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
+                    Library Scope
+                  </label>
+                  <select
+                    id="widget-library-scope"
+                    aria-label="Library Scope"
+                    value={scopeMode}
+                    onChange={(e) => setScopeMode(e.target.value as 'default' | 'all' | 'specific')}
+                    className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none mb-2"
+                  >
+                    <option value="default">Screen Default (Current Library)</option>
+                    <option value="all">All Libraries</option>
+                    <option value="specific">Specific Library...</option>
+                  </select>
+                  {scopeMode === 'specific' && (
+                    <select
+                      id="widget-specific-library"
+                      aria-label="Target Library"
+                      value={specificLibraryId}
+                      onChange={(e) => setSpecificLibraryId(e.target.value)}
+                      className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                    >
+                      <option value="">Select a library...</option>
+                      {libraries.map((lib) => (
+                        <option key={lib.id} value={lib.id}>
+                          {lib.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="text-xs text-muted mt-1">
+                    {scopeMode === 'default' && 'Only media from the current screen\'s library will be displayed by default.'}
+                    {scopeMode === 'all' && 'Displays media aggregated across all libraries on this screen.'}
+                    {scopeMode === 'specific' && 'Restricts media to the selected library regardless of which screen this widget is on.'}
+                  </p>
+                </div>
+
                 {/* Exclude Private Libraries */}
                 <div>
                   <div className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">

@@ -12,21 +12,40 @@ use tracing::{info, warn};
 
 pub fn scan_directory_recursive<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     let mut files = Vec::new();
+    let mut visited_dirs = std::collections::HashSet::new();
+    let mut seen_files = std::collections::HashSet::new();
+    scan_directory_recursive_inner(dir.as_ref(), &mut visited_dirs, &mut seen_files, &mut files);
+    files
+}
+
+fn scan_directory_recursive_inner(
+    dir: &Path,
+    visited_dirs: &mut std::collections::HashSet<PathBuf>,
+    seen_files: &mut std::collections::HashSet<PathBuf>,
+    files: &mut Vec<PathBuf>,
+) {
+    let canon_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if !visited_dirs.insert(canon_dir) {
+        return;
+    }
+
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                files.extend(scan_directory_recursive(path));
+                scan_directory_recursive_inner(&path, visited_dirs, seen_files, files);
             } else if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                     if ["mkv", "mp4", "webm", "avi"].contains(&ext.to_lowercase().as_str()) {
-                        files.push(path);
+                        let canon_file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                        if seen_files.insert(canon_file.clone()) {
+                            files.push(canon_file);
+                        }
                     }
                 }
             }
         }
     }
-    files
 }
 
 pub async fn start_library_watcher(

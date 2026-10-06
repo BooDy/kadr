@@ -135,6 +135,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let playback_repo = PlaybackRepository::new(pool.clone());
     let subtitle_repo = SubtitleRepository::new(pool.clone());
 
+    if let Ok(removed) = media_repo.deduplicate_media_items().await {
+        if removed > 0 {
+            info!(removed, "Cleaned up duplicate media items from storage");
+        }
+    }
+
     // Sync bootstrap libraries
     for lib_cfg in &config.libraries {
         let lib = Library {

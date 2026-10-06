@@ -306,7 +306,7 @@ describe('BrowseScreen & Declarative Widgets', () => {
     render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
 
     await waitFor(() => {
-      expect(api.getWidgetData).toHaveBeenCalledWith('unhydrated_carousel', 0, 20);
+      expect(api.getWidgetData).toHaveBeenCalledWith('unhydrated_carousel', 0, 20, undefined, 'movies');
       expect(screen.getByText('Oppenheimer')).toBeDefined();
     });
   });

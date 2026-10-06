@@ -1,7 +1,7 @@
 use futures::future::join_all;
 use kadr_core::ast::{
-    CardViewModel, ItemDetailsPayload, QueryMacro, ScreenLayout, WidgetFilterConfig, WidgetNode,
-    WidgetQueryBinding,
+    CardViewModel, ItemDetailsPayload, QueryMacro, ScreenId, ScreenLayout, WidgetFilterConfig,
+    WidgetNode, WidgetQueryBinding,
 };
 use kadr_core::models::{MediaItem, MediaType};
 use kadr_storage::error::Result;
@@ -25,6 +25,59 @@ impl WidgetResolver {
             media_repo,
             playback_repo,
             lib_repo,
+        }
+    }
+
+    /// Resolves a ScreenId into its associated library UUID if applicable.
+    pub async fn resolve_library_id_for_screen(&self, screen_id: &ScreenId) -> Option<String> {
+        match screen_id {
+            ScreenId::Home => None,
+            ScreenId::Movies => {
+                if let Ok(libs) = self.lib_repo.get_all().await {
+                    libs.into_iter()
+                        .find(|l| l.media_type == MediaType::Movie || l.name.eq_ignore_ascii_case("movies"))
+                        .map(|l| l.id)
+                } else {
+                    None
+                }
+            }
+            ScreenId::Shows => {
+                if let Ok(libs) = self.lib_repo.get_all().await {
+                    libs.into_iter()
+                        .find(|l| l.media_type == MediaType::Show || l.name.eq_ignore_ascii_case("shows") || l.name.eq_ignore_ascii_case("tv shows"))
+                        .map(|l| l.id)
+                } else {
+                    None
+                }
+            }
+            ScreenId::Custom(id) => {
+                if let Ok(Some(lib)) = self.lib_repo.get_by_id(id).await {
+                    Some(lib.id)
+                } else if let Ok(libs) = self.lib_repo.get_all().await {
+                    libs.into_iter()
+                        .find(|l| l.id == *id || l.name.eq_ignore_ascii_case(id))
+                        .map(|l| l.id)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Determines the effective library ID for a widget binding given the screen's default library.
+    pub fn determine_effective_library_id<'a>(
+        &self,
+        binding: &'a WidgetQueryBinding,
+        default_library_id: Option<&'a str>,
+    ) -> Option<&'a str> {
+        if binding.filters.as_ref().map(|f| f.all_libraries).unwrap_or(false) {
+            None
+        } else if let Some(lib_id) = binding.filters.as_ref().and_then(|f| f.library_id.as_deref()) {
+            Some(lib_id)
+        } else if let QueryMacro::LibraryItems { ref library_id } = binding.macro_type {
+            Some(library_id.as_str())
+        } else {
+            default_library_id
         }
     }
 
@@ -52,13 +105,21 @@ impl WidgetResolver {
         }
     }
 
-    /// Evaluates if a media item matches given widget filters and library privacy.
+    /// Evaluates if a media item matches given widget filters, library privacy, and effective library scope.
     async fn is_item_matching_filters(
         &self,
         item: &MediaItem,
         filters: Option<&WidgetFilterConfig>,
         unlocked_ids: &[String],
+        effective_library_id: Option<&str>,
     ) -> bool {
+        // Scoping check: if an effective library ID is present, item must belong to it
+        if let Some(target_lib) = effective_library_id {
+            if item.library_id != target_lib {
+                return false;
+            }
+        }
+
         // 1. Private check: if filters.exclude_private is true, item must not be in a private library
         let lib = match self.lib_repo.get_by_id(&item.library_id).await {
             Ok(Some(lib)) => lib,
@@ -127,10 +188,11 @@ impl WidgetResolver {
         user_id: &str,
         unlocked_ids: &[String],
     ) -> ScreenLayout {
+        let default_library_id = self.resolve_library_id_for_screen(&screen.id).await;
         let futures = screen
             .widgets
             .into_iter()
-            .map(|widget| self.resolve_widget(widget, user_id, unlocked_ids));
+            .map(|widget| self.resolve_widget(widget, user_id, unlocked_ids, default_library_id.as_deref()));
         let widgets = join_all(futures).await;
 
         ScreenLayout {
@@ -145,6 +207,7 @@ impl WidgetResolver {
         widget: WidgetNode,
         user_id: &str,
         unlocked_ids: &[String],
+        default_library_id: Option<&str>,
     ) -> WidgetNode {
         match widget {
             WidgetNode::HeroBanner {
@@ -153,7 +216,7 @@ impl WidgetResolver {
                 data: _,
             } => {
                 let card = self
-                    .resolve_hero_banner_data(&binding, user_id, unlocked_ids)
+                    .resolve_hero_banner_data(&binding, user_id, unlocked_ids, default_library_id)
                     .await;
                 WidgetNode::HeroBanner {
                     id,
@@ -169,7 +232,7 @@ impl WidgetResolver {
                 next_cursor: _,
             } => {
                 let (cards, next_cursor, _) = self
-                    .resolve_widget_data_with_unlocked(&binding, user_id, 0, unlocked_ids)
+                    .resolve_widget_data_with_library(&binding, user_id, 0, unlocked_ids, default_library_id)
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve carousel {id}: {err}");
@@ -194,7 +257,7 @@ impl WidgetResolver {
                 total_count: _,
             } => {
                 let (cards, next_cursor, total_count) = self
-                    .resolve_widget_data_with_unlocked(&binding, user_id, 0, unlocked_ids)
+                    .resolve_widget_data_with_library(&binding, user_id, 0, unlocked_ids, default_library_id)
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve grid {id}: {err}");
@@ -238,12 +301,14 @@ impl WidgetResolver {
         binding: &WidgetQueryBinding,
         user_id: &str,
         unlocked_ids: &[String],
+        default_library_id: Option<&str>,
     ) -> Option<CardViewModel> {
+        let effective_library_id = self.determine_effective_library_id(binding, default_library_id);
         let candidate = match binding.macro_type {
             QueryMacro::SpotlightItem { item_id: Some(id) } => {
                 let item = self.media_repo.get_by_id(id).await.ok().flatten()?;
                 if self
-                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids)
+                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
                     .await
                 {
                     Some(item)
@@ -253,14 +318,14 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate(unlocked_ids, binding.filters.as_ref())
+                .find_spotlight_candidate(effective_library_id, unlocked_ids, binding.filters.as_ref())
                 .await
                 .ok()
                 .flatten(),
             QueryMacro::ItemDetails { item_id } => {
                 let item = self.media_repo.get_by_id(item_id).await.ok().flatten()?;
                 if self
-                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids)
+                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
                     .await
                 {
                     Some(item)
@@ -270,7 +335,7 @@ impl WidgetResolver {
             }
             _ => {
                 let (cards, _, _) = self
-                    .resolve_widget_data_with_unlocked(binding, user_id, 0, unlocked_ids)
+                    .resolve_widget_data_with_library(binding, user_id, 0, unlocked_ids, default_library_id)
                     .await
                     .ok()?;
                 return cards.into_iter().next();
@@ -301,7 +366,7 @@ impl WidgetResolver {
         user_id: &str,
         offset: u32,
     ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
-        self.resolve_widget_data_with_unlocked(binding, user_id, offset, &[]).await
+        self.resolve_widget_data_with_library(binding, user_id, offset, &[], None).await
     }
 
     /// Resolves paginated widget data for a query binding with unlocked private libraries.
@@ -313,6 +378,20 @@ impl WidgetResolver {
         offset: u32,
         unlocked_ids: &[String],
     ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
+        self.resolve_widget_data_with_library(binding, user_id, offset, unlocked_ids, None).await
+    }
+
+    /// Resolves paginated widget data for a query binding with unlocked private libraries and optional default library scope.
+    /// Returns `(cards, next_cursor, total_count)`.
+    pub async fn resolve_widget_data_with_library(
+        &self,
+        binding: &WidgetQueryBinding,
+        user_id: &str,
+        offset: u32,
+        unlocked_ids: &[String],
+        default_library_id: Option<&str>,
+    ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
+        let effective_library_id = self.determine_effective_library_id(binding, default_library_id);
         match &binding.macro_type {
             QueryMacro::ContinueWatching => {
                 let states = self.playback_repo.get_continue_watching(user_id).await?;
@@ -335,7 +414,7 @@ impl WidgetResolver {
                 for state in &page_states {
                     if let Some(item) = items_map.get(&state.media_item_id) {
                         if self
-                            .is_item_matching_filters(item, binding.filters.as_ref(), unlocked_ids)
+                            .is_item_matching_filters(item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
                             .await
                         {
                             cards.push(to_card_view_model(item, Some(state)));
@@ -355,7 +434,7 @@ impl WidgetResolver {
                 let items = self
                     .media_repo
                     .find_recently_added_paginated(
-                        None,
+                        effective_library_id,
                         binding.limit,
                         offset,
                         unlocked_ids,
@@ -378,6 +457,7 @@ impl WidgetResolver {
                 let items = self
                     .media_repo
                     .find_top_rated_paginated(
+                        effective_library_id,
                         binding.limit,
                         offset,
                         unlocked_ids,
@@ -400,6 +480,7 @@ impl WidgetResolver {
                     .media_repo
                     .find_by_genre_paginated(
                         genre,
+                        effective_library_id,
                         binding.limit,
                         offset,
                         unlocked_ids,
@@ -419,10 +500,11 @@ impl WidgetResolver {
                 Ok((cards, next_cursor, None))
             }
             QueryMacro::LibraryItems { library_id } => {
+                let target_lib = effective_library_id.unwrap_or(library_id.as_str());
                 let (items, total) = self
                     .media_repo
                     .find_by_library_paginated(
-                        library_id,
+                        target_lib,
                         binding.limit,
                         offset,
                         binding.sort.as_deref(),
@@ -448,7 +530,7 @@ impl WidgetResolver {
                     let item = self.media_repo.get_by_id(*id).await?;
                     if let Some(i) = item {
                         if self
-                            .is_item_matching_filters(&i, binding.filters.as_ref(), unlocked_ids)
+                            .is_item_matching_filters(&i, binding.filters.as_ref(), unlocked_ids, effective_library_id)
                             .await
                         {
                             Some(i)
@@ -460,7 +542,7 @@ impl WidgetResolver {
                     }
                 } else {
                     self.media_repo
-                        .find_spotlight_candidate(unlocked_ids, binding.filters.as_ref())
+                        .find_spotlight_candidate(effective_library_id, unlocked_ids, binding.filters.as_ref())
                         .await?
                 };
 
@@ -479,7 +561,7 @@ impl WidgetResolver {
             QueryMacro::ItemDetails { item_id } => {
                 if let Some(item) = self.media_repo.get_by_id(*item_id).await? {
                     if self
-                        .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids)
+                        .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
                         .await
                     {
                         let playback = self.playback_repo.get_state(user_id, *item_id).await?;

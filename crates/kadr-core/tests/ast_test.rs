@@ -419,6 +419,8 @@ fn test_widget_filter_config_full() {
         exclude_library_ids: vec!["lib-1".to_string(), "lib-2".to_string()],
         exclude_genres: vec!["Horror".to_string(), "Action".to_string()],
         max_age_days: Some(30),
+        all_libraries: true,
+        library_id: Some("lib-custom".to_string()),
     };
 
     let serialized = serde_json::to_string(&config).expect("serialization failed");
@@ -431,6 +433,8 @@ fn test_widget_filter_config_full() {
     assert_eq!(json_val["exclude_library_ids"], serde_json::json!(["lib-1", "lib-2"]));
     assert_eq!(json_val["exclude_genres"], serde_json::json!(["Horror", "Action"]));
     assert_eq!(json_val["max_age_days"], 30);
+    assert_eq!(json_val["all_libraries"], true);
+    assert_eq!(json_val["library_id"], "lib-custom");
 }
 
 #[test]
@@ -464,6 +468,7 @@ fn test_widget_query_binding_with_filters() {
         exclude_library_ids: vec!["hidden-lib".to_string()],
         exclude_genres: vec!["Talk-Show".to_string()],
         max_age_days: Some(7),
+        ..Default::default()
     };
 
     let binding = WidgetQueryBinding::new(QueryMacro::RecentlyAdded)
@@ -490,6 +495,7 @@ fn test_widget_nodes_roundtrip_with_filters() {
         exclude_library_ids: vec!["private-lib".to_string()],
         exclude_genres: vec!["Reality".to_string()],
         max_age_days: Some(14),
+        ..Default::default()
     };
 
     let carousel_binding = WidgetQueryBinding::new(QueryMacro::ContinueWatching)

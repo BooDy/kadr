@@ -285,7 +285,7 @@ async fn test_find_top_rated() {
     let (media_repo, _) = setup_test_data().await;
 
     let top = media_repo
-        .find_top_rated_paginated(4, 0, &[], None)
+        .find_top_rated_paginated(None, 4, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(top.len(), 4);
@@ -300,7 +300,7 @@ async fn test_find_top_rated() {
 
     // With offset
     let top_page2 = media_repo
-        .find_top_rated_paginated(2, 4, &[], None)
+        .find_top_rated_paginated(None, 2, 4, &[], None)
         .await
         .unwrap();
     assert_eq!(top_page2.len(), 1);
@@ -314,7 +314,7 @@ async fn test_find_by_genre() {
 
     // 1. Query "Mystery"
     let mystery = media_repo
-        .find_by_genre_paginated("Mystery", 10, 0, &[], None)
+        .find_by_genre_paginated("Mystery", None, 10, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(mystery.len(), 2);
@@ -324,7 +324,7 @@ async fn test_find_by_genre() {
 
     // 2. Query case-insensitive "action"
     let action = media_repo
-        .find_by_genre_paginated("action", 10, 0, &[], None)
+        .find_by_genre_paginated("action", None, 10, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(action.len(), 1);
@@ -332,12 +332,12 @@ async fn test_find_by_genre() {
 
     // 3. Query "Sci-Fi" with pagination
     let scifi_page1 = media_repo
-        .find_by_genre_paginated("Sci-Fi", 2, 0, &[], None)
+        .find_by_genre_paginated("Sci-Fi", None, 2, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(scifi_page1.len(), 2);
     let scifi_page2 = media_repo
-        .find_by_genre_paginated("Sci-Fi", 2, 2, &[], None)
+        .find_by_genre_paginated("Sci-Fi", None, 2, 2, &[], None)
         .await
         .unwrap();
     assert_eq!(scifi_page2.len(), 2);
@@ -382,7 +382,7 @@ async fn test_find_by_library_paginated() {
 async fn test_find_spotlight_candidate() {
     let (media_repo, _) = setup_test_data().await;
 
-    let candidate = media_repo.find_spotlight_candidate(&[], None).await.unwrap();
+    let candidate = media_repo.find_spotlight_candidate(None, &[], None).await.unwrap();
     assert!(candidate.is_some());
     let item = candidate.unwrap();
     // Inception has backdrop_path and highest rating among items with backdrop (8.8)
@@ -465,14 +465,14 @@ async fn test_filter_exclude_private() {
 
     // 3. Spotlight candidate with exclude_private = true ignores the higher-rated private item
     let spotlight_unfiltered = media_repo
-        .find_spotlight_candidate(&unlocked, None)
+        .find_spotlight_candidate(None, &unlocked, None)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(spotlight_unfiltered.title, "Confidential Project");
 
     let spotlight_filtered = media_repo
-        .find_spotlight_candidate(&unlocked, Some(&filter))
+        .find_spotlight_candidate(None, &unlocked, Some(&filter))
         .await
         .unwrap()
         .unwrap();
@@ -675,6 +675,7 @@ async fn test_filter_combined_filters() {
         exclude_genres: vec!["Sci-Fi".to_string()],
         max_age_days: Some(10),
         exclude_library_ids: vec!["shows".to_string()],
+        ..Default::default()
     };
 
     let results = media_repo
@@ -896,13 +897,13 @@ async fn test_catalog_queries_exclude_loose_episodes() {
     assert!(recent.iter().all(|item| item.item_type != MediaType::Episode));
 
     // 3. find_top_rated_paginated excludes episodes
-    let top = repo.find_top_rated_paginated(10, 0, &[], None).await.unwrap();
+    let top = repo.find_top_rated_paginated(None, 10, 0, &[], None).await.unwrap();
     assert_eq!(top.len(), 2, "Top rated should only contain Movie and Show");
     assert!(top.iter().all(|item| item.item_type != MediaType::Episode));
 
     // 4. find_by_genre_paginated excludes episodes
     let sci_fi = repo
-        .find_by_genre_paginated("Sci-Fi", 10, 0, &[], None)
+        .find_by_genre_paginated("Sci-Fi", None, 10, 0, &[], None)
         .await
         .unwrap();
     assert_eq!(

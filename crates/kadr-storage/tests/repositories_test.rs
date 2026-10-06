@@ -426,3 +426,80 @@ async fn test_media_item_find_by_paths_batch() {
     assert_eq!(map.get(&path_b).unwrap().title, "Beta");
     assert!(!map.contains_key(&path_nonexistent));
 }
+
+#[tokio::test]
+async fn test_deduplicate_media_items() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    let lib = Library {
+        id: "lib1".to_string(),
+        name: "Test Lib".to_string(),
+        path: PathBuf::from("/media/test"),
+        media_type: MediaType::Movie,
+        created_at: 1000,
+        ..Default::default()
+    };
+    lib_repo.insert(&lib).await.unwrap();
+
+    // Create temp files to test real canonicalization
+    let temp_dir = tempfile::tempdir().unwrap();
+    let real_file = temp_dir.path().join("real_movie.mp4");
+    std::fs::File::create(&real_file).unwrap();
+
+    // Insert original item
+    let item1 = MediaItem {
+        id: None,
+        library_id: "lib1".to_string(),
+        item_type: MediaType::Movie,
+        title: "Original".to_string(),
+        original_title: None,
+        release_year: Some(2023),
+        added_at: 1000,
+        file_path: real_file.clone(),
+        file_name: "real_movie.mp4".to_string(),
+        file_size: 1000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata::default(),
+    };
+    media_repo.upsert_batch(&[item1]).await.unwrap();
+
+    // Create symlink
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let sym_file = temp_dir.path().join("symlink_movie.mp4");
+        symlink(&real_file, &sym_file).unwrap();
+
+        // Insert duplicate item using symlinked path
+        let item2 = MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Duplicate".to_string(),
+            original_title: None,
+            release_year: Some(2023),
+            added_at: 1001,
+            file_path: sym_file,
+            file_name: "symlink_movie.mp4".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        };
+        media_repo.upsert_batch(&[item2]).await.unwrap();
+
+        let count_before = media_repo.count_by_library("lib1").await.unwrap();
+        assert_eq!(count_before, 2);
+
+        // Run deduplication
+        let removed = media_repo.deduplicate_media_items().await.unwrap();
+        assert_eq!(removed, 1);
+
+        let count_after = media_repo.count_by_library("lib1").await.unwrap();
+        assert_eq!(count_after, 1);
+    }
+}
+

@@ -175,6 +175,25 @@ pub async fn save_screen_handler(
 
     let parsed_id: ScreenId = screen_id.parse().unwrap();
     screen.id = parsed_id;
+    for widget in &mut screen.widgets {
+        match widget {
+            kadr_core::ast::WidgetNode::HeroBanner { data, .. } => {
+                *data = None;
+            }
+            kadr_core::ast::WidgetNode::Carousel { items, next_cursor, .. } => {
+                *items = None;
+                *next_cursor = None;
+            }
+            kadr_core::ast::WidgetNode::Grid { items, next_cursor, total_count, .. } => {
+                *items = None;
+                *next_cursor = None;
+                *total_count = None;
+            }
+            kadr_core::ast::WidgetNode::ItemDetails { details, .. } => {
+                *details = None;
+            }
+        }
+    }
     let screens_dir = config.read().await.server.data_dir.join("screens");
     registry
         .save_screen(screen.clone(), &screens_dir)

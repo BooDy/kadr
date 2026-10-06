@@ -68,6 +68,8 @@ export interface WidgetFilterConfig {
   exclude_library_ids?: string[];
   exclude_genres?: string[];
   max_age_days?: number;
+  all_libraries?: boolean;
+  library_id?: string;
 }
 
 export interface WidgetQueryBinding {

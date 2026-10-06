@@ -294,13 +294,14 @@ impl MediaItemRepository {
 
     pub async fn find_top_rated_paginated(
         &self,
+        library_id: Option<&str>,
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
         filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         self.widget_queries()
-            .find_top_rated_paginated(limit, offset, unlocked_ids, filters)
+            .find_top_rated_paginated(library_id, limit, offset, unlocked_ids, filters)
             .await
     }
 
@@ -318,13 +319,14 @@ impl MediaItemRepository {
     pub async fn find_by_genre_paginated(
         &self,
         genre: &str,
+        library_id: Option<&str>,
         limit: u32,
         offset: u32,
         unlocked_ids: &[String],
         filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         self.widget_queries()
-            .find_by_genre_paginated(genre, limit, offset, unlocked_ids, filters)
+            .find_by_genre_paginated(genre, library_id, limit, offset, unlocked_ids, filters)
             .await
     }
 
@@ -356,16 +358,17 @@ impl MediaItemRepository {
 
     pub async fn find_spotlight_candidate(
         &self,
+        library_id: Option<&str>,
         unlocked_ids: &[String],
         filters: Option<&WidgetFilterConfig>,
     ) -> Result<Option<MediaItem>> {
         self.widget_queries()
-            .find_spotlight_candidate(unlocked_ids, filters)
+            .find_spotlight_candidate(library_id, unlocked_ids, filters)
             .await
     }
 
     pub async fn find_spotlight_candidate_default(&self) -> Result<Option<MediaItem>> {
-        self.find_spotlight_candidate(&[], None).await
+        self.find_spotlight_candidate(None, &[], None).await
     }
 
     pub async fn find_episodes_by_series(&self, series_title: &str) -> Result<Vec<MediaItem>> {
@@ -416,6 +419,81 @@ impl MediaItemRepository {
             } else {
                 Ok(None)
             }
+        })
+        .await?
+    }
+
+    /// Deduplicates media items in storage that point to the same physical file on disk (via symlinks, hardlinks, or alias paths).
+    /// Preserves user playback states by migrating them to the canonical item.
+    pub async fn deduplicate_media_items(&self) -> Result<usize> {
+        let conn = self.pool.get().await?;
+        conn.interact(|c| {
+            let (duplicates_to_delete, updates) = {
+                let mut stmt = c.prepare("SELECT id, library_id, file_path FROM media_items ORDER BY id ASC")?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })?;
+
+                let mut seen_canonical: std::collections::HashMap<std::path::PathBuf, i64> =
+                    std::collections::HashMap::new();
+                let mut duplicates: Vec<(i64, i64)> = Vec::new();
+                let mut updates: Vec<(i64, String)> = Vec::new();
+
+                for r in rows {
+                    let (id, _lib_id, path_str) = r?;
+                    let path = std::path::Path::new(&path_str);
+                    let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                    let canon_str = canon.to_string_lossy().to_string();
+
+                    if let Some(&keep_id) = seen_canonical.get(&canon) {
+                        duplicates.push((id, keep_id));
+                    } else {
+                        seen_canonical.insert(canon, id);
+                        if canon_str != path_str {
+                            updates.push((id, canon_str));
+                        }
+                    }
+                }
+                (duplicates, updates)
+            };
+
+            if duplicates_to_delete.is_empty() && updates.is_empty() {
+                return Ok(0);
+            }
+
+            let tx = c.transaction()?;
+            for (del_id, keep_id) in &duplicates_to_delete {
+                let _ = tx.execute(
+                    "UPDATE OR IGNORE user_playback_states SET media_item_id = ?1 WHERE media_item_id = ?2",
+                    rusqlite::params![keep_id, del_id],
+                );
+                let _ = tx.execute(
+                    "DELETE FROM user_playback_states WHERE media_item_id = ?1",
+                    rusqlite::params![del_id],
+                );
+                let _ = tx.execute(
+                    "DELETE FROM media_subtitles WHERE media_item_id = ?1",
+                    rusqlite::params![del_id],
+                );
+                tx.execute(
+                    "DELETE FROM media_items WHERE id = ?1",
+                    rusqlite::params![del_id],
+                )?;
+            }
+
+            for (id, canon_str) in updates {
+                let _ = tx.execute(
+                    "UPDATE OR IGNORE media_items SET file_path = ?1 WHERE id = ?2",
+                    rusqlite::params![canon_str, id],
+                );
+            }
+
+            tx.commit()?;
+            Ok(duplicates_to_delete.len())
         })
         .await?
     }

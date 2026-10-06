@@ -163,6 +163,14 @@ pub struct WidgetFilterConfig {
     /// Maximum age in days from current time; excludes items added before (now - max_age_days).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_age_days: Option<u32>,
+
+    /// When true, includes items from all libraries even when placed on a specific library screen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub all_libraries: bool,
+
+    /// Explicit library ID to filter to. Overrides the screen's default library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library_id: Option<String>,
 }
 
 /// Query binding configuration linking a widget to a data source.

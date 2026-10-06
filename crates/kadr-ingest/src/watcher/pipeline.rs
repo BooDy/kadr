@@ -42,12 +42,17 @@ impl IngestPipeline {
         path: P,
     ) -> Result<Option<(MediaItem, Vec<DiscoveredSubtitle>)>> {
         let path = path.as_ref();
-        let filename = match path.file_name().and_then(|s| s.to_str()) {
-            Some(name) => name,
+        let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let filename = match canonical_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .or_else(|| path.file_name().and_then(|s| s.to_str()))
+        {
+            Some(name) => name.to_string(),
             None => return Ok(None),
         };
 
-        let parsed = match self.filename_parser.parse_with_path(path) {
+        let parsed = match self.filename_parser.parse_with_path(&canonical_path) {
             Some(p) => p,
             None => return Ok(None),
         };
@@ -169,8 +174,8 @@ impl IngestPipeline {
                 original_title,
                 release_year: final_year,
                 added_at,
-                file_path: path.to_path_buf(),
-                file_name: filename.to_string(),
+                file_path: canonical_path,
+                file_name: filename,
                 file_size,
                 technical,
                 metadata: meta,
