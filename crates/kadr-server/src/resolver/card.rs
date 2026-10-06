@@ -122,6 +122,8 @@ pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) ->
         rating,
         release_year,
         badge,
+        season: item.metadata.season,
+        episode: item.metadata.episode,
     }
 }
 

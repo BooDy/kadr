@@ -1,5 +1,6 @@
 // crates/kadr-ingest/tests/filename_parser_test.rs
 use kadr_ingest::parser::FilenameParser;
+use std::path::Path;
 
 #[test]
 fn test_standard_scene_release() {
@@ -133,4 +134,41 @@ fn test_parenthesized_year_dot_separator() {
     assert_eq!(parsed.year, Some(2020));
     assert_eq!(parsed.resolution.as_deref(), Some("1080p"));
     assert_eq!(parsed.container, "mkv");
+}
+
+#[test]
+fn test_parse_standard_sxx_exx_episode() {
+    let parser = FilenameParser::new();
+    let res = parser
+        .parse(
+            "What.We.Do.in.the.Shadows.(2019).-S04E01.-.Reunited.(1080p.HULU.WEB-DL.x265.Ghost).mkv",
+        )
+        .unwrap();
+    assert!(res.is_episode);
+    assert_eq!(res.series_title.as_deref(), Some("What We Do in the Shadows"));
+    assert_eq!(res.season, Some(4));
+    assert_eq!(res.episode, Some(1));
+    assert_eq!(res.episode_title.as_deref(), Some("Reunited"));
+}
+
+#[test]
+fn test_parse_alt_1x02_episode() {
+    let parser = FilenameParser::new();
+    let res = parser.parse("Hacks.1x02.Prank.Call.720p.mkv").unwrap();
+    assert!(res.is_episode);
+    assert_eq!(res.series_title.as_deref(), Some("Hacks"));
+    assert_eq!(res.season, Some(1));
+    assert_eq!(res.episode, Some(2));
+    assert_eq!(res.episode_title.as_deref(), Some("Prank Call"));
+}
+
+#[test]
+fn test_parse_folder_cue_fallback() {
+    let parser = FilenameParser::new();
+    let path = Path::new("/media/shows/Dexter/Season 01/02 - Crocodile.mkv");
+    let res = parser.parse_with_path(path).unwrap();
+    assert!(res.is_episode);
+    assert_eq!(res.series_title.as_deref(), Some("Dexter"));
+    assert_eq!(res.season, Some(1));
+    assert_eq!(res.episode, Some(2));
 }

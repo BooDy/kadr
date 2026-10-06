@@ -126,6 +126,10 @@ pub struct CardViewModel {
     pub release_year: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub badge: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub season: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub episode: Option<u32>,
 }
 
 /// Predefined query macro types for dynamic data resolution.

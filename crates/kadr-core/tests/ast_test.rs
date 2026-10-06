@@ -18,6 +18,8 @@ fn test_card_view_model_serialization_roundtrip() {
         rating: Some(8.2),
         release_year: Some(1958),
         badge: Some("4K".to_string()),
+        season: None,
+        episode: None,
     };
 
     let serialized = serde_json::to_string(&card).expect("serialization failed");
@@ -40,6 +42,8 @@ fn test_card_view_model_with_nones() {
         rating: None,
         release_year: None,
         badge: None,
+        season: None,
+        episode: None,
     };
 
     let serialized = serde_json::to_string(&card).expect("serialization failed");
@@ -184,6 +188,8 @@ fn test_widget_node_hero_banner() {
         rating: Some(8.5),
         release_year: Some(1969),
         badge: Some("FEATURED".to_string()),
+        season: None,
+        episode: None,
     };
 
     let hydrated = WidgetNode::HeroBanner {
@@ -233,6 +239,8 @@ fn test_widget_node_carousel() {
         rating: None,
         release_year: Some(2020),
         badge: Some("RESUME".to_string()),
+        season: None,
+        episode: None,
     };
     let hydrated = WidgetNode::Carousel {
         id: "continue_watching".to_string(),
@@ -291,6 +299,8 @@ fn test_widget_node_item_details() {
             rating: Some(8.2),
             release_year: Some(1958),
             badge: None,
+            season: None,
+            episode: None,
         },
         overview: Some("Classic Egyptian film directed by Youssef Chahine.".to_string()),
         genres: vec!["Drama".to_string(), "Thriller".to_string()],
@@ -519,5 +529,30 @@ fn test_widget_nodes_roundtrip_with_filters() {
     let grid_deserialized: WidgetNode =
         serde_json::from_str(&grid_json).expect("deserialization failed");
     assert_eq!(grid, grid_deserialized);
+}
+
+#[test]
+fn test_card_view_model_season_episode_serde() {
+    let card = CardViewModel {
+        id: 101,
+        title: "Reunited".to_string(),
+        subtitle: Some("S04E01".to_string()),
+        poster_url: None,
+        backdrop_url: None,
+        media_type: "episode".to_string(),
+        playback_progress: Some(0.4),
+        rating: None,
+        release_year: Some(2022),
+        badge: None,
+        season: Some(4),
+        episode: Some(1),
+    };
+    let json_str = serde_json::to_string(&card).unwrap();
+    assert!(json_str.contains("\"season\":4"));
+    assert!(json_str.contains("\"episode\":1"));
+
+    let deserialized: CardViewModel = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(deserialized.season, Some(4));
+    assert_eq!(deserialized.episode, Some(1));
 }
 
