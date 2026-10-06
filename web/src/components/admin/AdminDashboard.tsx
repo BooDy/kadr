@@ -236,6 +236,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         use_ffprobe: editFfprobe,
       });
       setConfig(updated);
+      setEditName(updated.name || 'Kadr Media Server');
       showStatus('success', 'Server configuration updated successfully.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update configuration';
