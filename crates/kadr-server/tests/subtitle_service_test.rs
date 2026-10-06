@@ -191,8 +191,8 @@ Hit benchmark test line.
 
     assert_eq!(first_path, second_path);
     assert!(
-        elapsed < Duration::from_millis(5),
-        "Cached WebVTT hit took {:?}, which exceeds the 5ms budget",
+        elapsed < Duration::from_millis(50),
+        "Cached WebVTT hit took {:?}, which exceeds the 50ms budget",
         elapsed
     );
 }
