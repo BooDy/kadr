@@ -1,5 +1,5 @@
-use crate::sidecars::DiscoveredSubtitle;
-use kadr_core::models::MediaItem;
+use crate::sidecars::{DiscoveredSubtitle, SidecarScanner};
+use kadr_core::models::{MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_core::subtitles::SubtitleTrack;
 use kadr_storage::repos::{MediaItemRepository, SubtitleRepository};
 use std::collections::HashMap;
@@ -99,6 +99,78 @@ impl IngestWorker {
         if batch.is_empty() {
             return;
         }
+
+        // Collect distinct series from episodes in this batch
+        let mut distinct_series: HashMap<(String, String), MediaItem> = HashMap::new();
+        for (item, _) in batch.iter() {
+            if item.item_type == MediaType::Episode || item.metadata.series_title.is_some() {
+                if let Some(ref series_title) = item.metadata.series_title {
+                    let trimmed = series_title.trim();
+                    if !trimmed.is_empty() {
+                        distinct_series
+                            .entry((item.library_id.clone(), trimmed.to_string()))
+                            .or_insert_with(|| item.clone());
+                    }
+                }
+            }
+        }
+
+        // For each series_title, ensure a MediaType::Show record exists in that library
+        let mut parent_shows_to_create = Vec::new();
+        for ((lib_id, series_title), ep) in distinct_series {
+            match self.repo.find_show_by_title(&lib_id, &series_title).await {
+                Ok(Some(_)) => {
+                    // Show record already exists
+                }
+                Ok(None) => {
+                    let series_folder = determine_series_folder(&ep.file_path, &series_title);
+                    if !series_folder.as_os_str().is_empty() {
+                        if let Ok(Some(_)) = self.repo.find_by_path(&series_folder).await {
+                            continue;
+                        }
+                    }
+
+                    let (poster_path, backdrop_path) =
+                        find_series_artwork(&series_folder, &ep.metadata);
+                    let meta = MediaMetadata {
+                        poster_path,
+                        backdrop_path,
+                        ..Default::default()
+                    };
+
+                    let show_item = MediaItem {
+                        id: None,
+                        library_id: lib_id,
+                        item_type: MediaType::Show,
+                        title: series_title,
+                        original_title: None,
+                        release_year: ep.release_year,
+                        added_at: ep.added_at,
+                        file_path: series_folder,
+                        file_name: String::new(),
+                        file_size: 0,
+                        technical: TechnicalInfo::default(),
+                        metadata: meta,
+                    };
+                    parent_shows_to_create.push(show_item);
+                }
+                Err(e) => {
+                    error!(
+                        library_id = %lib_id,
+                        series = %series_title,
+                        error = ?e,
+                        "Failed to check existing show record"
+                    );
+                }
+            }
+        }
+
+        if !parent_shows_to_create.is_empty() {
+            if let Err(e) = self.repo.upsert_batch(&parent_shows_to_create).await {
+                error!(error = ?e, "Failed to insert parent show records");
+            }
+        }
+
         let items: Vec<MediaItem> = batch.iter().map(|(item, _)| item.clone()).collect();
         match self.repo.upsert_batch(&items).await {
             Ok(count) => {
@@ -192,3 +264,77 @@ impl IngestWorker {
         batch.clear();
     }
 }
+
+fn determine_series_folder(episode_path: &std::path::Path, series_title: &str) -> PathBuf {
+    let parent = match episode_path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => return PathBuf::new(),
+    };
+
+    let parent_name = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if is_season_folder(parent_name) {
+        if let Some(grandparent) = parent.parent() {
+            if !grandparent.as_os_str().is_empty() {
+                return grandparent.to_path_buf();
+            }
+        }
+    }
+
+    if parent_name.eq_ignore_ascii_case(series_title) {
+        return parent.to_path_buf();
+    }
+
+    let candidate = parent.join(series_title);
+    if candidate.exists() && candidate.is_dir() {
+        return candidate;
+    }
+
+    if !is_season_folder(parent_name) && parent.is_dir() {
+        return parent.to_path_buf();
+    }
+
+    candidate
+}
+
+fn is_season_folder(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let stripped = if let Some(rest) = lower.strip_prefix("season") {
+        rest
+    } else if let Some(rest) = lower.strip_prefix('s') {
+        rest
+    } else {
+        return false;
+    };
+    let digits =
+        stripped.trim_matches(|c: char| c == '.' || c == '_' || c == '-' || c.is_whitespace());
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+}
+
+fn find_series_artwork(
+    series_folder: &std::path::Path,
+    ep_meta: &MediaMetadata,
+) -> (Option<String>, Option<String>) {
+    let mut poster = None;
+    let mut backdrop = None;
+
+    if series_folder.exists() && series_folder.is_dir() {
+        let dummy = series_folder.join("dummy.mkv");
+        let artwork = SidecarScanner::new().find_artwork(&dummy);
+        if let Some(p) = artwork.poster {
+            poster = Some(p.to_string_lossy().to_string());
+        }
+        if let Some(b) = artwork.backdrop {
+            backdrop = Some(b.to_string_lossy().to_string());
+        }
+    }
+
+    if poster.is_none() {
+        poster = ep_meta.poster_path.clone();
+    }
+    if backdrop.is_none() {
+        backdrop = ep_meta.backdrop_path.clone();
+    }
+
+    (poster, backdrop)
+}
+

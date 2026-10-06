@@ -3,7 +3,7 @@ use crate::parser::FilenameParser;
 use crate::probe::TechnicalProber;
 use crate::sidecars::{DiscoveredSubtitle, SidecarScanner};
 use crate::thumbnail::ThumbnailExtractor;
-use kadr_core::models::{Library, MediaItem, MediaMetadata};
+use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -47,7 +47,7 @@ impl IngestPipeline {
             None => return Ok(None),
         };
 
-        let parsed = match self.filename_parser.parse(filename) {
+        let parsed = match self.filename_parser.parse_with_path(path) {
             Some(p) => p,
             None => return Ok(None),
         };
@@ -84,10 +84,48 @@ impl IngestPipeline {
             }
         };
 
+        let mut item_type = library.media_type;
         let mut final_title = parsed.title;
         let mut final_year = parsed.year;
         let mut original_title = None;
         let mut meta = MediaMetadata::default();
+
+        if parsed.is_episode || library.media_type == MediaType::Show {
+            item_type = MediaType::Episode;
+            meta.series_title = parsed.series_title.clone();
+            meta.season = parsed.season;
+            meta.episode = parsed.episode;
+            final_title = parsed
+                .episode_title
+                .clone()
+                .unwrap_or_else(|| format!("Episode {}", parsed.episode.unwrap_or(1)));
+
+            if meta.series_title.is_none() && library.media_type == MediaType::Show {
+                if let Some(parent) = path.parent() {
+                    let parent_name = parent.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                    let lower = parent_name.to_lowercase();
+                    let is_season = (lower.starts_with("season") || lower.starts_with('s'))
+                        && lower
+                            .trim_start_matches("season")
+                            .trim_start_matches('s')
+                            .trim_matches(|c: char| c == '.' || c == '_' || c == '-' || c.is_whitespace())
+                            .chars()
+                            .all(|c| c.is_ascii_digit());
+                    if is_season {
+                        if let Some(gp) = parent.parent() {
+                            if gp != library.path && !gp.as_os_str().is_empty() {
+                                meta.series_title = gp
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .map(String::from);
+                            }
+                        }
+                    } else if parent != library.path && !parent.as_os_str().is_empty() {
+                        meta.series_title = Some(parent_name.to_string());
+                    }
+                }
+            }
+        }
 
         if let Some(nfo_data) = nfo {
             if let Some(t) = nfo_data.title {
@@ -123,7 +161,7 @@ impl IngestPipeline {
             MediaItem {
                 id: None,
                 library_id: library.id.clone(),
-                item_type: library.media_type,
+                item_type,
                 title: final_title,
                 original_title,
                 release_year: final_year,

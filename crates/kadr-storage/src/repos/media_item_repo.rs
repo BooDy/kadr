@@ -394,6 +394,31 @@ impl MediaItemRepository {
             Ok(result)
         }).await?
     }
+
+    pub async fn find_show_by_title(
+        &self,
+        library_id: &str,
+        title: &str,
+    ) -> Result<Option<MediaItem>> {
+        let library_id = library_id.to_string();
+        let title = title.to_string();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let sql = format!(
+                "SELECT {SELECT_COLUMNS} FROM media_items \
+                 WHERE library_id = ?1 AND item_type = 'show' AND LOWER(title) = LOWER(?2) \
+                 LIMIT 1"
+            );
+            let mut stmt = c.prepare(&sql)?;
+            let mut rows = stmt.query(params![library_id, title])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(map_media_item_row(row)?))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?
+    }
 }
 
 const SELECT_COLUMNS: &str = "id, library_id, item_type, title, original_title, release_year, \
