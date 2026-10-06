@@ -11,6 +11,7 @@ use crate::config::AppConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemConfigResponse {
+    pub name: String,
     pub host: String,
     pub port: u16,
     pub data_dir: String,
@@ -23,6 +24,7 @@ pub struct SystemConfigResponse {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateConfigPayload {
+    pub name: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
     pub debounce_millis: Option<u64>,
@@ -38,6 +40,7 @@ pub async fn get_config(
 ) -> (StatusCode, Json<SystemConfigResponse>) {
     let cfg = config.read().await;
     let resp = SystemConfigResponse {
+        name: cfg.server.name.clone(),
         host: cfg.server.host.clone(),
         port: cfg.server.port,
         data_dir: cfg.server.data_dir.to_string_lossy().into_owned(),
@@ -63,6 +66,12 @@ pub async fn update_config(
     Json(payload): Json<UpdateConfigPayload>,
 ) -> (StatusCode, Json<SystemConfigResponse>) {
     let mut cfg = config.write().await;
+    if let Some(name) = payload.name {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            cfg.server.name = trimmed.to_string();
+        }
+    }
     if let Some(host) = payload.host {
         cfg.server.host = host;
     }
@@ -77,6 +86,7 @@ pub async fn update_config(
     }
 
     let resp = SystemConfigResponse {
+        name: cfg.server.name.clone(),
         host: cfg.server.host.clone(),
         port: cfg.server.port,
         data_dir: cfg.server.data_dir.to_string_lossy().into_owned(),

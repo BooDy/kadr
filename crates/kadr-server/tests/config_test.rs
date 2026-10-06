@@ -27,6 +27,7 @@ fn test_config_parsing_from_str() {
     "#;
 
     let config: AppConfig = toml::from_str(toml_str).unwrap();
+    assert_eq!(config.server.name, "Kadr Media Server");
     assert_eq!(config.server.host, "127.0.0.1");
     assert_eq!(config.server.port, 8096);
     assert_eq!(config.server.data_dir, PathBuf::from("./test_data"));
@@ -47,6 +48,7 @@ fn test_config_parsing_from_str() {
 #[test]
 fn test_config_defaults() {
     let config = AppConfig::default();
+    assert_eq!(config.server.name, "Kadr Media Server");
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 8492);
     assert_eq!(config.server.data_dir, PathBuf::from("./data"));
@@ -63,11 +65,22 @@ fn test_config_defaults() {
 #[test]
 fn test_empty_toml_uses_defaults() {
     let config: AppConfig = toml::from_str("").unwrap();
+    assert_eq!(config.server.name, "Kadr Media Server");
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 8492);
     assert_eq!(config.storage.max_readers, 4);
     assert!(config.scanner.use_ffprobe);
     assert!(config.libraries.is_empty());
+}
+
+#[test]
+fn test_config_server_name_deserialization() {
+    let toml_str = r#"
+        [server]
+        name = "Living Room Kadr"
+    "#;
+    let config: AppConfig = toml::from_str(toml_str).unwrap();
+    assert_eq!(config.server.name, "Living Room Kadr");
 }
 
 #[test]
@@ -105,4 +118,26 @@ fn test_multiple_libraries_and_media_types() {
     assert_eq!(config.libraries.len(), 2);
     assert_eq!(config.libraries[0].media_type, MediaType::Movie);
     assert_eq!(config.libraries[1].media_type, MediaType::Show);
+}
+
+#[test]
+fn test_system_config_response_and_payload_name() {
+    use kadr_server::api::config_routes::{SystemConfigResponse, UpdateConfigPayload};
+
+    let resp = SystemConfigResponse {
+        name: "My Server".to_string(),
+        host: "0.0.0.0".to_string(),
+        port: 8492,
+        data_dir: "./data".to_string(),
+        web_dir: None,
+        database_path: "./data/kadr.db".to_string(),
+        max_readers: 4,
+        debounce_millis: 500,
+        use_ffprobe: true,
+    };
+    let json = serde_json::to_string(&resp).unwrap();
+    assert!(json.contains(r#""name":"My Server""#));
+
+    let payload: UpdateConfigPayload = serde_json::from_str(r#"{"name":"New Name"}"#).unwrap();
+    assert_eq!(payload.name, Some("New Name".to_string()));
 }

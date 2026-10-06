@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
+    #[serde(default = "default_server_name")]
+    pub name: String,
     #[serde(default = "default_host")]
     pub host: String,
     #[serde(default = "default_port")]
@@ -50,6 +52,9 @@ pub struct AppConfig {
     pub libraries: Vec<LibraryConfig>,
 }
 
+fn default_server_name() -> String {
+    "Kadr Media Server".to_string()
+}
 fn default_host() -> String {
     "0.0.0.0".to_string()
 }
@@ -75,6 +80,7 @@ fn default_ffprobe() -> bool {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
+            name: default_server_name(),
             host: default_host(),
             port: default_port(),
             data_dir: default_data_dir(),
