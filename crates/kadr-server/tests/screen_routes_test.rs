@@ -1092,6 +1092,115 @@ async fn test_show_details_returns_hydrated_episodes_with_season() {
     assert_eq!(grid_items[0]["media_type"], "show");
 }
 
+#[tokio::test]
+async fn test_screens_deduplication_and_library_resolution() {
+    let ctx = setup_test_app().await;
+
+    // Insert libraries that share names with built-in screens ("Movies", "TV Shows")
+    // and a custom library ("Documentaries")
+    let movie_lib = Library {
+        id: "movie-uuid-1111".to_string(),
+        name: "Movies".to_string(),
+        path: PathBuf::from("/media/custom_movies"),
+        media_type: MediaType::Movie,
+        created_at: 1000,
+        ..Default::default()
+    };
+    ctx.lib_repo.insert(&movie_lib).await.unwrap();
+
+    let tv_lib = Library {
+        id: "tv-uuid-2222".to_string(),
+        name: "TV Shows".to_string(),
+        path: PathBuf::from("/media/custom_shows"),
+        media_type: MediaType::Show,
+        created_at: 1000,
+        ..Default::default()
+    };
+    ctx.lib_repo.insert(&tv_lib).await.unwrap();
+
+    let doc_lib = Library {
+        id: "doc-uuid-3333".to_string(),
+        name: "Documentaries".to_string(),
+        path: PathBuf::from("/media/docs"),
+        media_type: MediaType::Movie,
+        created_at: 1000,
+        ..Default::default()
+    };
+    ctx.lib_repo.insert(&doc_lib).await.unwrap();
+
+    // 1. GET /api/v1/screens
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let screens: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
+
+    // Verify each screen title is strictly unique - no duplicate "Movies" or "TV Shows"
+    let mut seen_titles = std::collections::HashSet::new();
+    let mut seen_ids = std::collections::HashSet::new();
+    for s in &screens {
+        let title = s["title"].as_str().unwrap().to_lowercase();
+        let id = s["id"].as_str().unwrap().to_lowercase();
+        assert!(
+            seen_titles.insert(title.clone()),
+            "Duplicate screen title found in /api/v1/screens: {title}"
+        );
+        assert!(
+            seen_ids.insert(id.clone()),
+            "Duplicate screen ID found in /api/v1/screens: {id}"
+        );
+    }
+
+    assert!(seen_titles.contains("home"));
+    assert!(seen_titles.contains("movies"));
+    assert!(seen_titles.contains("tv shows"));
+    assert!(seen_titles.contains("documentaries"));
+
+    // 2. Querying screen by library UUID resolves to the appropriate layout
+    let req_movie_uuid = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/movie-uuid-1111?unhydrated=true")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res_movie = ctx.app.clone().oneshot(req_movie_uuid).await.unwrap();
+    assert_eq!(res_movie.status(), StatusCode::OK);
+    let bytes_movie = axum::body::to_bytes(res_movie.into_body(), 1024 * 64).await.unwrap();
+    let movie_layout: ScreenLayout = serde_json::from_slice(&bytes_movie).unwrap();
+    assert_eq!(movie_layout.title, "Movies");
+
+    let req_tv_uuid = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/tv-uuid-2222?unhydrated=true")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res_tv = ctx.app.clone().oneshot(req_tv_uuid).await.unwrap();
+    assert_eq!(res_tv.status(), StatusCode::OK);
+    let bytes_tv = axum::body::to_bytes(res_tv.into_body(), 1024 * 64).await.unwrap();
+    let tv_layout: ScreenLayout = serde_json::from_slice(&bytes_tv).unwrap();
+    assert_eq!(tv_layout.title, "TV Shows");
+
+    let req_doc_uuid = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens/doc-uuid-3333?unhydrated=true")
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res_doc = ctx.app.clone().oneshot(req_doc_uuid).await.unwrap();
+    assert_eq!(res_doc.status(), StatusCode::OK);
+    let bytes_doc = axum::body::to_bytes(res_doc.into_body(), 1024 * 64).await.unwrap();
+    let doc_layout: ScreenLayout = serde_json::from_slice(&bytes_doc).unwrap();
+    assert_eq!(doc_layout.title, "Documentaries");
+}
+
+
 
 
 

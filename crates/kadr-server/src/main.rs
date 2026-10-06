@@ -5,7 +5,6 @@ use std::time::{Duration, SystemTime};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use kadr_core::ast::ScreenId;
 use kadr_core::models::{Library, User, UserRole};
 use kadr_ingest::watcher::{start_library_watcher, IngestPipeline, IngestWorker};
 use kadr_server::api::{create_router_with_ingest, mount_web_serving};
@@ -294,8 +293,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Register default layouts for all active libraries if not already overridden
     for lib in &active_libraries {
-        let screen_id: ScreenId = lib.id.parse().unwrap();
-        if layout_registry.get_screen(&screen_id).is_none() {
+        if layout_registry.find_screen_for_library(&lib.id, &lib.name).is_none() {
             layout_registry.register_screen(kadr_server::layout::default_library_layout(&lib.id, &lib.name));
         }
     }

@@ -32,7 +32,7 @@ pub struct ScreenQuery {
 }
 
 /// Handler for `GET /api/v1/screens`.
-/// Returns a list of all registered screens with their IDs and titles.
+/// Returns a list of all registered screens with their IDs and titles, deduplicated.
 pub async fn list_screens(
     _auth_user: AuthUser,
     Extension(registry): Extension<LayoutRegistry>,
@@ -40,21 +40,29 @@ pub async fn list_screens(
 ) -> Json<Vec<ScreenSummary>> {
     if let Ok(libs) = lib_repo.get_all().await {
         for lib in libs {
-            let screen_id: ScreenId = lib.id.parse().unwrap();
-            if registry.get_screen(&screen_id).is_none() {
+            if registry.find_screen_for_library(&lib.id, &lib.name).is_none() {
                 registry.register_screen(default_library_layout(&lib.id, &lib.name));
             }
         }
     }
 
-    let screens = registry
-        .list_screens()
-        .into_iter()
-        .map(|(id, title)| ScreenSummary {
-            id: id.to_string(),
+    let mut screens: Vec<ScreenSummary> = Vec::new();
+    let mut seen_titles = std::collections::HashSet::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for (id, title) in registry.list_screens() {
+        let id_str = id.to_string();
+        let norm_title = title.trim().to_lowercase();
+        let norm_id = id_str.trim().to_lowercase();
+        if !seen_titles.insert(norm_title) || !seen_ids.insert(norm_id) {
+            continue;
+        }
+        screens.push(ScreenSummary {
+            id: id_str,
             title,
-        })
-        .collect();
+        });
+    }
+
     Json(screens)
 }
 
@@ -95,12 +103,31 @@ pub async fn get_screen(
 
     let parsed_id: ScreenId = screen_id.parse().unwrap();
     let layout = match registry.get_screen(&parsed_id) {
-        Some(l) => l,
+        Some(l) => {
+            // If the requested ID is a library UUID, check if a canonical screen layout exists for this library (e.g. "movies", "shows", "Porn")
+            if let ScreenId::Custom(ref id_str) = parsed_id {
+                if let Ok(Some(lib)) = lib_repo.get_by_id(id_str).await {
+                    if let Some(canonical) = registry.find_screen_for_library(&lib.id, &lib.name) {
+                        canonical
+                    } else {
+                        l
+                    }
+                } else {
+                    l
+                }
+            } else {
+                l
+            }
+        }
         None => {
             if let Ok(Some(lib)) = lib_repo.get_by_id(&screen_id).await {
-                let default_layout = default_library_layout(&lib.id, &lib.name);
-                registry.register_screen(default_layout.clone());
-                default_layout
+                if let Some(canonical) = registry.find_screen_for_library(&lib.id, &lib.name) {
+                    canonical
+                } else {
+                    let default_layout = default_library_layout(&lib.id, &lib.name);
+                    registry.register_screen(default_layout.clone());
+                    default_layout
+                }
             } else {
                 return Err((
                     StatusCode::NOT_FOUND,

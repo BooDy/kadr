@@ -250,7 +250,18 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
       .getScreens()
       .then((data) => {
         if (data && data.length > 0) {
-          setScreens(data);
+          const seen = new Set<string>();
+          const uniqueScreens: ScreenSummary[] = [];
+          for (const s of data) {
+            const titleKey = (s.title || s.id).trim().toLowerCase();
+            const idKey = s.id.trim().toLowerCase();
+            if (!seen.has(titleKey) && !seen.has(idKey)) {
+              seen.add(titleKey);
+              seen.add(idKey);
+              uniqueScreens.push(s);
+            }
+          }
+          setScreens(uniqueScreens);
         }
       })
       .catch(() => {});
@@ -418,7 +429,14 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
         id: trimmedId,
         title: trimmedTitle,
       });
-      setScreens((prev) => [...prev, { id: created.id, title: created.title }]);
+      setScreens((prev) => {
+        const filtered = prev.filter(
+          (s) =>
+            s.id.toLowerCase() !== created.id.toLowerCase() &&
+            (s.title || '').trim().toLowerCase() !== created.title.trim().toLowerCase()
+        );
+        return [...filtered, { id: created.id, title: created.title }];
+      });
       setSelectedScreenId(created.id);
       setLayout(created);
       setIsDirty(false);

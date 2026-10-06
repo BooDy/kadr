@@ -54,12 +54,30 @@ pub async fn get_widget_data(
     let widget = if let Some(ref screen_id_str) = query.screen_id {
         let sid: ScreenId = screen_id_str.parse().unwrap();
         let screen = match registry.get_screen(&sid) {
-            Some(s) => s,
+            Some(s) => {
+                if let ScreenId::Custom(ref id_str) = sid {
+                    if let Ok(Some(lib)) = lib_repo.get_by_id(id_str).await {
+                        if let Some(canonical) = registry.find_screen_for_library(&lib.id, &lib.name) {
+                            canonical
+                        } else {
+                            s
+                        }
+                    } else {
+                        s
+                    }
+                } else {
+                    s
+                }
+            }
             None => {
                 if let Ok(Some(lib)) = lib_repo.get_by_id(screen_id_str).await {
-                    let def = default_library_layout(&lib.id, &lib.name);
-                    registry.register_screen(def.clone());
-                    def
+                    if let Some(canonical) = registry.find_screen_for_library(&lib.id, &lib.name) {
+                        canonical
+                    } else {
+                        let def = default_library_layout(&lib.id, &lib.name);
+                        registry.register_screen(def.clone());
+                        def
+                    }
                 } else {
                     return Err((
                         StatusCode::NOT_FOUND,

@@ -49,6 +49,60 @@ impl LayoutRegistry {
             .cloned()
     }
 
+    /// Finds a screen layout matching a library either by its exact ID,
+    /// or by library name (e.g. "Movies" -> ScreenId::Movies, "TV Shows" -> ScreenId::Shows, "Porn" -> ScreenId::Custom("Porn")).
+    pub fn find_screen_for_library(
+        &self,
+        library_id: &str,
+        library_name: &str,
+    ) -> Option<ScreenLayout> {
+        let inner = self.inner.read().expect("layout registry lock poisoned");
+
+        // 1. Direct match by library ID
+        let lib_id_parsed: ScreenId = library_id.parse().unwrap();
+        if let Some(screen) = inner.screens.get(&lib_id_parsed) {
+            return Some(screen.clone());
+        }
+
+        // 2. Standard built-in mapping by library name
+        if library_name.eq_ignore_ascii_case("movies") {
+            if let Some(screen) = inner.screens.get(&ScreenId::Movies) {
+                return Some(screen.clone());
+            }
+        }
+        if library_name.eq_ignore_ascii_case("shows")
+            || library_name.eq_ignore_ascii_case("tv shows")
+            || library_name.eq_ignore_ascii_case("tv_shows")
+            || library_name.eq_ignore_ascii_case("tv-shows")
+        {
+            if let Some(screen) = inner.screens.get(&ScreenId::Shows) {
+                return Some(screen.clone());
+            }
+        }
+
+        // 3. Match by ScreenId parsed from library name (e.g. ScreenId::Custom("Porn"))
+        let name_id: ScreenId = library_name.parse().unwrap();
+        if let Some(screen) = inner.screens.get(&name_id) {
+            return Some(screen.clone());
+        }
+
+        // 4. Case-insensitive match on screen ID string
+        for (id, screen) in &inner.screens {
+            if id.to_string().eq_ignore_ascii_case(library_name) {
+                return Some(screen.clone());
+            }
+        }
+
+        // 5. Case-insensitive match on screen title
+        for screen in inner.screens.values() {
+            if screen.title.eq_ignore_ascii_case(library_name) {
+                return Some(screen.clone());
+            }
+        }
+
+        None
+    }
+
     /// Lists all registered screens in registration order as pairs of `(ScreenId, Title)`.
     pub fn list_screens(&self) -> Vec<(ScreenId, String)> {
         let inner = self.inner.read().expect("layout registry lock poisoned");
