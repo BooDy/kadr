@@ -13,6 +13,7 @@ use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
 use kadr_server::config::AppConfig;
 use kadr_server::events::EventBus;
+use kadr_server::identity::{load_or_create_server_id, ServerIdentity};
 use kadr_server::layout::LayoutRegistry;
 use kadr_server::playback::session::SessionRegistry;
 use kadr_server::resolver::WidgetResolver;
@@ -316,6 +317,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .spawn_periodic_broadcaster(Duration::from_secs(5));
 
+    // Initialize server identity
+    let server_id = match load_or_create_server_id(&config.server.data_dir) {
+        Ok(id) => id,
+        Err(e) => {
+            warn!(
+                "Failed to load or create server ID in {:?}: {}, generating ephemeral UUID",
+                config.server.data_dir, e
+            );
+            uuid::Uuid::new_v4().to_string()
+        }
+    };
+    let server_identity = Arc::new(ServerIdentity { id: server_id });
+
     // Assemble Axum HTTP router
     let mut app = create_router_with_ingest(
         user_repo,
@@ -334,6 +348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ingest_tx.clone(),
         pipeline.clone(),
         Arc::new(tokio::sync::RwLock::new(config.clone())),
+        server_identity,
     );
 
     // Mount static web SPA serving if assets exist

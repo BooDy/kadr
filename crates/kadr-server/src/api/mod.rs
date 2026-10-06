@@ -1,6 +1,7 @@
 pub mod artwork_routes;
 pub mod auth_routes;
 pub mod config_routes;
+pub mod discovery_routes;
 pub mod events_routes;
 pub mod item_routes;
 pub mod library_routes;
@@ -18,6 +19,7 @@ pub use unlock_token::{UnlockedLibraries, UnlockTokenService};
 use crate::auth::jwt::JwtService;
 use crate::auth::rate_limiter::RateLimiter;
 use crate::events::EventBus;
+use crate::identity::ServerIdentity;
 use crate::layout::LayoutRegistry;
 use crate::playback::SessionRegistry;
 use crate::resolver::WidgetResolver;
@@ -50,8 +52,11 @@ pub fn create_router_with_ingest(
     ingest_tx: tokio::sync::mpsc::Sender<kadr_ingest::watcher::IngestMessage>,
     pipeline: Arc<kadr_ingest::watcher::IngestPipeline>,
     config: Arc<tokio::sync::RwLock<crate::config::AppConfig>>,
+    identity: Arc<ServerIdentity>,
 ) -> Router {
     let router = Router::new()
+        // Public discovery route
+        .route("/api/v1/discovery", get(discovery_routes::get_discovery))
         // Public profile list & auth
         .route("/api/v1/users/profiles", get(user_routes::list_profiles))
         .route(
@@ -196,7 +201,8 @@ pub fn create_router_with_ingest(
         .layer(Extension(telemetry_collector))
         .layer(Extension(ingest_tx))
         .layer(Extension(pipeline))
-        .layer(Extension(config));
+        .layer(Extension(config))
+        .layer(Extension(identity));
 
     mount_web_serving(router, std::path::Path::new("web/dist"))
 }
@@ -220,6 +226,9 @@ pub fn create_router_with_events(
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
     let dummy_pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false, None));
     let default_config = Arc::new(tokio::sync::RwLock::new(crate::config::AppConfig::default()));
+    let default_identity = Arc::new(ServerIdentity {
+        id: "00000000-0000-0000-0000-000000000000".to_string(),
+    });
     create_router_with_ingest(
         user_repo,
         playback_repo,
@@ -237,6 +246,7 @@ pub fn create_router_with_events(
         dummy_tx,
         dummy_pipeline,
         default_config,
+        default_identity,
     )
 }
 

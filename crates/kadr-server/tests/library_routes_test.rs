@@ -313,6 +313,9 @@ async fn test_scan_library_routes_to_ingest_worker() {
     let (ingest_tx, mut ingest_rx) = tokio::sync::mpsc::channel(10);
     let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false, None));
     let config = Arc::new(RwLock::new(AppConfig::default()));
+    let identity = Arc::new(kadr_server::identity::ServerIdentity {
+        id: "00000000-0000-0000-0000-000000000000".to_string(),
+    });
 
     let app = kadr_server::api::create_router_with_ingest(
         user_repo,
@@ -331,6 +334,7 @@ async fn test_scan_library_routes_to_ingest_worker() {
         ingest_tx,
         pipeline,
         config,
+        identity,
     );
 
     // Create a media directory with a dummy movie file

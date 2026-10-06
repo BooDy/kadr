@@ -435,6 +435,9 @@ async fn create_test_router_with_pipeline(
     ));
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
     let default_config = Arc::new(tokio::sync::RwLock::new(kadr_server::config::AppConfig::default()));
+    let default_identity = Arc::new(kadr_server::identity::ServerIdentity {
+        id: "00000000-0000-0000-0000-000000000000".to_string(),
+    });
 
     kadr_server::api::create_router_with_ingest(
         user_repo,
@@ -453,6 +456,7 @@ async fn create_test_router_with_pipeline(
         dummy_tx,
         pipeline,
         default_config,
+        default_identity,
     )
 }
 
