@@ -961,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "kadr-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "kadr-ingest"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "kadr-core",
  "kadr-storage",
@@ -987,7 +987,7 @@ dependencies = [
 
 [[package]]
 name = "kadr-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "axum",
@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "kadr-storage"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "deadpool-sqlite",
  "kadr-core",
