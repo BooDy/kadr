@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type FC } from 'react';
+import { useState, useEffect, useCallback, useRef, type FC } from 'react';
 import {
   X,
   ChevronLeft,
@@ -29,6 +29,15 @@ export const ImageViewerModal: FC<ImageViewerModalProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(autoPlay);
   const [isControlsVisible, setIsControlsVisible] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -73,33 +82,41 @@ export const ImageViewerModal: FC<ImageViewerModalProps> = ({
     return () => clearInterval(timer);
   }, [isOpen, isPlaying, images.length, handleNext]);
 
+  const resetControlsTimer = useCallback(() => {
+    setIsControlsVisible(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setIsControlsVisible(false);
+    }, 3000);
+  }, []);
+
   // Controls auto-hide after 3 seconds of inactivity
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      return;
+    }
 
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const resetTimer = () => {
-      setIsControlsVisible(true);
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        setIsControlsVisible(false);
-      }, 3000);
-    };
-
-    resetTimer();
-    window.addEventListener('mousemove', resetTimer);
+    resetControlsTimer();
+    window.addEventListener('mousemove', resetControlsTimer);
     return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('mousemove', resetTimer);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      window.removeEventListener('mousemove', resetControlsTimer);
     };
-  }, [isOpen]);
+  }, [isOpen, resetControlsTimer]);
 
   // Keyboard navigation
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      setIsControlsVisible(true);
+      resetControlsTimer();
       switch (e.key) {
         case 'ArrowRight':
           e.preventDefault();
@@ -127,7 +144,7 @@ export const ImageViewerModal: FC<ImageViewerModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleNext, handlePrev, togglePlay, onClose, toggleFullscreen]);
+  }, [isOpen, handleNext, handlePrev, togglePlay, onClose, toggleFullscreen, resetControlsTimer]);
 
   if (!isOpen || images.length === 0) return null;
 
@@ -172,16 +189,18 @@ export const ImageViewerModal: FC<ImageViewerModalProps> = ({
       {/* Main Image Display Area */}
       <div className="relative flex-1 flex items-center justify-center p-4">
         {/* Previous Button Overlay */}
-        <button
-          type="button"
-          onClick={handlePrev}
-          aria-label="Previous image"
-          className={`absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-panel/80 hover:bg-panel border border-border-subtle text-text-main shadow-lg transition-all duration-300 z-10 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
-            isControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </button>
+        {images.length > 1 && (
+          <button
+            type="button"
+            onClick={handlePrev}
+            aria-label="Previous image"
+            className={`absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-panel/80 hover:bg-panel border border-border-subtle text-text-main shadow-lg transition-all duration-300 z-10 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+              isControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        )}
 
         {/* The Image */}
         <img
@@ -192,16 +211,18 @@ export const ImageViewerModal: FC<ImageViewerModalProps> = ({
         />
 
         {/* Next Button Overlay */}
-        <button
-          type="button"
-          onClick={handleNext}
-          aria-label="Next image"
-          className={`absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-panel/80 hover:bg-panel border border-border-subtle text-text-main shadow-lg transition-all duration-300 z-10 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
-            isControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          <ChevronRight className="w-6 h-6" />
-        </button>
+        {images.length > 1 && (
+          <button
+            type="button"
+            onClick={handleNext}
+            aria-label="Next image"
+            className={`absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-panel/80 hover:bg-panel border border-border-subtle text-text-main shadow-lg transition-all duration-300 z-10 cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+              isControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+        )}
       </div>
 
       {/* Bottom Controls Bar */}

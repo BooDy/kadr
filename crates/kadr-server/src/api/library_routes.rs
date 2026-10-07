@@ -1436,6 +1436,14 @@ pub async fn get_library_image(
             .into_response();
     };
 
+    if !is_image_file(&target_file) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Requested file is not an image" })),
+        )
+            .into_response();
+    }
+
     let meta = match tokio::fs::metadata(&target_file).await {
         Ok(m) => m,
         Err(e) => {

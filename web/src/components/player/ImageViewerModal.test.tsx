@@ -109,4 +109,88 @@ describe('ImageViewerModal Component', () => {
     });
     expect(screen.getByText('photo2.png')).toBeInTheDocument();
   });
+
+  it('does not render previous and next buttons when single image is provided', () => {
+    render(
+      <ImageViewerModal
+        images={[mockImages[0]]}
+        initialIndex={0}
+        isOpen={true}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /previous image/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /next image/i })).not.toBeInTheDocument();
+  });
+
+  it('syncs fullscreen state on document fullscreenchange event', () => {
+    render(
+      <ImageViewerModal
+        images={mockImages}
+        initialIndex={0}
+        isOpen={true}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+
+    // Mock document.fullscreenElement
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    expect(screen.getByRole('button', { name: /exit fullscreen/i })).toBeInTheDocument();
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: null,
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+  });
+
+  it('resets HUD auto-hide timer when a key is pressed', () => {
+    render(
+      <ImageViewerModal
+        images={mockImages}
+        initialIndex={0}
+        isOpen={true}
+        onClose={vi.fn()}
+      />
+    );
+
+    const closeBtn = screen.getByRole('button', { name: /close image viewer/i });
+    const headerContainer = closeBtn.closest('div');
+    expect(headerContainer).toHaveClass('opacity-100');
+
+    // Advance 2 seconds (not yet hidden)
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(headerContainer).toHaveClass('opacity-100');
+
+    // Press a key to reset timer
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    // Advance 2 more seconds (total 4s from start, but 2s from keypress -> still visible)
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(headerContainer).toHaveClass('opacity-100');
+
+    // Advance 1.5 more seconds (3.5s from keypress -> now hidden)
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(headerContainer).toHaveClass('opacity-0');
+  });
 });

@@ -888,6 +888,18 @@ async fn test_browse_and_stream_library_images() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 
+    // 5b. Non-image file rejection (400 Bad Request)
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=vacation_photos/clip.mp4",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
     // 6. Missing image file (404 Not Found)
     let req = Request::builder()
         .method("GET")
