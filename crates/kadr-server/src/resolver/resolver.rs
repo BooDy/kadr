@@ -645,6 +645,35 @@ impl WidgetResolver {
             None
         };
 
+        let (library_id_opt, folder_path_opt) = match self.lib_repo.get_by_id(&item.library_id).await {
+            Ok(Some(lib)) => {
+                let roots = if lib.paths.is_empty() {
+                    vec![lib.path.clone()]
+                } else {
+                    lib.paths.clone()
+                };
+
+                let mut rel_folder = None;
+                if let Some(parent) = item.file_path.parent() {
+                    let parent_canon = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+                    for root in &roots {
+                        let root_canon = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+                        if let Ok(rel) = parent_canon.strip_prefix(&root_canon) {
+                            let rel_str = rel.to_string_lossy().replace('\\', "/");
+                            rel_folder = Some(rel_str);
+                            break;
+                        } else if let Ok(rel) = parent.strip_prefix(root) {
+                            let rel_str = rel.to_string_lossy().replace('\\', "/");
+                            rel_folder = Some(rel_str);
+                            break;
+                        }
+                    }
+                }
+                (Some(item.library_id.clone()), rel_folder)
+            }
+            _ => (Some(item.library_id.clone()), None),
+        };
+
         Ok(Some(ItemDetailsPayload {
             card,
             overview,
@@ -654,6 +683,9 @@ impl WidgetResolver {
             stream_url,
             resume_position_seconds,
             episodes,
+            library_id: library_id_opt,
+            folder_path: folder_path_opt,
         }))
     }
 }
+

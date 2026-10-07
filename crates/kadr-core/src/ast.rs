@@ -303,6 +303,10 @@ pub struct ItemDetailsPayload {
     pub resume_position_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub episodes: Option<Vec<CardViewModel>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_path: Option<String>,
 }
 
 /// Top-level layout container representing a complete screen.

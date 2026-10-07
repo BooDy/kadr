@@ -316,6 +316,8 @@ fn test_widget_node_item_details() {
         stream_url: "/api/v1/stream/42".to_string(),
         resume_position_seconds: Some(1386),
         episodes: None,
+        library_id: None,
+        folder_path: None,
     };
 
     let node = WidgetNode::ItemDetails {
@@ -329,10 +331,63 @@ fn test_widget_node_item_details() {
     assert!(json.contains("\"item_id\":42"));
     assert!(json.contains("\"technical\""));
     assert!(json.contains("\"genres\":[\"Drama\",\"Thriller\"]"));
+    assert!(!json.contains("\"library_id\""));
+    assert!(!json.contains("\"folder_path\""));
 
     let deserialized: WidgetNode = serde_json::from_str(&json).unwrap();
     assert_eq!(node, deserialized);
 }
+
+#[test]
+fn test_item_details_payload_with_library_and_folder_path() {
+    let payload = ItemDetailsPayload {
+        card: CardViewModel {
+            id: 42,
+            title: "Inception".to_string(),
+            subtitle: None,
+            poster_url: None,
+            backdrop_url: None,
+            media_type: "movie".to_string(),
+            playback_progress: None,
+            rating: Some(8.8),
+            release_year: Some(2010),
+            badge: None,
+            season: None,
+            episode: None,
+        },
+        overview: Some("Mind-bending thriller".to_string()),
+        genres: vec!["Sci-Fi".to_string()],
+        duration_seconds: Some(8880),
+        technical: None,
+        stream_url: "/api/v1/stream/42".to_string(),
+        resume_position_seconds: None,
+        episodes: None,
+        library_id: Some("lib-movies-1".to_string()),
+        folder_path: Some("Sci-Fi/Inception (2010)".to_string()),
+    };
+
+    let json = serde_json::to_string(&payload).unwrap();
+    assert!(json.contains("\"library_id\":\"lib-movies-1\""));
+    assert!(json.contains("\"folder_path\":\"Sci-Fi/Inception (2010)\""));
+
+    let deserialized: ItemDetailsPayload = serde_json::from_str(&json).unwrap();
+    assert_eq!(payload, deserialized);
+
+    // Backward compatibility: JSON without library_id and folder_path deserializes with None
+    let backward_json = r#"{
+        "card": {
+            "id": 42,
+            "title": "Inception",
+            "media_type": "movie"
+        },
+        "genres": [],
+        "stream_url": "/api/v1/stream/42"
+    }"#;
+    let backward_payload: ItemDetailsPayload = serde_json::from_str(backward_json).unwrap();
+    assert_eq!(backward_payload.library_id, None);
+    assert_eq!(backward_payload.folder_path, None);
+}
+
 
 #[test]
 fn test_screen_layout_serialization_roundtrip() {

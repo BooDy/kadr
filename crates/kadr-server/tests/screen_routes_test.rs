@@ -1200,6 +1200,153 @@ async fn test_screens_deduplication_and_library_resolution() {
     assert_eq!(doc_layout.title, "Documentaries");
 }
 
+#[tokio::test]
+async fn test_get_item_details_includes_library_and_folder_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+
+    let lib_dir = temp_dir.path().join("movies");
+    let sub_dir = lib_dir.join("Sci-Fi").join("Inception (2010)");
+    std::fs::create_dir_all(&sub_dir).unwrap();
+    let video_file = sub_dir.join("Inception.mkv");
+    std::fs::write(&video_file, b"dummy video bytes").unwrap();
+
+    let library = lib_repo
+        .create_with_paths(
+            "lib-movies-1",
+            "Movies",
+            std::slice::from_ref(&lib_dir),
+            MediaType::Movie,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let user = User {
+        id: "testuser".to_string(),
+        username: "testuser".to_string(),
+        pin_hash: "hash".to_string(),
+        role: UserRole::Standard,
+        created_at: 1000,
+    };
+    user_repo.create(&user).await.unwrap();
+
+    let item = MediaItem {
+        id: None,
+        library_id: library.id.clone(),
+        item_type: MediaType::Movie,
+        title: "Inception".to_string(),
+        original_title: None,
+        release_year: Some(2010),
+        added_at: 1000,
+        file_path: video_file.clone(),
+        file_name: "Inception.mkv".to_string(),
+        file_size: 1000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata {
+            overview: Some("Mind-bending thriller".to_string()),
+            ..Default::default()
+        },
+    };
+    media_repo.upsert_batch(&[item]).await.unwrap();
+    let created_item = media_repo.find_by_path(&video_file).await.unwrap().unwrap();
+    let item_id = created_item.id.unwrap();
+
+    let resolver = WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    );
+
+    let details = resolver
+        .resolve_item_details(item_id, &user.id)
+        .await
+        .unwrap()
+        .expect("Item details should exist");
+
+    assert_eq!(details.library_id.as_deref(), Some("lib-movies-1"));
+    assert_eq!(details.folder_path.as_deref(), Some("Sci-Fi/Inception (2010)"));
+
+    // Case 2: Root-level file in library root -> folder_path is Some("")
+    let root_video_file = lib_dir.join("RootMovie.mkv");
+    std::fs::write(&root_video_file, b"dummy root video bytes").unwrap();
+    let root_item = MediaItem {
+        id: None,
+        library_id: library.id.clone(),
+        item_type: MediaType::Movie,
+        title: "Root Movie".to_string(),
+        original_title: None,
+        release_year: Some(2021),
+        added_at: 1000,
+        file_path: root_video_file.clone(),
+        file_name: "RootMovie.mkv".to_string(),
+        file_size: 1000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata::default(),
+    };
+    media_repo.upsert_batch(&[root_item]).await.unwrap();
+    let root_created = media_repo.find_by_path(&root_video_file).await.unwrap().unwrap();
+    let root_details = resolver
+        .resolve_item_details(root_created.id.unwrap(), &user.id)
+        .await
+        .unwrap()
+        .expect("Root item details should exist");
+    assert_eq!(root_details.library_id.as_deref(), Some("lib-movies-1"));
+    assert_eq!(root_details.folder_path.as_deref(), Some(""));
+
+    // Case 3: Multi-root library -> file matching second root
+    let lib_dir_multi_1 = temp_dir.path().join("movies-multi-1");
+    let lib_dir_multi_2 = temp_dir.path().join("movies-multi-2");
+    let sub_dir_2 = lib_dir_multi_2.join("Action");
+    std::fs::create_dir_all(&lib_dir_multi_1).unwrap();
+    std::fs::create_dir_all(&sub_dir_2).unwrap();
+    let video_file_2 = sub_dir_2.join("MadMax.mkv");
+    std::fs::write(&video_file_2, b"dummy mad max bytes").unwrap();
+
+    let multi_library = lib_repo
+        .create_with_paths(
+            "lib-multi-1",
+            "Multi Movies",
+            &[lib_dir_multi_1.clone(), lib_dir_multi_2.clone()],
+            MediaType::Movie,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let multi_item = MediaItem {
+        id: None,
+        library_id: multi_library.id.clone(),
+        item_type: MediaType::Movie,
+        title: "Mad Max".to_string(),
+        original_title: None,
+        release_year: Some(2015),
+        added_at: 1000,
+        file_path: video_file_2.clone(),
+        file_name: "MadMax.mkv".to_string(),
+        file_size: 1000,
+        technical: TechnicalInfo::default(),
+        metadata: MediaMetadata::default(),
+    };
+    media_repo.upsert_batch(&[multi_item]).await.unwrap();
+    let multi_created = media_repo.find_by_path(&video_file_2).await.unwrap().unwrap();
+    let multi_details = resolver
+        .resolve_item_details(multi_created.id.unwrap(), &user.id)
+        .await
+        .unwrap()
+        .expect("Multi-root item details should exist");
+    assert_eq!(multi_details.library_id.as_deref(), Some("lib-multi-1"));
+    assert_eq!(multi_details.folder_path.as_deref(), Some("Action"));
+}
+
+
 
 
 
