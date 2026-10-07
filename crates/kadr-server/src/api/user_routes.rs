@@ -16,6 +16,9 @@ pub struct ProfileCard {
     pub id: String,
     pub username: String,
     pub role: UserRole,
+    pub has_pin: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_color: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -34,6 +37,8 @@ pub async fn list_profiles(Extension(user_repo): Extension<UserRepository>) -> i
                     id: u.id,
                     username: u.username,
                     role: u.role,
+                    has_pin: true,
+                    avatar_color: None,
                 })
                 .collect();
             Json(cards).into_response()
@@ -90,6 +95,8 @@ pub async fn create_user(
                 id: new_user.id,
                 username: new_user.username,
                 role: new_user.role,
+                has_pin: true,
+                avatar_color: None,
             }),
         )
             .into_response(),

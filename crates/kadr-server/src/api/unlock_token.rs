@@ -159,24 +159,29 @@ where
             });
 
         if let Some(svc) = token_service {
-            // Inspect X-Kadr-Unlocked header values (handles comma-separated and multiple headers)
-            for header_val in parts.headers.get_all("x-kadr-unlocked") {
-                if let Ok(header_str) = header_val.to_str() {
-                    for token in header_str.split(',') {
-                        let token = token.trim();
-                        if !token.is_empty() {
-                            if let Ok(claims) = svc.verify_token(token) {
-                                unlocked.insert(claims.library_id);
+            // Inspect X-Kadr-Unlocked and X-Library-Unlock-Token header values (handles comma-separated and multiple headers)
+            for header_name in &["x-kadr-unlocked", "x-library-unlock-token"] {
+                for header_val in parts.headers.get_all(*header_name) {
+                    if let Ok(header_str) = header_val.to_str() {
+                        for token in header_str.split(',') {
+                            let token = token.trim();
+                            if !token.is_empty() {
+                                if let Ok(claims) = svc.verify_token(token) {
+                                    unlocked.insert(claims.library_id);
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Also inspect query parameter if present (?unlocked=<token>,...)
+            // Also inspect query parameter if present (?unlocked=<token>,... or ?unlock_token=<token>,...)
             if let Some(query_str) = parts.uri.query() {
                 for pair in query_str.split('&') {
-                    if let Some(val) = pair.strip_prefix("unlocked=") {
+                    let token_param = pair
+                        .strip_prefix("unlocked=")
+                        .or_else(|| pair.strip_prefix("unlock_token="));
+                    if let Some(val) = token_param {
                         for token in val.split(',') {
                             let token = token.trim();
                             if !token.is_empty() {

@@ -64,12 +64,20 @@ pub struct PinAuthRequest {
     pub pin: String,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct AuthUserSummary {
+    pub id: String,
+    pub username: String,
+    pub role: UserRole,
+}
+
 #[derive(Serialize)]
 pub struct AuthResponse {
     pub token: String,
     pub user_id: String,
     pub username: String,
     pub role: UserRole,
+    pub user: AuthUserSummary,
 }
 
 pub async fn profile_pin_auth(
@@ -120,9 +128,14 @@ pub async fn profile_pin_auth(
                     StatusCode::OK,
                     Json(AuthResponse {
                         token,
-                        user_id: user.id,
-                        username: user.username,
+                        user_id: user.id.clone(),
+                        username: user.username.clone(),
                         role: user.role,
+                        user: AuthUserSummary {
+                            id: user.id,
+                            username: user.username,
+                            role: user.role,
+                        },
                     }),
                 )
                     .into_response(),

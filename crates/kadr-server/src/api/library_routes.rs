@@ -114,6 +114,7 @@ pub struct UnlockLibraryRequest {
 pub struct UnlockLibraryResponse {
     pub library_id: String,
     pub token: String,
+    pub unlock_token: String,
     pub expires_at: i64,
 }
 
@@ -319,7 +320,8 @@ pub async fn unlock_library(
                     StatusCode::OK,
                     Json(UnlockLibraryResponse {
                         library_id: library.id,
-                        token,
+                        token: token.clone(),
+                        unlock_token: token,
                         expires_at,
                     }),
                 )
