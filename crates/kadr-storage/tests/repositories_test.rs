@@ -1,4 +1,5 @@
 use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
+use kadr_storage::error::StorageError;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 use std::path::PathBuf;
@@ -531,9 +532,17 @@ async fn test_library_update_name() {
     assert_eq!(fetched.name, "Renamed Movies");
 
     // 2. Reject empty or whitespace-only name
+    let empty_str_err = lib_repo.update_name(&lib.id, "").await.unwrap_err();
+    match empty_str_err {
+        StorageError::InvalidInput(msg) => {
+            assert!(msg.to_lowercase().contains("empty"));
+        }
+        other => panic!("Expected InvalidInput error, got: {:?}", other),
+    }
+
     let empty_err = lib_repo.update_name(&lib.id, "   ").await.unwrap_err();
     match empty_err {
-        kadr_storage::error::StorageError::InvalidInput(msg) => {
+        StorageError::InvalidInput(msg) => {
             assert!(msg.to_lowercase().contains("empty"));
         }
         other => panic!("Expected InvalidInput error, got: {:?}", other),
@@ -542,7 +551,7 @@ async fn test_library_update_name() {
     // 3. Return NotFound on non-existent id
     let not_found_err = lib_repo.update_name("non-existent-lib", "New Name").await.unwrap_err();
     match not_found_err {
-        kadr_storage::error::StorageError::NotFound(_) => {}
+        StorageError::NotFound(_) => {}
         other => panic!("Expected NotFound error, got: {:?}", other),
     }
 }

@@ -520,6 +520,7 @@ describe('AdminDashboard Component', () => {
 
       const input = screen.getByDisplayValue('Featured Movies');
       expect(input).toBeInTheDocument();
+      expect(input).toHaveAttribute('aria-label', 'Library name');
 
       // Cancel with Escape
       fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });

@@ -485,6 +485,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="text"
                               value={editingName}
                               disabled={isSavingName}
+                              aria-label="Library name"
                               onChange={(e) => setEditingName(e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -504,7 +505,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               disabled={isSavingName}
                               aria-label="Save library name"
                               title="Save (Enter)"
-                              className="p-1 text-accent hover:text-accent/80 hover:bg-accent/10 rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight shrink-0"
+                              className="p-1 text-accent hover:text-accent/80 hover:bg-accent/10 rounded transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none shrink-0"
                             >
                               <Check className="w-4 h-4" />
                             </button>
@@ -514,7 +515,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               disabled={isSavingName}
                               aria-label="Cancel editing"
                               title="Cancel (Esc)"
-                              className="p-1 text-muted hover:text-text-main hover:bg-panel rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight shrink-0"
+                              className="p-1 text-muted hover:text-text-main hover:bg-panel rounded transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none shrink-0"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -533,7 +534,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onClick={() => handleStartEdit(lib)}
                               aria-label="Edit library name"
                               title="Rename library"
-                              className="p-1 text-muted hover:text-accent hover:bg-panel rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight"
+                              className="p-1 text-muted hover:text-accent hover:bg-panel rounded transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
