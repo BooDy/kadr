@@ -375,5 +375,54 @@ describe('FolderBrowser Component', () => {
       expect(api.getItemDetails).toHaveBeenCalledWith(201);
     });
   });
+
+  it('renders Images section and launches ImageViewerModal when clicking image or Start Slideshow', async () => {
+    vi.spyOn(api, 'getLibraryFolders').mockResolvedValue({
+      library_id: 'lib-1',
+      library_name: 'Mixed Library',
+      current_path: 'vacation',
+      parent_path: null,
+      breadcrumbs: [{ name: 'vacation', path: 'vacation' }],
+      directories: [],
+      items: [],
+      images: [
+        { name: 'beach.jpg', path: 'vacation/beach.jpg', url: '/api/v1/libraries/lib-1/image?path=beach.jpg', size_bytes: 1024 },
+        { name: 'sunset.png', path: 'vacation/sunset.png', url: '/api/v1/libraries/lib-1/image?path=sunset.png', size_bytes: 2048 },
+      ],
+    });
+
+    render(<FolderBrowser libraryId="lib-1" onPlayItem={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Images (2)')).toBeInTheDocument();
+      expect(screen.getByText('beach.jpg')).toBeInTheDocument();
+      expect(screen.getByText('sunset.png')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /start slideshow/i })).toBeInTheDocument();
+      expect(screen.queryByText('This folder is empty')).not.toBeInTheDocument();
+    });
+
+    // Click "Start Slideshow" opens viewer
+    fireEvent.click(screen.getByRole('button', { name: /start slideshow/i }));
+    expect(screen.getByRole('dialog', { name: /image viewer/i })).toBeInTheDocument();
+    expect(screen.getByText('Slideshow (4s)')).toBeInTheDocument();
+
+    // Close viewer
+    fireEvent.click(screen.getByRole('button', { name: /close image viewer/i }));
+    expect(screen.queryByRole('dialog', { name: /image viewer/i })).not.toBeInTheDocument();
+
+    // Click individual image opens viewer at that image
+    fireEvent.click(screen.getByText('sunset.png'));
+    expect(screen.getByRole('dialog', { name: /image viewer/i })).toBeInTheDocument();
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+
+    // Close viewer and test keyboard activation
+    fireEvent.click(screen.getByRole('button', { name: /close image viewer/i }));
+    expect(screen.queryByRole('dialog', { name: /image viewer/i })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByText('beach.jpg'), { key: 'Enter' });
+    expect(screen.getByRole('dialog', { name: /image viewer/i })).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+  });
 });
+
 

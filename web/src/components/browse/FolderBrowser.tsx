@@ -7,10 +7,12 @@ import {
   ArrowLeft,
   Loader2,
   AlertCircle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { CardViewModel, LibraryFolderResponse } from '../../types';
 import { api } from '../../api/client';
 import { ItemDetailsModal } from './ItemDetailsModal';
+import { ImageViewerModal } from '../player/ImageViewerModal';
 
 export interface FolderBrowserProps {
   libraryId: string;
@@ -126,6 +128,8 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [isSlideshowAutoPlay, setIsSlideshowAutoPlay] = useState<boolean>(false);
 
   const navigateTo = useCallback(
     async (path: string) => {
@@ -235,7 +239,7 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
           )}
 
           {/* Empty State Banner */}
-          {data.directories.length === 0 && data.items.length === 0 && (
+          {data.directories.length === 0 && data.items.length === 0 && (!data.images || data.images.length === 0) && (
             <div className="p-16 rounded-xl bg-panel border border-border-subtle flex flex-col items-center justify-center text-center space-y-3">
               <FolderOpen className="w-12 h-12 text-muted" />
               <h3 className="text-base font-medium text-text-main">This folder is empty</h3>
@@ -292,6 +296,67 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
               </div>
             </section>
           )}
+
+          {/* Images Gallery Grid */}
+          {data.images && data.images.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-accent" />
+                  <h2 className="text-xs font-semibold tracking-wider uppercase text-muted">
+                    Images ({data.images.length})
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedImageIndex(0);
+                    setIsSlideshowAutoPlay(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cta hover:bg-cta-hover text-white shadow-sm transition-all focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-white text-white" />
+                  <span>Start Slideshow</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                {data.images.map((img, idx) => (
+                  <div
+                    key={img.path}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setSelectedImageIndex(idx);
+                      setIsSlideshowAutoPlay(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedImageIndex(idx);
+                        setIsSlideshowAutoPlay(false);
+                      }
+                    }}
+                    className="group relative flex flex-col cursor-pointer rounded-xl overflow-hidden border border-border-subtle bg-panel hover:bg-panel-hover transition-all duration-200 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none p-2"
+                  >
+                    <div className="relative aspect-square w-full rounded-lg overflow-hidden bg-canvas">
+                      <img
+                        src={img.url}
+                        alt={img.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover filter brightness-95 group-hover:brightness-105 group-hover:scale-105 transition-all duration-200"
+                      />
+                    </div>
+                    <div className="mt-2 px-0.5 truncate">
+                      <span className="text-xs font-medium text-text-main truncate group-hover:text-white transition-colors" title={img.name}>
+                        {img.name}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 
@@ -302,6 +367,17 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
         onClose={() => setSelectedItemId(null)}
         onPlay={onPlayItem}
       />
+
+      {/* Image Viewer / Slideshow Modal */}
+      {data?.images && data.images.length > 0 && (
+        <ImageViewerModal
+          images={data.images}
+          initialIndex={selectedImageIndex ?? 0}
+          isOpen={selectedImageIndex !== null}
+          autoPlay={isSlideshowAutoPlay}
+          onClose={() => setSelectedImageIndex(null)}
+        />
+      )}
     </div>
   );
 };
