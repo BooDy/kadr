@@ -8,6 +8,7 @@
 
   [![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
   [![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
+  [![Version](https://img.shields.io/badge/version-v0.1.1--alpha-blue.svg)](CHANGELOG.md)
   [![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
   [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
   [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -32,13 +33,18 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Pure-Rust & Portability First**: Zero external C/native runtime dependencies baseline (`reqwest` with `rustls-tls`, pure-Rust crypto via `argon2`, static SQLite engine). Compiles cleanly against `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`.
 - **Zero-Copy HTTP 206 Direct Play**: Axum-based streaming pipeline with 64 KiB chunk buffering supporting single and multipart byte-range requests without whole-file memory allocation.
 - **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (001–004).
+- **Network Autodiscovery & Server Identity**: Zero-conf unauthenticated `/api/v1/discovery` endpoint and persistent server identity configuration for instantaneous client detection across local networks.
 - **Declarative Widget AST Layout Engine**: Single-roundtrip screen hydration (`Home`, `Movies`, `Shows`) powering hero spotlights, horizontal card carousels, and catalog grids with badge computation (`4K`, `NEW`, `RESUME` progress bars).
-- **Online & Local Subtitles**: Automatic sidecar discovery (`.srt`, `.vtt`, `.ass`, `.sub`), language tag detection, pure-Rust bounded streaming SRT $\to$ WebVTT transcoder, on-the-fly disk caching, and OpenSubtitles.com REST API client.
+- **TV Shows & Seasons Grouping**: Automated TV episode filename and directory cue parsing (`S01E02`), parent series aggregation, season tabs navigation, and 1-click episode playback.
+- **Hierarchical Folder Browser & Slideshow**: Sandboxed directory browsing with breadcrumbs, direct directory jumping from media details, image discovery (`jpg`, `png`, `webp`, `gif`, `avif`, `bmp`), and full-screen auto-advancing slideshows.
+- **Multi-Path & Private PIN-Locked Libraries**: Media libraries spanning multiple local filesystem paths with directory picking, 4-digit PIN protection, database query isolation, and HMAC unlock tokens.
+- **Online & Local Subtitles with In-Player Search**: Automatic sidecar discovery (`.srt`, `.vtt`, `.ass`, `.sub`), language tag detection, pure-Rust bounded streaming SRT $\to$ WebVTT transcoder, disk caching, and live in-player OpenSubtitles search and on-the-fly download.
+- **Video Thumbnail Extraction Engine**: Pure-Rust background thumbnail extractor during library scans and on-demand fallback routes (`/api/v1/thumbnails/videos/:id`).
 - **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `session:synced`, `subtitle:downloaded`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
 - **System Telemetry & Health**: Non-blocking collector querying Linux process RSS memory via `/proc/self/statm`, SQLite DB/WAL file sizes, and active playback session counters.
 - **Integrated Cinema Web App & Studio**:
-  - **Cinema Player**: Full-screen dark video player with native HTML5 `<track>` WebVTT subtitles, auto-resume seeking, 10s playback scrobbling heartbeats, and media keyboard shortcuts.
-  - **Layout Studio**: Visual device simulator (TV 16:9, Tablet 4:3, Mobile 9:16) with widget tree inspection and live preview toggles.
+  - **Cinema Player**: Full-screen dark video player with native HTML5 `<track>` WebVTT subtitles, in-player subtitle downloading, direct folder jumping, auto-resume seeking, 10s playback scrobbling heartbeats, and media keyboard shortcuts.
+  - **Layout Studio**: Visual device simulator (TV 16:9, Tablet 4:3, Mobile 9:16) with widget tree inspection, query filter rules (ratings, genres, exclusions), and custom screen persistence.
   - **Telemetry Dashboard**: Real-time resource gauges and live streaming SSE log feed.
   - **Static File Serving**: Served directly by the Axum server with HTML5 history pushState fallback to `index.html`.
 
@@ -51,7 +57,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
                             |                 Client Tier                   |
                             |   (Web Client / TV Remote / Mobile Device)    |
                             +-------+-------------------------------+-------+
-                                    | HTTP / SSE                    | HTTP 206 Streaming
+                                    | HTTP / SSE / Discovery        | HTTP 206 / Media Streams
                                     v                               v
 +-----------------------------------------------------------------------------------+
 |                                   Kadr Server                                     |
@@ -59,13 +65,14 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 |                                                                                   |
 |  +-----------------------+   +-----------------------+   +---------------------+  |
 |  |    Axum HTTP Router   |   |   Static Web Server   |   |  HTTP Range Stream  |  |
-|  | (Auth, Screens, Subs) |   |  (ServeDir / web/dist)|   | (64 KiB Async I/O)  |  |
+|  | (Auth, Screens, Subs, |   |  (ServeDir / web/dist)|   | & Folder Streaming  |  |
+|  |  Discovery, Folders)  |   |                       |   | (64 KiB Async I/O)  |  |
 |  +-----------+-----------+   +-----------------------+   +----------+----------+  |
 |              |                                                      |             |
-|  +-----------v-----------+   +-----------------------+              |             |
-|  |  Widget AST Resolver  |   |    Event Bus (SSE)    |              |             |
-|  |  (Parallel Queries)   |   | (tokio::broadcast)    |              |             |
-|  +-----------+-----------+   +-----------+-----------+              |             |
+|  +-----------v-----------+   +-----------------------+   +----------v----------+  |
+|  |  Widget AST Resolver  |   |    Event Bus (SSE)    |   | Thumbnail Extractor |  |
+|  |  (Parallel Queries)   |   | (tokio::broadcast)    |   | (Pure Rust Engine)  |  |
+|  +-----------+-----------+   +-----------+-----------+   +----------+----------+  |
 |              |                           ^                          |             |
 +--------------|---------------------------|--------------------------|-------------+
                |                           |                          |
@@ -77,13 +84,13 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 +--------------v-----------+   +-----------+-----------+              |
 |        kadr-ingest       |   |      kadr-core        |              |
 | (Inotify Watcher, Probe, |   | (Models, AST, Events, |              |
-|  Sidecars, Worker)       |   |  SRT->VTT Transcoder) |              |
+|  Sidecars, Thumbnails)   |   |  SRT->VTT Transcoder) |              |
 +--------------+-----------+   +-----------------------+              |
                |                                                      |
                v                                                      v
   +-------------------------------------------------------------------------------+
   |                          Local File Storage                                   |
-  |                (/movies, /shows, .srt sidecars, artwork)                      |
+  |     (/movies, /shows, photos, thumbnails, .srt sidecars, artwork)             |
   +-------------------------------------------------------------------------------+
 ```
 
@@ -106,7 +113,7 @@ The project is organized as a Cargo workspace with four focused crates and a fro
 
 ## Quick Install for Users (Linux)
 
-Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.1.0-alpha.1`).
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.1.1-alpha`).
 
 ### Option 1: Debian / Ubuntu / Raspberry Pi OS (`.deb`)
 
@@ -114,9 +121,9 @@ Download the appropriate `.deb` package from the [Kadr Releases Page](https://gi
 
 ```bash
 # Install the Debian package (creates 'kadr' user, registers systemd service, installs web app)
-sudo dpkg -i kadr_0.1.0_amd64.deb    # For 64-bit PC / Server
+sudo dpkg -i kadr_0.1.1_amd64.deb    # For 64-bit PC / Server
 # OR
-sudo dpkg -i kadr_0.1.0_arm64.deb    # For Raspberry Pi 4/5 / ARM64
+sudo dpkg -i kadr_0.1.1_arm64.deb    # For Raspberry Pi 4/5 / ARM64
 
 # Start Kadr and enable automatic start on system boot
 sudo systemctl enable --now kadr
@@ -133,8 +140,8 @@ For generic Linux distributions (Arch, Alpine, Fedora, openSUSE, etc.):
 
 ```bash
 # 1. Download and extract the standalone bundle from Releases
-tar -xzf kadr-v0.1.0-alpha.1-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.1.0-alpha.1-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.1.1-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.1.1-alpha-x86_64-unknown-linux-musl
 
 # 2. Run the automated installer (installs binary, web assets, and systemd service)
 sudo ./install.sh
@@ -182,8 +189,8 @@ sudo systemctl enable --now kadr
 For maintainers, pushing any semantic version tag triggers the automated build and release pipeline:
 
 ```bash
-git tag -a v0.1.0-alpha.1 -m "Release v0.1.0-alpha.1"
-git push origin v0.1.0-alpha.1
+git tag -a v0.1.1-alpha -m "Release v0.1.1-alpha"
+git push origin v0.1.1-alpha
 ```
 
 The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/workflows/release.yml)) will:
@@ -327,22 +334,36 @@ The Vite dev server runs at `http://localhost:5173` and automatically proxies `/
 
 ## REST & Streaming API Reference
 
-All protected endpoints require an `Authorization: Bearer <token>` header, acquired via PIN authentication.
+All protected endpoints require an `Authorization: Bearer <token>` header, acquired via PIN authentication. For libraries configured with PIN protection, requests must also include the `X-Library-Unlock-Token: <token>` header. For complete payload schemas, sequence diagrams, and client integration recipes, see the [Client Developer Guide](docs/CLIENT_GUIDE.md).
+
+### Network Autodiscovery & Server Identity
+- `GET /api/v1/discovery` — Zero-configuration unauthenticated endpoint returning server identity, name, version, and endpoints.
+- `GET /api/v1/admin/server-identity` — Retrieve persistent server name and unique instance ID (admin).
+- `PUT /api/v1/admin/server-identity` — Update persistent server name (admin).
 
 ### Authentication & Profiles
-- `POST /api/v1/auth/pin` (or `/profile-pin`) — Authenticate with 4-digit PIN. Returns JWT token and user info.
+- `GET /api/v1/auth/profiles` (or `/users/profiles`) — List selectable user profiles (`id`, `username`, `role`, `has_pin`, optional `avatar_color`).
+- `POST /api/v1/auth/pin` (or `/login`, `/profile-pin`) — Authenticate with 4-digit PIN. Returns JWT token and user info.
 - `GET /api/v1/auth/me` — Retrieve authenticated user profile.
 
-### Video Streaming & Artwork
+### Libraries & Hierarchical Folder Browser
+- `GET /api/v1/libraries` — List configured media libraries with path, item count, and locked status.
+- `POST /api/v1/libraries/:id/unlock` — Unlock private library with 4-digit PIN, returning HMAC unlock token.
+- `GET /api/v1/libraries/:id/folders` — Browse folders and media items with sandboxing, breadcrumbs, and image support (`?path=...`).
+- `GET /api/v1/libraries/:id/stream-file` — Stream arbitrary library files (photos, media) within sandboxed paths.
+- `GET /api/v1/fs/directories` — Server-side filesystem directory picker for library creation/editing.
+
+### Video Streaming, Thumbnails & Artwork
 - `GET /api/v1/stream/:item_id` — Zero-copy HTTP 206 range streaming (supports Bearer header and `?token=` query param).
+- `GET /api/v1/thumbnails/videos/:id` — Pure-Rust video thumbnail extraction and cached delivery.
 - `GET /api/v1/artwork/:item_id/poster` — Stream cached poster artwork (`image/jpeg`, `image/png`, `image/webp`).
 - `GET /api/v1/artwork/:item_id/backdrop` — Stream cached backdrop artwork.
 
 ### Declarative Screens & Widget AST
 - `GET /api/v1/screens` — List available screen layouts (`home`, `movies`, `shows`).
 - `GET /api/v1/screens/:screen_id` — Retrieve fully hydrated or unhydrated screen AST.
-- `GET /api/v1/widgets/:widget_id/data?offset=0&limit=20` — Fetch paginated items for a specific widget query.
-- `GET /api/v1/items/:item_id/details` — Detailed metadata payload for modal inspection.
+- `GET /api/v1/widgets/:widget_id/data?offset=0&limit=20` — Fetch paginated items for a specific widget query (with filter rules).
+- `GET /api/v1/items/:item_id` (or `/items/:item_id/details`) — Detailed metadata payload for modal inspection (including directory and series info).
 
 ### Playback & Scrobbling
 - `POST /api/v1/playback/sessions` — Start a new playback tracking session (`{"media_item_id": 42}`).
@@ -364,6 +385,15 @@ All protected endpoints require an `Authorization: Bearer <token>` header, acqui
 
 ---
 
+## Documentation
+
+- [Client Developer Guide](docs/CLIENT_GUIDE.md) — Comprehensive reference for building third-party or native Kadr clients, covering autodiscovery, PIN authentication, declarative layout ASTs, HTTP 206 video playback, scrobbling lifecycle, subtitles, and real-time SSE events.
+- [Changelog](CHANGELOG.md) — Chronological log of notable additions, improvements, and bug fixes across all versions.
+- [Product Requirements Document](kadr_media_server_prd.md) — Architecture requirements, design philosophy, and technical specifications.
+- [UI Theme & Design Guidelines](theme.md) — Dark cinema color palette, typography scales, and 10-foot TV UI focus ring specifications.
+
+---
+
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.

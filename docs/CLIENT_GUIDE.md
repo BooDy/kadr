@@ -173,20 +173,19 @@ sequenceDiagram
     "username": "Admin",
     "role": "admin",
     "has_pin": true,
-    "avatar_color": null
+    "avatar_color": "#E50914"
   },
   {
     "id": "b2c3d4e5-0000-0000-0000-000000000002",
     "username": "Kids",
     "role": "standard",
-    "has_pin": true,
-    "avatar_color": null
+    "has_pin": true
   }
 ]
 ```
 
 > [!NOTE]
-> All users in Kadr have a PIN configured (`has_pin` is always `true`). Clients can deterministically generate profile avatar background gradients from the `username` string or profile index.
+> All users in Kadr have a PIN configured (`has_pin` is always `true`). Note that `avatar_color` is optional and omitted when unset; clients can deterministically generate profile avatar background gradients from the `username` string or profile index when not provided.
 
 ### 3.2 Logging In with Profile PIN
 
