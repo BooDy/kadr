@@ -115,7 +115,19 @@ The project is organized as a Cargo workspace with four focused crates and a fro
 
 Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.1.1-alpha`).
 
-### Option 1: Debian / Ubuntu / Raspberry Pi OS (`.deb`)
+### Option 1: Automated One-Line Installer (Recommended — All Linux Distributions)
+
+On any modern Linux distribution (Fedora, Arch, Alpine, openSUSE, Debian, Ubuntu, RHEL, etc.), run the universal online installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh | sudo bash
+```
+
+This automatically detects your CPU architecture, downloads the verified static release archive, creates the `kadr` system user, configures data paths, sets up the systemd service, and starts Kadr immediately.
+
+---
+
+### Option 2: Debian / Ubuntu / Raspberry Pi OS (`.deb`)
 
 Download the appropriate `.deb` package from the [Kadr Releases Page](https://github.com/BooDy/kadr/releases):
 
@@ -134,9 +146,9 @@ sudo systemctl status kadr
 
 ---
 
-### Option 2: Standalone Linux Tarball (`.tar.gz`)
+### Option 3: Standalone Linux Tarball (`.tar.gz`)
 
-For generic Linux distributions (Arch, Alpine, Fedora, openSUSE, etc.):
+For offline installation on generic Linux distributions:
 
 ```bash
 # 1. Download and extract the standalone bundle from Releases
@@ -148,6 +160,39 @@ sudo ./install.sh
 
 # 3. Start the service
 sudo systemctl enable --now kadr
+```
+
+---
+
+## Upgrading Kadr
+
+Kadr features zero-downtime, non-destructive upgrades. Upgrading replaces only the server binary (`/usr/local/bin/kadr`) and web client assets (`/usr/share/kadr/web`); your media library records, user accounts, playback history, and custom layouts in `/var/lib/kadr/kadr.db` and configurations in `/etc/kadr/` are **strictly preserved**. Schema migrations execute automatically on startup.
+
+### Method 1: Automated One-Line Upgrade (Recommended)
+
+Simply re-run the universal installer. It detects your existing installation, pauses the active service, deploys the newest version, and restarts Kadr cleanly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh | sudo bash
+```
+
+### Method 2: Debian / Ubuntu (`.deb`)
+
+Download the updated package and reinstall with `dpkg`:
+
+```bash
+sudo dpkg -i kadr_0.1.1_amd64.deb    # or kadr_0.1.1_arm64.deb
+sudo systemctl restart kadr
+```
+
+### Method 3: Standalone Tarball Upgrade
+
+Extract the new archive and execute the bundled installer (it automatically detects the active service and upgrades in-place):
+
+```bash
+tar -xzf kadr-v0.1.1-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.1.1-alpha-x86_64-unknown-linux-musl
+sudo ./install.sh
 ```
 
 ---

@@ -20,9 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Interactive Layout Studio**: Built declarative AST visual layout builder with device viewports (TV 16:9, Tablet 4:3, Mobile 9:16), widget inspector, and custom screen persistence.
 - **Multi-Path Libraries**: Added support for media libraries spanning multiple filesystem paths with a server-side directory picker modal.
 - **Private Libraries with PIN Protection**: Added 4-digit PIN protection, database query isolation, and HMAC unlock tokens for sensitive media libraries.
+- **Universal Linux Installer & Upgrader**: Added one-line online installer script (`scripts/install.sh` / root `install.sh`) supporting automated installation and in-place zero-downtime upgrades across all distributions.
+- **Comprehensive Upgrade Documentation**: Added dedicated upgrade guides for Debian (`.deb`), automated script, and manual tarballs in `README.md`.
 - **Inline Library Renaming**: Added inline name editing with pencil action on library cards in Admin Dashboard.
 
 ### Changed & Improved
+- Enhanced standalone tarball installer (`packaging/scripts/install.sh`) with active service detection and in-place upgrade handling.
 - Overhauled client styling to conform strictly to `theme.md` dark cinema palette and 10-foot TV UI focus rings (`focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none`).
 - Optimized SQLite WAL query execution with filter pushdown and prevented duplicate item ingestion across symlink traversals.
 - Streamlined top navigation tabs and unified Admin Dashboard embedding Layout Studio and Telemetry into sub-tabs.
