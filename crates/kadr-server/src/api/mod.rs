@@ -26,7 +26,7 @@ use crate::resolver::WidgetResolver;
 use crate::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
 use crate::telemetry::TelemetryCollector;
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Extension, Router,
 };
 use kadr_storage::repos::{
@@ -161,7 +161,8 @@ pub fn create_router_with_ingest(
         .route("/api/v1/libraries", post(library_routes::create_library))
         .route(
             "/api/v1/libraries/{id}",
-            delete(library_routes::delete_library),
+            patch(library_routes::update_library)
+                .delete(library_routes::delete_library),
         )
         .route(
             "/api/v1/libraries/{id}/folders",
@@ -192,7 +193,8 @@ pub fn create_router_with_ingest(
         .layer(Extension(jwt_svc))
         .layer(Extension(limiter))
         .layer(Extension(session_registry))
-        .layer(Extension(layout_registry))
+        .layer(Extension(layout_registry.clone()))
+        .layer(Extension(Arc::new(layout_registry)))
         .layer(Extension(widget_resolver))
         .layer(Extension(subtitle_service))
         .layer(Extension(opensubtitles_client))

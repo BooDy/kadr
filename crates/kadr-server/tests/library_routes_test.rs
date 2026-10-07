@@ -379,3 +379,79 @@ async fn test_scan_library_routes_to_ingest_worker() {
         _ => panic!("Expected Upsert message"),
     }
 }
+
+#[tokio::test]
+async fn test_update_library_name() {
+    let ctx = setup_test_context().await;
+
+    // Create a library via POST
+    let create_payload = json!({
+        "name": "Original Name",
+        "path": "/media/movies",
+        "media_type": "Movie"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/libraries")
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.admin_token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&create_payload).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let created_lib: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let lib_id = created_lib["id"].as_str().unwrap();
+
+    // 1. Standard user cannot rename library (403 Forbidden)
+    let patch_payload = json!({ "name": "Standard Renamed" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/libraries/{}", lib_id))
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.standard_token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&patch_payload).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 2. Admin successfully renames library (200 OK)
+    let patch_payload = json!({ "name": "Cinema Classics" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/libraries/{}", lib_id))
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.admin_token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&patch_payload).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let updated_lib: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(updated_lib["name"], "Cinema Classics");
+    assert_eq!(updated_lib["id"], lib_id);
+
+    // 3. Reject empty name (400 Bad Request)
+    let bad_payload = json!({ "name": "   " });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/libraries/{}", lib_id))
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.admin_token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&bad_payload).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 4. Non-existent library (404 Not Found)
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/libraries/non-existent-uuid")
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.admin_token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&patch_payload).unwrap()))
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+

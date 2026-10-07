@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use tokio_util::io::ReaderStream;
-use kadr_core::ast::CardViewModel;
+use kadr_core::ast::{CardViewModel, ScreenId, WidgetNode};
 use kadr_core::events::SystemEvent;
 use kadr_core::models::{Library, MediaItem, MediaType};
 use kadr_ingest::watcher::{scan_directory_recursive, IngestMessage, IngestPipeline};
@@ -24,6 +24,7 @@ use crate::auth::jwt::{AuthUser, RequireAdmin};
 use crate::auth::pin::{hash_pin, validate_pin, verify_pin};
 use crate::auth::rate_limiter::{RateLimitStatus, RateLimiter};
 use crate::events::EventBus;
+use crate::layout::LayoutRegistry;
 use crate::resolver::to_card_view_model;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +66,11 @@ pub struct CreateLibraryRequest {
     pub is_private: bool,
     #[serde(default)]
     pub pin: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateLibraryRequest {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -327,6 +333,61 @@ pub async fn unlock_library(
                 .into_response()
         }
     }
+}
+
+/// Handler for `PATCH /api/v1/libraries/{id}`.
+///
+/// Updates the library name, synchronizes associated screen layout title,
+/// and broadcasts a LibraryUpdated event. Requires admin role.
+pub async fn update_library(
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(layout_registry): Extension<Arc<LayoutRegistry>>,
+    Extension(event_bus): Extension<Arc<EventBus>>,
+    Json(payload): Json<UpdateLibraryRequest>,
+) -> Result<Json<Library>, StatusCode> {
+    let trimmed_name = payload.name.trim();
+    if trimmed_name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let updated = match lib_repo.update_name(&id, trimmed_name).await {
+        Ok(lib) => lib,
+        Err(StorageError::NotFound(_)) => return Err(StatusCode::NOT_FOUND),
+        Err(StorageError::InvalidInput(_)) => return Err(StatusCode::BAD_REQUEST),
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to update library name");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Synchronize associated screen layout if one exists
+    let screen_id = id.parse::<ScreenId>().unwrap();
+    if let Some(mut screen) = layout_registry.get_screen(&screen_id) {
+        screen.title = trimmed_name.to_string();
+        for widget in &mut screen.widgets {
+            if let WidgetNode::Grid { title, .. } = widget {
+                if title.starts_with("All ") {
+                    *title = format!("All {trimmed_name}");
+                }
+            }
+        }
+        layout_registry.register_screen(screen);
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    event_bus.publish(SystemEvent::LibraryUpdated {
+        library_id: id,
+        item_count: 0,
+        timestamp: now,
+    });
+
+    Ok(Json(updated))
 }
 
 /// Handler for `DELETE /api/v1/libraries/{id}`.
