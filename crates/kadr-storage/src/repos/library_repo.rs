@@ -251,6 +251,37 @@ impl LibraryRepository {
         .await?
     }
 
+    pub async fn update_name(&self, id: &str, name: &str) -> Result<Library> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(StorageError::InvalidInput(
+                "Library name cannot be empty".to_string(),
+            ));
+        }
+
+        let lib_id = id.to_string();
+        let trimmed_name = trimmed.to_string();
+        let rows_affected = {
+            let conn = self.pool.get().await?;
+            conn.interact(move |c| -> Result<usize> {
+                let affected = c.execute(
+                    "UPDATE libraries SET name = ?1 WHERE id = ?2",
+                    params![trimmed_name, lib_id],
+                )?;
+                Ok(affected)
+            })
+            .await??
+        };
+
+        if rows_affected == 0 {
+            return Err(StorageError::NotFound(format!("Library {id} not found")));
+        }
+
+        self.get_by_id(id)
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("Library {id} not found")))
+    }
+
     pub async fn get_all(&self) -> Result<Vec<Library>> {
         let conn = self.pool.get().await?;
         conn.interact(|c| {

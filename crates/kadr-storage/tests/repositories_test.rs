@@ -503,3 +503,47 @@ async fn test_deduplicate_media_items() {
     }
 }
 
+#[tokio::test]
+async fn test_library_update_name() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+
+    let lib = lib_repo
+        .create(
+            "lib-orig",
+            "Original Name",
+            "/media/movies",
+            kadr_core::models::MediaType::Movie,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 1. Successful update
+    let updated = lib_repo.update_name(&lib.id, "Renamed Movies").await.unwrap();
+    assert_eq!(updated.name, "Renamed Movies");
+    assert_eq!(updated.id, "lib-orig");
+
+    let fetched = lib_repo.get_by_id(&lib.id).await.unwrap().expect("library should exist");
+    assert_eq!(fetched.name, "Renamed Movies");
+
+    // 2. Reject empty or whitespace-only name
+    let empty_err = lib_repo.update_name(&lib.id, "   ").await.unwrap_err();
+    match empty_err {
+        kadr_storage::error::StorageError::InvalidInput(msg) => {
+            assert!(msg.to_lowercase().contains("empty"));
+        }
+        other => panic!("Expected InvalidInput error, got: {:?}", other),
+    }
+
+    // 3. Return NotFound on non-existent id
+    let not_found_err = lib_repo.update_name("non-existent-lib", "New Name").await.unwrap_err();
+    match not_found_err {
+        kadr_storage::error::StorageError::NotFound(_) => {}
+        other => panic!("Expected NotFound error, got: {:?}", other),
+    }
+}
+
