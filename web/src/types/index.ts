@@ -287,6 +287,13 @@ export interface BreadcrumbItem {
   path: string;
 }
 
+export interface FolderImageEntry {
+  name: string;
+  path: string;
+  url: string;
+  size_bytes: number;
+}
+
 export interface LibraryFolderResponse {
   library_id: string;
   library_name: string;
@@ -295,6 +302,7 @@ export interface LibraryFolderResponse {
   breadcrumbs: BreadcrumbItem[];
   directories: FolderEntry[];
   items: CardViewModel[];
+  images?: FolderImageEntry[];
 }
 
 export interface Library {
