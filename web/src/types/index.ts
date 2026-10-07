@@ -316,6 +316,10 @@ export interface CreateLibraryPayload {
   pin?: string;
 }
 
+export interface UpdateLibraryPayload {
+  name: string;
+}
+
 
 export interface UnlockLibraryResponse {
   library_id: string;

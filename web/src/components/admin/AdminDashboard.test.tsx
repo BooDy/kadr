@@ -496,5 +496,76 @@ describe('AdminDashboard Component', () => {
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
+
+  describe('Inline Library Rename', () => {
+    it('renders edit button and toggles inline input with keyboard shortcuts', async () => {
+      vi.spyOn(api, 'updateLibrary').mockImplementation(async (id, payload) => ({
+        ...mockLibraries[0],
+        id,
+        name: payload.name,
+      }));
+
+      render(<AdminDashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Featured Movies')).toBeInTheDocument();
+      });
+
+      // Find edit button for first library
+      const editBtn = screen.getAllByRole('button', { name: /edit library name/i })[0];
+      expect(editBtn).toBeInTheDocument();
+
+      // Click to enter inline edit mode
+      fireEvent.click(editBtn);
+
+      const input = screen.getByDisplayValue('Featured Movies');
+      expect(input).toBeInTheDocument();
+
+      // Cancel with Escape
+      fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });
+      expect(screen.queryByDisplayValue('Featured Movies')).not.toBeInTheDocument();
+      expect(screen.getByText('Featured Movies')).toBeInTheDocument();
+      expect(api.updateLibrary).not.toHaveBeenCalled();
+
+      // Re-enter and save with Enter
+      fireEvent.click(screen.getAllByRole('button', { name: /edit library name/i })[0]);
+      const editInput = screen.getByDisplayValue('Featured Movies');
+      fireEvent.change(editInput, { target: { value: 'Blockbuster Cinema' } });
+      fireEvent.keyDown(editInput, { key: 'Enter', code: 'Enter' });
+
+      await waitFor(() => {
+        expect(api.updateLibrary).toHaveBeenCalledWith('lib-1', { name: 'Blockbuster Cinema' });
+        expect(screen.getByText('Blockbuster Cinema')).toBeInTheDocument();
+      });
+    });
+
+    it('saves library name when clicking the save check button', async () => {
+      vi.spyOn(api, 'updateLibrary').mockImplementation(async (id, payload) => ({
+        ...mockLibraries[0],
+        id,
+        name: payload.name,
+      }));
+
+      const onLibrariesChange = vi.fn();
+      render(<AdminDashboard onLibrariesChange={onLibrariesChange} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Featured Movies')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getAllByRole('button', { name: /edit library name/i })[0]);
+      const editInput = screen.getByDisplayValue('Featured Movies');
+      fireEvent.change(editInput, { target: { value: 'Criterion Collection' } });
+
+      const saveBtn = screen.getByRole('button', { name: /save library name/i });
+      fireEvent.click(saveBtn);
+
+      await waitFor(() => {
+        expect(api.updateLibrary).toHaveBeenCalledWith('lib-1', { name: 'Criterion Collection' });
+        expect(screen.getByText('Criterion Collection')).toBeInTheDocument();
+        expect(onLibrariesChange).toHaveBeenCalled();
+      });
+    });
+  });
 });
 

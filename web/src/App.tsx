@@ -270,7 +270,7 @@ export const App: FC = () => {
             )}
 
             {currentView === 'admin' && currentUser?.role === 'admin' && (
-              <AdminDashboard onPlayItem={handlePlayItem} />
+              <AdminDashboard onPlayItem={handlePlayItem} onLibrariesChange={refreshLibraries} />
             )}
           </>
         )}

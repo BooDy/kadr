@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Plus,
   X,
+  Pencil,
+  Check,
   HardDrive,
   Lock,
   Folder,
@@ -29,12 +31,14 @@ export type AdminTab = 'libraries' | 'users' | 'studio' | 'telemetry' | 'config'
 export interface AdminDashboardProps {
   onClose?: () => void;
   onPlayItem?: (itemId: number) => void;
+  onLibrariesChange?: () => void;
   initialTab?: AdminTab;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onClose,
   onPlayItem,
+  onLibrariesChange,
   initialTab,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab || 'libraries');
@@ -43,6 +47,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+
+  // Inline Library Rename state
+  const [editingLibraryId, setEditingLibraryId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
+  const [isSavingName, setIsSavingName] = useState<boolean>(false);
 
   // Add Library Modal state
   const [isAddLibOpen, setIsAddLibOpen] = useState(false);
@@ -110,6 +119,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const showStatus = (type: 'success' | 'error' | 'warning', text: string) => {
     setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 5000);
+  };
+
+  const handleStartEdit = (lib: Library) => {
+    setEditingLibraryId(lib.id);
+    setEditingName(lib.name);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingLibraryId(null);
+    setEditingName('');
+  };
+
+  const handleSaveName = async (libraryId: string) => {
+    const trimmed = editingName.trim();
+    if (!trimmed) {
+      showStatus('error', 'Library name cannot be empty.');
+      return;
+    }
+
+    const currentLib = libraries.find((l) => l.id === libraryId);
+    if (currentLib && currentLib.name === trimmed) {
+      handleCancelEdit();
+      return;
+    }
+
+    setIsSavingName(true);
+    try {
+      const updated = await api.updateLibrary(libraryId, { name: trimmed });
+      setLibraries((prev) => prev.map((l) => (l.id === libraryId ? updated : l)));
+      handleCancelEdit();
+      onLibrariesChange?.();
+      showStatus('success', `Library renamed to "${updated.name}".`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to rename library';
+      showStatus('error', msg);
+    } finally {
+      setIsSavingName(false);
+    }
   };
 
   const handleCreateLibrary = async (e: React.FormEvent) => {
@@ -426,13 +473,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
                         {lib.media_type === 'Movie' || lib.media_type === 'movie' ? (
-                          <Film className="w-5 h-5 text-accent" />
+                          <Film className="w-5 h-5 text-accent shrink-0" />
                         ) : (
-                          <Tv className="w-5 h-5 text-accent" />
+                          <Tv className="w-5 h-5 text-accent shrink-0" />
                         )}
-                        <h3 className="font-semibold text-lg text-text-main">{lib.name}</h3>
+                        {editingLibraryId === lib.id ? (
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <input
+                              type="text"
+                              value={editingName}
+                              disabled={isSavingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSaveName(lib.id);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  handleCancelEdit();
+                                }
+                              }}
+                              autoFocus
+                              className="bg-canvas border border-border-subtle text-text-main rounded-lg px-2.5 py-1 text-sm font-semibold focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none w-full max-w-[240px]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveName(lib.id)}
+                              disabled={isSavingName}
+                              aria-label="Save library name"
+                              title="Save (Enter)"
+                              className="p-1 text-accent hover:text-accent/80 hover:bg-accent/10 rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight shrink-0"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              disabled={isSavingName}
+                              aria-label="Cancel editing"
+                              title="Cancel (Esc)"
+                              className="p-1 text-muted hover:text-text-main hover:bg-panel rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight shrink-0"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h3
+                              onDoubleClick={() => handleStartEdit(lib)}
+                              className="font-semibold text-lg text-text-main truncate cursor-pointer"
+                              title="Double-click to rename"
+                            >
+                              {lib.name}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(lib)}
+                              aria-label="Edit library name"
+                              title="Rename library"
+                              className="p-1 text-muted hover:text-accent hover:bg-panel rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import type {
   TelemetrySnapshot,
   UnlockLibraryResponse,
   UpdateConfigPayload,
+  UpdateLibraryPayload,
   User,
   WidgetDataResponse,
 } from '../types';
@@ -481,6 +482,13 @@ export class ApiClient {
   public async createLibrary(payload: CreateLibraryPayload): Promise<Library> {
     return this.request<Library>('/api/v1/libraries', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async updateLibrary(id: string, payload: UpdateLibraryPayload): Promise<Library> {
+    return this.request<Library>(`/api/v1/libraries/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
       body: JSON.stringify(payload),
     });
   }
