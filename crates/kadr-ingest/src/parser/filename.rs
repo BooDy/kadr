@@ -76,13 +76,11 @@ impl FilenameParser {
             r"(?i)(?:[._\s\-]+(?:\(|\[)?|(?:\(|\[)|\b)(?:(?:19|20)\d{2}|2160p|4k|1080p|1080i|720p|576p|480p|bluray|blu-ray|web-dl|webdl|web-rip|webrip|hdtv|bdrip|dvdrip|x264|x265|hevc|av1|h\.?264|h\.?265)\b"
         ).unwrap();
 
-        let year_strip_regex = Regex::new(
-            r"(?i)(?:\((?P<y1>(?:19|20)\d{2})\)|[._\s\-]+(?P<y2>(?:19|20)\d{2}))\s*$"
-        ).unwrap();
+        let year_strip_regex =
+            Regex::new(r"(?i)(?:\((?P<y1>(?:19|20)\d{2})\)|[._\s\-]+(?P<y2>(?:19|20)\d{2}))\s*$")
+                .unwrap();
 
-        let season_folder_regex = Regex::new(
-            r"(?i)^(?:season[._\s\-]*|s)(\d{1,2})$"
-        ).unwrap();
+        let season_folder_regex = Regex::new(r"(?i)^(?:season[._\s\-]*|s)(\d{1,2})$").unwrap();
 
         let ep_file_regex = Regex::new(
             r"(?i)^(?:(?:s\d{1,2}[eE]|e|ep)[._\s\-]*)?(?P<ep>\d{1,3})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
@@ -118,7 +116,9 @@ impl FilenameParser {
             let raw_series = caps.name("series").map(|m| m.as_str()).unwrap_or("");
             let (series_title, year) = self.clean_series_title(raw_series);
             if !series_title.is_empty() {
-                let season = caps.name("season").and_then(|m| m.as_str().parse::<u32>().ok());
+                let season = caps
+                    .name("season")
+                    .and_then(|m| m.as_str().parse::<u32>().ok());
                 let episode = caps
                     .name("episode")
                     .and_then(|m| m.as_str().parse::<u32>().ok());
@@ -275,7 +275,10 @@ impl FilenameParser {
             Some(caps) => caps,
             None => return,
         };
-        let season_num = match season_caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok()) {
+        let season_num = match season_caps
+            .get(1)
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+        {
             Some(num) => num,
             None => return,
         };

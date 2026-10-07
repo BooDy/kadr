@@ -426,7 +426,8 @@ async fn create_test_router_with_pipeline(
         subtitle_repo,
         media_repo.clone(),
     ));
-    let opensubtitles_client = Arc::new(kadr_server::subtitles::OpenSubtitlesClient::new(None, None));
+    let opensubtitles_client =
+        Arc::new(kadr_server::subtitles::OpenSubtitlesClient::new(None, None));
     let event_bus = Arc::new(kadr_server::events::EventBus::default_bus());
     let telemetry_collector = Arc::new(kadr_server::telemetry::TelemetryCollector::new(
         std::path::PathBuf::from(":memory:"),
@@ -434,7 +435,9 @@ async fn create_test_router_with_pipeline(
         event_bus.clone(),
     ));
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
-    let default_config = Arc::new(tokio::sync::RwLock::new(kadr_server::config::AppConfig::default()));
+    let default_config = Arc::new(tokio::sync::RwLock::new(
+        kadr_server::config::AppConfig::default(),
+    ));
     let default_identity = Arc::new(kadr_server::identity::ServerIdentity {
         id: "00000000-0000-0000-0000-000000000000".to_string(),
     });
@@ -463,7 +466,9 @@ async fn create_test_router_with_pipeline(
 #[tokio::test]
 async fn test_on_demand_thumbnail_fallback_when_poster_missing() {
     let pool = create_in_memory_pool().expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -472,7 +477,10 @@ async fn test_on_demand_thumbnail_fallback_when_poster_missing() {
 
     let dir = tempdir().expect("tempdir failed");
     let video_path = dir.path().join("sample_video.mp4");
-    assert!(generate_test_video(&video_path), "failed to generate test video");
+    assert!(
+        generate_test_video(&video_path),
+        "failed to generate test video"
+    );
 
     let thumbs_dir = dir.path().join("thumbnails");
     let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(

@@ -524,11 +524,18 @@ async fn test_library_update_name() {
         .unwrap();
 
     // 1. Successful update
-    let updated = lib_repo.update_name(&lib.id, "Renamed Movies").await.unwrap();
+    let updated = lib_repo
+        .update_name(&lib.id, "Renamed Movies")
+        .await
+        .unwrap();
     assert_eq!(updated.name, "Renamed Movies");
     assert_eq!(updated.id, "lib-orig");
 
-    let fetched = lib_repo.get_by_id(&lib.id).await.unwrap().expect("library should exist");
+    let fetched = lib_repo
+        .get_by_id(&lib.id)
+        .await
+        .unwrap()
+        .expect("library should exist");
     assert_eq!(fetched.name, "Renamed Movies");
 
     // 2. Reject empty or whitespace-only name
@@ -549,10 +556,12 @@ async fn test_library_update_name() {
     }
 
     // 3. Return NotFound on non-existent id
-    let not_found_err = lib_repo.update_name("non-existent-lib", "New Name").await.unwrap_err();
+    let not_found_err = lib_repo
+        .update_name("non-existent-lib", "New Name")
+        .await
+        .unwrap_err();
     match not_found_err {
         StorageError::NotFound(_) => {}
         other => panic!("Expected NotFound error, got: {:?}", other),
     }
 }
-

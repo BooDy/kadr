@@ -35,7 +35,10 @@ impl WidgetResolver {
             ScreenId::Movies => {
                 if let Ok(libs) = self.lib_repo.get_all().await {
                     libs.into_iter()
-                        .find(|l| l.media_type == MediaType::Movie || l.name.eq_ignore_ascii_case("movies"))
+                        .find(|l| {
+                            l.media_type == MediaType::Movie
+                                || l.name.eq_ignore_ascii_case("movies")
+                        })
                         .map(|l| l.id)
                 } else {
                     None
@@ -44,7 +47,11 @@ impl WidgetResolver {
             ScreenId::Shows => {
                 if let Ok(libs) = self.lib_repo.get_all().await {
                     libs.into_iter()
-                        .find(|l| l.media_type == MediaType::Show || l.name.eq_ignore_ascii_case("shows") || l.name.eq_ignore_ascii_case("tv shows"))
+                        .find(|l| {
+                            l.media_type == MediaType::Show
+                                || l.name.eq_ignore_ascii_case("shows")
+                                || l.name.eq_ignore_ascii_case("tv shows")
+                        })
                         .map(|l| l.id)
                 } else {
                     None
@@ -70,9 +77,18 @@ impl WidgetResolver {
         binding: &'a WidgetQueryBinding,
         default_library_id: Option<&'a str>,
     ) -> Option<&'a str> {
-        if binding.filters.as_ref().map(|f| f.all_libraries).unwrap_or(false) {
+        if binding
+            .filters
+            .as_ref()
+            .map(|f| f.all_libraries)
+            .unwrap_or(false)
+        {
             None
-        } else if let Some(lib_id) = binding.filters.as_ref().and_then(|f| f.library_id.as_deref()) {
+        } else if let Some(lib_id) = binding
+            .filters
+            .as_ref()
+            .and_then(|f| f.library_id.as_deref())
+        {
             Some(lib_id)
         } else if let QueryMacro::LibraryItems { ref library_id } = binding.macro_type {
             Some(library_id.as_str())
@@ -140,7 +156,10 @@ impl WidgetResolver {
 
         if let Some(f) = filters {
             // 2. Exclude library IDs
-            if f.exclude_library_ids.iter().any(|id| id == &item.library_id) {
+            if f.exclude_library_ids
+                .iter()
+                .any(|id| id == &item.library_id)
+            {
                 return false;
             }
 
@@ -178,7 +197,8 @@ impl WidgetResolver {
 
     /// Resolves an entire screen layout concurrently.
     pub async fn resolve_screen(&self, screen: ScreenLayout, user_id: &str) -> ScreenLayout {
-        self.resolve_screen_with_unlocked(screen, user_id, &[]).await
+        self.resolve_screen_with_unlocked(screen, user_id, &[])
+            .await
     }
 
     /// Resolves an entire screen layout concurrently with unlocked private libraries.
@@ -189,10 +209,9 @@ impl WidgetResolver {
         unlocked_ids: &[String],
     ) -> ScreenLayout {
         let default_library_id = self.resolve_library_id_for_screen(&screen.id).await;
-        let futures = screen
-            .widgets
-            .into_iter()
-            .map(|widget| self.resolve_widget(widget, user_id, unlocked_ids, default_library_id.as_deref()));
+        let futures = screen.widgets.into_iter().map(|widget| {
+            self.resolve_widget(widget, user_id, unlocked_ids, default_library_id.as_deref())
+        });
         let widgets = join_all(futures).await;
 
         ScreenLayout {
@@ -232,7 +251,13 @@ impl WidgetResolver {
                 next_cursor: _,
             } => {
                 let (cards, next_cursor, _) = self
-                    .resolve_widget_data_with_library(&binding, user_id, 0, unlocked_ids, default_library_id)
+                    .resolve_widget_data_with_library(
+                        &binding,
+                        user_id,
+                        0,
+                        unlocked_ids,
+                        default_library_id,
+                    )
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve carousel {id}: {err}");
@@ -257,7 +282,13 @@ impl WidgetResolver {
                 total_count: _,
             } => {
                 let (cards, next_cursor, total_count) = self
-                    .resolve_widget_data_with_library(&binding, user_id, 0, unlocked_ids, default_library_id)
+                    .resolve_widget_data_with_library(
+                        &binding,
+                        user_id,
+                        0,
+                        unlocked_ids,
+                        default_library_id,
+                    )
                     .await
                     .unwrap_or_else(|err| {
                         tracing::warn!("Failed to resolve grid {id}: {err}");
@@ -308,7 +339,12 @@ impl WidgetResolver {
             QueryMacro::SpotlightItem { item_id: Some(id) } => {
                 let item = self.media_repo.get_by_id(id).await.ok().flatten()?;
                 if self
-                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
+                    .is_item_matching_filters(
+                        &item,
+                        binding.filters.as_ref(),
+                        unlocked_ids,
+                        effective_library_id,
+                    )
                     .await
                 {
                     Some(item)
@@ -318,14 +354,23 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate(effective_library_id, unlocked_ids, binding.filters.as_ref())
+                .find_spotlight_candidate(
+                    effective_library_id,
+                    unlocked_ids,
+                    binding.filters.as_ref(),
+                )
                 .await
                 .ok()
                 .flatten(),
             QueryMacro::ItemDetails { item_id } => {
                 let item = self.media_repo.get_by_id(item_id).await.ok().flatten()?;
                 if self
-                    .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
+                    .is_item_matching_filters(
+                        &item,
+                        binding.filters.as_ref(),
+                        unlocked_ids,
+                        effective_library_id,
+                    )
                     .await
                 {
                     Some(item)
@@ -335,7 +380,13 @@ impl WidgetResolver {
             }
             _ => {
                 let (cards, _, _) = self
-                    .resolve_widget_data_with_library(binding, user_id, 0, unlocked_ids, default_library_id)
+                    .resolve_widget_data_with_library(
+                        binding,
+                        user_id,
+                        0,
+                        unlocked_ids,
+                        default_library_id,
+                    )
                     .await
                     .ok()?;
                 return cards.into_iter().next();
@@ -366,7 +417,8 @@ impl WidgetResolver {
         user_id: &str,
         offset: u32,
     ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
-        self.resolve_widget_data_with_library(binding, user_id, offset, &[], None).await
+        self.resolve_widget_data_with_library(binding, user_id, offset, &[], None)
+            .await
     }
 
     /// Resolves paginated widget data for a query binding with unlocked private libraries.
@@ -378,7 +430,8 @@ impl WidgetResolver {
         offset: u32,
         unlocked_ids: &[String],
     ) -> Result<(Vec<CardViewModel>, Option<String>, Option<u64>)> {
-        self.resolve_widget_data_with_library(binding, user_id, offset, unlocked_ids, None).await
+        self.resolve_widget_data_with_library(binding, user_id, offset, unlocked_ids, None)
+            .await
     }
 
     /// Resolves paginated widget data for a query binding with unlocked private libraries and optional default library scope.
@@ -414,7 +467,12 @@ impl WidgetResolver {
                 for state in &page_states {
                     if let Some(item) = items_map.get(&state.media_item_id) {
                         if self
-                            .is_item_matching_filters(item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
+                            .is_item_matching_filters(
+                                item,
+                                binding.filters.as_ref(),
+                                unlocked_ids,
+                                effective_library_id,
+                            )
                             .await
                         {
                             cards.push(to_card_view_model(item, Some(state)));
@@ -530,7 +588,12 @@ impl WidgetResolver {
                     let item = self.media_repo.get_by_id(*id).await?;
                     if let Some(i) = item {
                         if self
-                            .is_item_matching_filters(&i, binding.filters.as_ref(), unlocked_ids, effective_library_id)
+                            .is_item_matching_filters(
+                                &i,
+                                binding.filters.as_ref(),
+                                unlocked_ids,
+                                effective_library_id,
+                            )
                             .await
                         {
                             Some(i)
@@ -542,7 +605,11 @@ impl WidgetResolver {
                     }
                 } else {
                     self.media_repo
-                        .find_spotlight_candidate(effective_library_id, unlocked_ids, binding.filters.as_ref())
+                        .find_spotlight_candidate(
+                            effective_library_id,
+                            unlocked_ids,
+                            binding.filters.as_ref(),
+                        )
                         .await?
                 };
 
@@ -561,7 +628,12 @@ impl WidgetResolver {
             QueryMacro::ItemDetails { item_id } => {
                 if let Some(item) = self.media_repo.get_by_id(*item_id).await? {
                     if self
-                        .is_item_matching_filters(&item, binding.filters.as_ref(), unlocked_ids, effective_library_id)
+                        .is_item_matching_filters(
+                            &item,
+                            binding.filters.as_ref(),
+                            unlocked_ids,
+                            effective_library_id,
+                        )
                         .await
                     {
                         let playback = self.playback_repo.get_state(user_id, *item_id).await?;
@@ -602,7 +674,8 @@ impl WidgetResolver {
         item_id: i64,
         user_id: &str,
     ) -> Result<Option<ItemDetailsPayload>> {
-        self.resolve_item_details_with_unlocked(item_id, user_id, &[]).await
+        self.resolve_item_details_with_unlocked(item_id, user_id, &[])
+            .await
     }
 
     /// Resolves comprehensive single item details including playback state and child episodes with unlocked private libraries.
@@ -645,34 +718,37 @@ impl WidgetResolver {
             None
         };
 
-        let (library_id_opt, folder_path_opt) = match self.lib_repo.get_by_id(&item.library_id).await {
-            Ok(Some(lib)) => {
-                let roots = if lib.paths.is_empty() {
-                    vec![lib.path.clone()]
-                } else {
-                    lib.paths.clone()
-                };
+        let (library_id_opt, folder_path_opt) =
+            match self.lib_repo.get_by_id(&item.library_id).await {
+                Ok(Some(lib)) => {
+                    let roots = if lib.paths.is_empty() {
+                        vec![lib.path.clone()]
+                    } else {
+                        lib.paths.clone()
+                    };
 
-                let mut rel_folder = None;
-                if let Some(parent) = item.file_path.parent() {
-                    let parent_canon = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
-                    for root in &roots {
-                        let root_canon = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-                        if let Ok(rel) = parent_canon.strip_prefix(&root_canon) {
-                            let rel_str = rel.to_string_lossy().replace('\\', "/");
-                            rel_folder = Some(rel_str);
-                            break;
-                        } else if let Ok(rel) = parent.strip_prefix(root) {
-                            let rel_str = rel.to_string_lossy().replace('\\', "/");
-                            rel_folder = Some(rel_str);
-                            break;
+                    let mut rel_folder = None;
+                    if let Some(parent) = item.file_path.parent() {
+                        let parent_canon =
+                            std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+                        for root in &roots {
+                            let root_canon =
+                                std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+                            if let Ok(rel) = parent_canon.strip_prefix(&root_canon) {
+                                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                                rel_folder = Some(rel_str);
+                                break;
+                            } else if let Ok(rel) = parent.strip_prefix(root) {
+                                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                                rel_folder = Some(rel_str);
+                                break;
+                            }
                         }
                     }
+                    (Some(item.library_id.clone()), rel_folder)
                 }
-                (Some(item.library_id.clone()), rel_folder)
-            }
-            _ => (Some(item.library_id.clone()), None),
-        };
+                _ => (Some(item.library_id.clone()), None),
+            };
 
         Ok(Some(ItemDetailsPayload {
             card,
@@ -688,4 +764,3 @@ impl WidgetResolver {
         }))
     }
 }
-

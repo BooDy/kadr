@@ -50,7 +50,10 @@ async fn setup_test_app() -> (axum::Router, String, String) {
         role: UserRole::Standard,
         created_at: 1_700_000_000,
     };
-    user_repo.create(&standard_user).await.expect("create standard");
+    user_repo
+        .create(&standard_user)
+        .await
+        .expect("create standard");
 
     let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
     let admin_token = jwt_svc
@@ -63,7 +66,10 @@ async fn setup_test_app() -> (axum::Router, String, String) {
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = std::env::temp_dir().join(format!("kadr-subtitles-{}", uuid::Uuid::new_v4()));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -149,7 +155,10 @@ async fn test_browse_filesystem_returns_directories_and_shortcuts() {
     let directories = json["directories"].as_array().expect("directories array");
     for dir in directories {
         let name = dir["name"].as_str().unwrap();
-        assert!(!name.starts_with('.'), "hidden directory should not be listed");
+        assert!(
+            !name.starts_with('.'),
+            "hidden directory should not be listed"
+        );
     }
 }
 
@@ -178,7 +187,10 @@ async fn test_browse_filesystem_specific_dir_and_filters() {
     let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert_eq!(json["current_path"].as_str().unwrap(), tmp_path.to_str().unwrap());
+    assert_eq!(
+        json["current_path"].as_str().unwrap(),
+        tmp_path.to_str().unwrap()
+    );
     assert!(json["parent_path"].is_string());
 
     let directories = json["directories"].as_array().expect("directories array");

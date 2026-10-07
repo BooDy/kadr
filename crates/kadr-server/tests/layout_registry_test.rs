@@ -358,4 +358,3 @@ fn test_save_reset_and_delete_custom_screen() {
     assert!(!dir.join("music.json").exists());
     assert!(registry.get_screen(&custom_id).is_none());
 }
-

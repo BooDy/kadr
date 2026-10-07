@@ -176,7 +176,11 @@ impl WidgetQueries {
         filters: Option<&WidgetFilterConfig>,
     ) -> Result<Vec<MediaItem>> {
         let filters_owned = filters.cloned();
-        let lib_id = if filters_owned.as_ref().map(|f| f.all_libraries).unwrap_or(false) {
+        let lib_id = if filters_owned
+            .as_ref()
+            .map(|f| f.all_libraries)
+            .unwrap_or(false)
+        {
             None
         } else {
             filters_owned
@@ -225,7 +229,8 @@ impl WidgetQueries {
         limit: u32,
         unlocked_ids: &[String],
     ) -> Result<Vec<MediaItem>> {
-        self.find_top_rated_paginated(None, limit, 0, unlocked_ids, None).await
+        self.find_top_rated_paginated(None, limit, 0, unlocked_ids, None)
+            .await
     }
 
     pub async fn find_top_rated_paginated(
@@ -238,7 +243,11 @@ impl WidgetQueries {
     ) -> Result<Vec<MediaItem>> {
         let unlocked = unlocked_ids.to_vec();
         let filters_owned = filters.cloned();
-        let lib_id = if filters_owned.as_ref().map(|f| f.all_libraries).unwrap_or(false) {
+        let lib_id = if filters_owned
+            .as_ref()
+            .map(|f| f.all_libraries)
+            .unwrap_or(false)
+        {
             None
         } else {
             filters_owned
@@ -303,7 +312,11 @@ impl WidgetQueries {
         let genre_str = genre.to_string();
         let unlocked = unlocked_ids.to_vec();
         let filters_owned = filters.cloned();
-        let lib_id = if filters_owned.as_ref().map(|f| f.all_libraries).unwrap_or(false) {
+        let lib_id = if filters_owned
+            .as_ref()
+            .map(|f| f.all_libraries)
+            .unwrap_or(false)
+        {
             None
         } else {
             filters_owned
@@ -440,7 +453,11 @@ impl WidgetQueries {
     ) -> Result<Option<MediaItem>> {
         let unlocked = unlocked_ids.to_vec();
         let filters_owned = filters.cloned();
-        let lib_id = if filters_owned.as_ref().map(|f| f.all_libraries).unwrap_or(false) {
+        let lib_id = if filters_owned
+            .as_ref()
+            .map(|f| f.all_libraries)
+            .unwrap_or(false)
+        {
             None
         } else {
             filters_owned

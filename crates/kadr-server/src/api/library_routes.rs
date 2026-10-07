@@ -7,7 +7,6 @@ use axum::extract::{Extension, Path, Query};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use tokio_util::io::ReaderStream;
 use kadr_core::ast::{CardViewModel, ScreenId, WidgetNode};
 use kadr_core::events::SystemEvent;
 use kadr_core::models::{Library, MediaItem, MediaType};
@@ -16,6 +15,7 @@ use kadr_storage::error::StorageError;
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
 use crate::api::auth_routes::ClientIp;
@@ -1249,7 +1249,10 @@ pub async fn get_library_thumbnail(
     let total_size = match file.metadata().await {
         Ok(m) => m.len(),
         Err(err) => {
-            error!("Failed to read metadata for thumbnail {}: {err}", thumb_path.display());
+            error!(
+                "Failed to read metadata for thumbnail {}: {err}",
+                thumb_path.display()
+            );
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": "Failed to read thumbnail file metadata" })),
@@ -1482,4 +1485,3 @@ pub async fn get_library_image(
         .body(body)
         .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR).into_response())
 }
-

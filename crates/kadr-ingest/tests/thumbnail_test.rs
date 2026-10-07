@@ -61,7 +61,10 @@ async fn test_extract_thumbnail_non_existent_file() {
     let extractor = ThumbnailExtractor::new(thumbs_dir);
 
     let non_existent = dir.path().join("missing.mp4");
-    let result = extractor.extract_thumbnail(&non_existent, 100).await.unwrap();
+    let result = extractor
+        .extract_thumbnail(&non_existent, 100)
+        .await
+        .unwrap();
     assert_eq!(result, None);
 }
 
@@ -138,7 +141,10 @@ async fn test_pipeline_prefers_existing_folder_artwork() {
     let folder_poster = dir.path().join("poster.jpg");
 
     // Create a dummy poster.jpg
-    File::create(&folder_poster).unwrap().write_all(b"fake poster").unwrap();
+    File::create(&folder_poster)
+        .unwrap()
+        .write_all(b"fake poster")
+        .unwrap();
 
     if !generate_test_video(&video_path) {
         eprintln!("ffmpeg not available or failed; skipping pipeline test");

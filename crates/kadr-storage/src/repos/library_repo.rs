@@ -178,7 +178,9 @@ impl LibraryRepository {
                 |row| row.get(0),
             )?;
             if !lib_exists {
-                return Err(StorageError::NotFound(format!("Library {library_id} not found")));
+                return Err(StorageError::NotFound(format!(
+                    "Library {library_id} not found"
+                )));
             }
 
             let path_exists: bool = tx.query_row(
@@ -406,7 +408,10 @@ impl LibraryRepository {
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
             let tx = c.transaction()?;
-            tx.execute("DELETE FROM library_paths WHERE library_id = ?1", params![id])?;
+            tx.execute(
+                "DELETE FROM library_paths WHERE library_id = ?1",
+                params![id],
+            )?;
             let rows = tx.execute("DELETE FROM libraries WHERE id = ?1", params![id])?;
             tx.commit()?;
             Ok(rows > 0)

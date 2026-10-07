@@ -145,7 +145,10 @@ fn test_parse_standard_sxx_exx_episode() {
         )
         .unwrap();
     assert!(res.is_episode);
-    assert_eq!(res.series_title.as_deref(), Some("What We Do in the Shadows"));
+    assert_eq!(
+        res.series_title.as_deref(),
+        Some("What We Do in the Shadows")
+    );
     assert_eq!(res.season, Some(4));
     assert_eq!(res.episode, Some(1));
     assert_eq!(res.episode_title.as_deref(), Some("Reunited"));

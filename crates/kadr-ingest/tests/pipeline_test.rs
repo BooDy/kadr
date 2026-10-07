@@ -344,4 +344,3 @@ fn test_scan_directory_recursive_ignores_symlink_loops_and_avoids_duplicate_file
     assert!(names.contains(&"Movie.2023.1080p.mkv".to_string()));
     assert!(names.contains(&"SubMovie.2024.1080p.mkv".to_string()));
 }
-

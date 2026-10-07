@@ -37,7 +37,8 @@ fn scan_directory_recursive_inner(
             } else if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                     if ["mkv", "mp4", "webm", "avi"].contains(&ext.to_lowercase().as_str()) {
-                        let canon_file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                        let canon_file =
+                            std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
                         if seen_files.insert(canon_file.clone()) {
                             files.push(canon_file);
                         }
@@ -181,7 +182,8 @@ pub async fn start_library_watcher(
                     "Running startup library scan"
                 );
                 for file in initial_files {
-                    if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await {
+                    if let Ok(Some((item, subs))) = pipe_clone.process_file(&lib_clone, &file).await
+                    {
                         let _ = tx_clone.send(IngestMessage::Upsert(item, subs)).await;
                     }
                 }

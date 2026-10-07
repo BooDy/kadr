@@ -715,7 +715,9 @@ async fn test_resolve_widget_data_exclude_private_even_when_unlocked() {
         .resolve_widget_data_with_unlocked(&binding_allow_private, "user-1", 0, &unlocked)
         .await
         .expect("resolve failed");
-    assert!(unfiltered_cards.iter().any(|c| c.title == "Secret Documentary"));
+    assert!(unfiltered_cards
+        .iter()
+        .any(|c| c.title == "Secret Documentary"));
 
     // With unlocked token and filters.exclude_private: true -> item is EXCLUDED
     let binding_exclude_private = WidgetQueryBinding::new(QueryMacro::RecentlyAdded)
@@ -728,7 +730,9 @@ async fn test_resolve_widget_data_exclude_private_even_when_unlocked() {
         .resolve_widget_data_with_unlocked(&binding_exclude_private, "user-1", 0, &unlocked)
         .await
         .expect("resolve failed");
-    assert!(!filtered_cards.iter().any(|c| c.title == "Secret Documentary"));
+    assert!(!filtered_cards
+        .iter()
+        .any(|c| c.title == "Secret Documentary"));
 }
 
 #[tokio::test]
@@ -737,11 +741,13 @@ async fn test_hero_banner_spotlight_respects_filters() {
 
     // 1. Dynamic candidate (item_id: None) with filter excluding Sci-Fi
     // Spotlight Movie has genres: ["Sci-Fi", "Action"]
-    let binding_filtered_genre = WidgetQueryBinding::new(QueryMacro::SpotlightItem { item_id: None })
-        .with_filters(WidgetFilterConfig {
-            exclude_genres: vec!["Sci-Fi".to_string()],
-            ..Default::default()
-        });
+    let binding_filtered_genre =
+        WidgetQueryBinding::new(QueryMacro::SpotlightItem { item_id: None }).with_filters(
+            WidgetFilterConfig {
+                exclude_genres: vec!["Sci-Fi".to_string()],
+                ..Default::default()
+            },
+        );
 
     let layout_filtered = ScreenLayout {
         id: ScreenId::Home,
@@ -784,7 +790,10 @@ async fn test_hero_banner_spotlight_respects_filters() {
 
     let resolved_explicit = resolver.resolve_screen(layout_explicit, "user-1").await;
     if let Some(WidgetNode::HeroBanner { data, .. }) = resolved_explicit.widgets.first() {
-        assert!(data.is_none(), "Hero card should be None because genre was excluded");
+        assert!(
+            data.is_none(),
+            "Hero card should be None because genre was excluded"
+        );
     } else {
         panic!("expected hero banner");
     }
@@ -792,7 +801,8 @@ async fn test_hero_banner_spotlight_respects_filters() {
 
 #[tokio::test]
 async fn test_continue_watching_cursor_advances_by_page_states_len() {
-    let (resolver, media_repo, playback_repo, _, _cont_movie_id, _) = setup_test_environment().await;
+    let (resolver, media_repo, playback_repo, _, _cont_movie_id, _) =
+        setup_test_environment().await;
 
     // Add a second movie in progress
     let now = now_secs();
@@ -812,10 +822,7 @@ async fn test_continue_watching_cursor_advances_by_page_states_len() {
         metadata: MediaMetadata::default(),
     };
     media_repo.upsert_batch(&[second_item]).await.unwrap();
-    let paths_map = media_repo
-        .find_by_paths(&[&second_path])
-        .await
-        .unwrap();
+    let paths_map = media_repo.find_by_paths(&[&second_path]).await.unwrap();
     let second_item_id = paths_map.values().next().unwrap().id.unwrap();
 
     // Set playback state for second item, with updated_at slightly earlier than cont_movie_id
@@ -900,7 +907,10 @@ async fn test_filter_fail_closed_on_missing_or_corrupt_library() {
         .expect("resolve failed");
 
     // Fail-closed must reject item because its library cannot be verified
-    assert!(cards.is_empty(), "Orphan item must be filtered out by fail-closed library check");
+    assert!(
+        cards.is_empty(),
+        "Orphan item must be filtered out by fail-closed library check"
+    );
 }
 
 #[tokio::test]
@@ -992,5 +1002,3 @@ async fn test_widget_resolves_scoped_to_library_screen_by_default() {
         _ => panic!("Expected carousel"),
     }
 }
-
-

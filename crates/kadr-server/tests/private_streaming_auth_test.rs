@@ -11,8 +11,8 @@ use kadr_core::ast::{ScreenLayout, WidgetNode};
 use kadr_core::models::{
     Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo, User, UserRole,
 };
-use kadr_server::api::unlock_token::UnlockTokenService;
 use kadr_server::api::create_router_with_events;
+use kadr_server::api::unlock_token::UnlockTokenService;
 use kadr_server::auth::jwt::JwtService;
 use kadr_server::auth::pin::hash_pin;
 use kadr_server::auth::rate_limiter::RateLimiter;
@@ -68,7 +68,10 @@ async fn setup_app_with_private_item() -> (axum::Router, String, i64, String) {
         pin_hash: Some(hash_pin("4321").expect("pin hash")),
         created_at: 1_700_000_000,
     };
-    lib_repo.insert(&private_lib).await.expect("insert private library");
+    lib_repo
+        .insert(&private_lib)
+        .await
+        .expect("insert private library");
 
     // Create dummy media file on disk
     let dir = tempdir().expect("tempdir");
@@ -123,7 +126,10 @@ async fn setup_app_with_private_item() -> (axum::Router, String, i64, String) {
     let rate_limiter = RateLimiter::new(5, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = std::env::temp_dir().join(format!("kadr-subtitles-{}", uuid::Uuid::new_v4()));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -237,7 +243,12 @@ async fn test_item_details_and_direct_routes_authorization() {
         .unwrap();
     let resp_unlocked = app.clone().oneshot(req_unlocked).await.unwrap();
     assert_eq!(resp_unlocked.status(), StatusCode::OK);
-    let bytes = resp_unlocked.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp_unlocked
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["card"]["title"], "Confidential Video");
 
@@ -268,15 +279,21 @@ async fn test_screen_and_widget_routes_isolate_private_items_unless_unlocked() {
     // Verify private item does not appear in any widget
     for widget in &screen_locked.widgets {
         match widget {
-            WidgetNode::HeroBanner { data: Some(card), .. } => {
+            WidgetNode::HeroBanner {
+                data: Some(card), ..
+            } => {
                 assert_ne!(card.id, private_item_id);
             }
-            WidgetNode::Carousel { items: Some(items), .. } => {
+            WidgetNode::Carousel {
+                items: Some(items), ..
+            } => {
                 for card in items {
                     assert_ne!(card.id, private_item_id);
                 }
             }
-            WidgetNode::Grid { items: Some(items), .. } => {
+            WidgetNode::Grid {
+                items: Some(items), ..
+            } => {
                 for card in items {
                     assert_ne!(card.id, private_item_id);
                 }
@@ -293,7 +310,12 @@ async fn test_screen_and_widget_routes_isolate_private_items_unless_unlocked() {
         .unwrap();
     let resp_unlocked = app.clone().oneshot(req_unlocked).await.unwrap();
     assert_eq!(resp_unlocked.status(), StatusCode::OK);
-    let bytes = resp_unlocked.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp_unlocked
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let screen_unlocked: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
 
     // Verify private item IS present in the carousel/spotlight widgets

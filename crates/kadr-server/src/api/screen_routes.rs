@@ -40,7 +40,10 @@ pub async fn list_screens(
 ) -> Json<Vec<ScreenSummary>> {
     if let Ok(libs) = lib_repo.get_all().await {
         for lib in libs {
-            if registry.find_screen_for_library(&lib.id, &lib.name).is_none() {
+            if registry
+                .find_screen_for_library(&lib.id, &lib.name)
+                .is_none()
+            {
                 registry.register_screen(default_library_layout(&lib.id, &lib.name));
             }
         }
@@ -57,10 +60,7 @@ pub async fn list_screens(
         if !seen_titles.insert(norm_title) || !seen_ids.insert(norm_id) {
             continue;
         }
-        screens.push(ScreenSummary {
-            id: id_str,
-            title,
-        });
+        screens.push(ScreenSummary { id: id_str, title });
     }
 
     Json(screens)
@@ -180,11 +180,18 @@ pub async fn save_screen_handler(
             kadr_core::ast::WidgetNode::HeroBanner { data, .. } => {
                 *data = None;
             }
-            kadr_core::ast::WidgetNode::Carousel { items, next_cursor, .. } => {
+            kadr_core::ast::WidgetNode::Carousel {
+                items, next_cursor, ..
+            } => {
                 *items = None;
                 *next_cursor = None;
             }
-            kadr_core::ast::WidgetNode::Grid { items, next_cursor, total_count, .. } => {
+            kadr_core::ast::WidgetNode::Grid {
+                items,
+                next_cursor,
+                total_count,
+                ..
+            } => {
                 *items = None;
                 *next_cursor = None;
                 *total_count = None;
@@ -268,7 +275,9 @@ pub async fn delete_screen_handler(
                         Json(serde_json::json!({ "error": e.to_string() })),
                     )
                 })?;
-            Ok(Json(serde_json::json!({ "message": "Screen reset to defaults" })))
+            Ok(Json(
+                serde_json::json!({ "message": "Screen reset to defaults" }),
+            ))
         }
         ScreenId::Custom(_) => {
             if registry.get_screen(&parsed_id).is_none() {
@@ -289,4 +298,3 @@ pub async fn delete_screen_handler(
         }
     }
 }
-

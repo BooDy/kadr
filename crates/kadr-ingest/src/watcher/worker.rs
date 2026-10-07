@@ -339,4 +339,3 @@ fn find_series_artwork(
 
     (poster, backdrop)
 }
-

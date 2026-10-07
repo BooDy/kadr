@@ -14,7 +14,7 @@ pub mod unlock_token;
 pub mod user_routes;
 pub mod widget_routes;
 
-pub use unlock_token::{UnlockedLibraries, UnlockTokenService};
+pub use unlock_token::{UnlockTokenService, UnlockedLibraries};
 
 use crate::auth::jwt::JwtService;
 use crate::auth::rate_limiter::RateLimiter;
@@ -163,8 +163,7 @@ pub fn create_router_with_ingest(
         .route("/api/v1/libraries", post(library_routes::create_library))
         .route(
             "/api/v1/libraries/{id}",
-            patch(library_routes::update_library)
-                .delete(library_routes::delete_library),
+            patch(library_routes::update_library).delete(library_routes::delete_library),
         )
         .route(
             "/api/v1/libraries/{id}/folders",
@@ -180,8 +179,7 @@ pub fn create_router_with_ingest(
         )
         .route(
             "/api/v1/libraries/{id}/paths",
-            post(library_routes::add_library_path)
-                .delete(library_routes::remove_library_path),
+            post(library_routes::add_library_path).delete(library_routes::remove_library_path),
         )
         .route(
             "/api/v1/libraries/{id}/scan",
@@ -195,7 +193,10 @@ pub fn create_router_with_ingest(
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
         .layer(Extension(lib_repo))
-        .layer(Extension(UnlockTokenService::new(jwt_svc.secret(), 86400 * 7)))
+        .layer(Extension(UnlockTokenService::new(
+            jwt_svc.secret(),
+            86400 * 7,
+        )))
         .layer(Extension(jwt_svc))
         .layer(Extension(limiter))
         .layer(Extension(session_registry))

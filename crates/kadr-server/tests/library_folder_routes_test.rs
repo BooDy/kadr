@@ -67,7 +67,10 @@ async fn setup_test_context() -> TestContext {
         role: UserRole::Standard,
         created_at: 1_700_000_000,
     };
-    user_repo.create(&standard_user).await.expect("create standard");
+    user_repo
+        .create(&standard_user)
+        .await
+        .expect("create standard");
 
     let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
     let standard_token = jwt_svc
@@ -77,7 +80,10 @@ async fn setup_test_context() -> TestContext {
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = dir.path().join("subtitles-cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -142,7 +148,10 @@ async fn setup_test_context() -> TestContext {
         pin_hash: None,
         created_at: 1_700_000_000,
     };
-    lib_repo.insert(&public_lib).await.expect("create public lib");
+    lib_repo
+        .insert(&public_lib)
+        .await
+        .expect("create public lib");
 
     // Create private library in repo
     let private_lib = Library {
@@ -155,7 +164,10 @@ async fn setup_test_context() -> TestContext {
         pin_hash: Some(hash_pin("1234").expect("hash pin")),
         created_at: 1_700_000_000,
     };
-    lib_repo.insert(&private_lib).await.expect("create private lib");
+    lib_repo
+        .insert(&private_lib)
+        .await
+        .expect("create private lib");
 
     // Insert MediaItems for metadata enrichment
     let now = 1_700_000_000;
@@ -249,7 +261,10 @@ async fn setup_test_context() -> TestContext {
             },
         },
     ];
-    media_repo.upsert_batch(&items).await.expect("upsert media items");
+    media_repo
+        .upsert_batch(&items)
+        .await
+        .expect("upsert media items");
 
     let thumbs_dir = dir.path().join("thumbnails");
     let pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(
@@ -257,7 +272,9 @@ async fn setup_test_context() -> TestContext {
         Some(thumbs_dir),
     ));
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
-    let default_config = Arc::new(tokio::sync::RwLock::new(kadr_server::config::AppConfig::default()));
+    let default_config = Arc::new(tokio::sync::RwLock::new(
+        kadr_server::config::AppConfig::default(),
+    ));
     let default_identity = Arc::new(kadr_server::identity::ServerIdentity {
         id: "00000000-0000-0000-0000-000000000000".to_string(),
     });
@@ -310,7 +327,8 @@ async fn test_browse_library_root() {
     assert_eq!(res.status(), StatusCode::OK);
 
     let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
-    let body: LibraryFolderResponse = serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
+    let body: LibraryFolderResponse =
+        serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
 
     assert_eq!(body.library_id, ctx.public_lib_id);
     assert_eq!(body.library_name, "Public Movies");
@@ -323,7 +341,11 @@ async fn test_browse_library_root() {
     assert!(dir_names.contains(&"Action"));
     assert!(dir_names.contains(&"Drama"));
 
-    let action_entry = body.directories.iter().find(|d| d.name == "Action").unwrap();
+    let action_entry = body
+        .directories
+        .iter()
+        .find(|d| d.name == "Action")
+        .unwrap();
     assert_eq!(action_entry.path, "Action");
     // Action has 2020s (dir) and DieHard.mkv (file) - hidden .DS_Store is filtered, so item_count is 2
     assert_eq!(action_entry.item_count, 2);
@@ -342,7 +364,10 @@ async fn test_browse_library_subfolder_and_nested() {
     // 2. GET /api/v1/libraries/{id}/folders?path=Action returns subfolder contents with breadcrumbs
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/libraries/{}/folders?path=Action", ctx.public_lib_id))
+        .uri(format!(
+            "/api/v1/libraries/{}/folders?path=Action",
+            ctx.public_lib_id
+        ))
         .body(Body::empty())
         .unwrap();
 
@@ -350,7 +375,8 @@ async fn test_browse_library_subfolder_and_nested() {
     assert_eq!(res.status(), StatusCode::OK);
 
     let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
-    let body: LibraryFolderResponse = serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
+    let body: LibraryFolderResponse =
+        serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
 
     assert_eq!(body.current_path, "Action");
     assert_eq!(body.parent_path, Some("".to_string()));
@@ -373,7 +399,10 @@ async fn test_browse_library_subfolder_and_nested() {
     // Nested subfolder: GET /api/v1/libraries/{id}/folders?path=Action/2020s
     let req_nested = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/libraries/{}/folders?path=Action/2020s", ctx.public_lib_id))
+        .uri(format!(
+            "/api/v1/libraries/{}/folders?path=Action/2020s",
+            ctx.public_lib_id
+        ))
         .body(Body::empty())
         .unwrap();
 
@@ -381,7 +410,8 @@ async fn test_browse_library_subfolder_and_nested() {
     assert_eq!(res_nested.status(), StatusCode::OK);
 
     let body_bytes = res_nested.into_body().collect().await.unwrap().to_bytes();
-    let body_nested: LibraryFolderResponse = serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
+    let body_nested: LibraryFolderResponse =
+        serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
 
     assert_eq!(body_nested.current_path, "Action/2020s");
     assert_eq!(body_nested.parent_path, Some("Action".to_string()));
@@ -415,7 +445,10 @@ async fn test_browse_library_path_traversal_rejected() {
     for path in traversal_paths {
         let req = Request::builder()
             .method("GET")
-            .uri(format!("/api/v1/libraries/{}/folders?path={}", ctx.public_lib_id, path))
+            .uri(format!(
+                "/api/v1/libraries/{}/folders?path={}",
+                ctx.public_lib_id, path
+            ))
             .body(Body::empty())
             .unwrap();
 
@@ -435,7 +468,10 @@ async fn test_browse_library_non_existent_path_returns_404() {
     // 4. Non-existent path returns 404 Not Found
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/libraries/{}/folders?path=NonExistentFolder", ctx.public_lib_id))
+        .uri(format!(
+            "/api/v1/libraries/{}/folders?path=NonExistentFolder",
+            ctx.public_lib_id
+        ))
         .body(Body::empty())
         .unwrap();
 
@@ -497,7 +533,8 @@ async fn test_browse_private_library_auth_and_token() {
     assert_eq!(res_unlocked.status(), StatusCode::OK);
 
     let body_bytes = res_unlocked.into_body().collect().await.unwrap().to_bytes();
-    let body: LibraryFolderResponse = serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
+    let body: LibraryFolderResponse =
+        serde_json::from_slice(&body_bytes).expect("parse LibraryFolderResponse");
     assert_eq!(body.library_id, ctx.private_lib_id);
     assert_eq!(body.items.len(), 1);
     assert_eq!(body.items[0].title, "Secret Documentary");
@@ -663,7 +700,10 @@ async fn test_library_thumbnail_valid_video() {
     let ctx = setup_test_context().await;
 
     let video_path = ctx.public_lib_root.join("Action").join("thumb_test.mp4");
-    assert!(generate_test_video(&video_path), "failed to generate test video");
+    assert!(
+        generate_test_video(&video_path),
+        "failed to generate test video"
+    );
 
     let req = Request::builder()
         .method("GET")
@@ -754,7 +794,10 @@ async fn test_library_thumbnail_private_library_locked_and_unlocked() {
 
     let private_root = ctx.temp_dir.path().join("private_movies");
     let video_path = private_root.join("private_video.mp4");
-    assert!(generate_test_video(&video_path), "failed to generate test video");
+    assert!(
+        generate_test_video(&video_path),
+        "failed to generate test video"
+    );
 
     // Locked private library without token -> 403 Forbidden
     let req_locked = Request::builder()
@@ -796,7 +839,10 @@ async fn test_library_thumbnail_private_library_locked_and_unlocked() {
 
     let res_unlocked = ctx.app.clone().oneshot(req_unlocked).await.unwrap();
     assert_eq!(res_unlocked.status(), StatusCode::OK);
-    assert_eq!(res_unlocked.headers().get("content-type").unwrap(), "image/jpeg");
+    assert_eq!(
+        res_unlocked.headers().get("content-type").unwrap(),
+        "image/jpeg"
+    );
 }
 
 #[tokio::test]
@@ -820,20 +866,28 @@ async fn test_browse_and_stream_library_images() {
             "/api/v1/libraries/{}/folders?path=vacation_photos",
             ctx.public_lib_id
         ))
-        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.standard_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", ctx.standard_token),
+        )
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let folder_res: LibraryFolderResponse = serde_json::from_slice(&body_bytes).unwrap();
 
     assert_eq!(folder_res.images.len(), 2);
     assert_eq!(folder_res.images[0].name, "beach.jpg");
     assert_eq!(folder_res.images[0].path, "vacation_photos/beach.jpg");
     assert!(folder_res.images[0].url.contains("/image?path="));
-    assert_eq!(folder_res.images[0].size_bytes, b"fake jpeg image data".len() as u64);
+    assert_eq!(
+        folder_res.images[0].size_bytes,
+        b"fake jpeg image data".len() as u64
+    );
 
     assert_eq!(folder_res.images[1].name, "sunset.png");
     assert_eq!(folder_res.images[1].path, "vacation_photos/sunset.png");
@@ -857,7 +911,9 @@ async fn test_browse_and_stream_library_images() {
         res.headers().get(header::CACHE_CONTROL).unwrap(),
         "public, max-age=86400"
     );
-    let img_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let img_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(&img_bytes[..], b"fake jpeg image data");
 
     // 4. Stream png image
@@ -951,7 +1007,8 @@ async fn test_browse_and_stream_library_images() {
         .unwrap();
     let res_unlocked = ctx.app.clone().oneshot(req_unlocked).await.unwrap();
     assert_eq!(res_unlocked.status(), StatusCode::OK);
-    let res_bytes = axum::body::to_bytes(res_unlocked.into_body(), usize::MAX).await.unwrap();
+    let res_bytes = axum::body::to_bytes(res_unlocked.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(&res_bytes[..], b"secret image bytes");
 }
-

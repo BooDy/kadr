@@ -59,7 +59,12 @@ impl ThumbnailExtractor {
             .and_then(|s| s.to_str())
             .unwrap_or("thumbnail.jpg");
         let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp_file_name = format!(".tmp.{}.{}.{}", std::process::id(), counter, target_file_name);
+        let tmp_file_name = format!(
+            ".tmp.{}.{}.{}",
+            std::process::id(),
+            counter,
+            target_file_name
+        );
         let tmp_path = self.output_dir.join(tmp_file_name);
 
         let seek_secs = Self::calculate_seek_seconds(duration_seconds);
@@ -112,12 +117,10 @@ impl ThumbnailExtractor {
             .await;
 
         match res {
-            Ok(output) if output.status.success() => {
-                tokio::fs::metadata(target_path)
-                    .await
-                    .map(|m| m.is_file() && m.len() > 0)
-                    .unwrap_or(false)
-            }
+            Ok(output) if output.status.success() => tokio::fs::metadata(target_path)
+                .await
+                .map(|m| m.is_file() && m.len() > 0)
+                .unwrap_or(false),
             Ok(output) => {
                 debug!(
                     path = ?media_path,

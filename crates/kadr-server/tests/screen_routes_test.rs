@@ -263,7 +263,10 @@ async fn setup_test_app() -> TestContext {
         role: UserRole::Admin,
         created_at: 1000,
     };
-    user_repo.create(&admin_user).await.expect("create admin failed");
+    user_repo
+        .create(&admin_user)
+        .await
+        .expect("create admin failed");
 
     let jwt_svc = JwtService::new("super-secret-jwt-key-with-at-least-32-bytes", 3600);
     let token = jwt_svc.generate_token(&user).unwrap();
@@ -651,7 +654,9 @@ async fn test_save_and_reset_screen_layout() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req_get).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let updated: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(updated.title, "Custom Home");
     assert_eq!(updated.widgets.len(), 1);
@@ -676,7 +681,9 @@ async fn test_save_and_reset_screen_layout() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req_get_reset).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let reset: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(reset.title, "Home");
     assert_eq!(reset.widgets.len(), 6);
@@ -706,11 +713,15 @@ async fn test_save_and_reset_screen_layout() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req_list).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let list: Value = serde_json::from_slice(&bytes).unwrap();
     let screens = list.as_array().unwrap();
     assert_eq!(screens.len(), 4);
-    assert!(screens.iter().any(|s| s["id"] == "anime" && s["title"] == "Anime Hub"));
+    assert!(screens
+        .iter()
+        .any(|s| s["id"] == "anime" && s["title"] == "Anime Hub"));
 
     // 8. Admin DELETE /api/v1/screens/anime deletes the custom screen
     let req_del_custom = Request::builder()
@@ -868,7 +879,9 @@ async fn test_custom_screen_put_serde_and_validation() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req_get_anime).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let raw_json: Value = serde_json::from_slice(&bytes).unwrap();
 
     // Verify id is serializing as clean string "anime", NOT {"custom": "anime"}
@@ -915,7 +928,9 @@ async fn test_dynamic_library_default_screen_generation() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let layout: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(layout.id, ScreenId::Custom(custom_lib_id.to_string()));
     assert_eq!(layout.title, "My Custom Library");
@@ -932,7 +947,9 @@ async fn test_dynamic_library_default_screen_generation() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let screens: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
     assert!(screens
         .iter()
@@ -1053,7 +1070,10 @@ async fn test_show_details_returns_hydrated_episodes_with_season() {
             ..Default::default()
         },
     };
-    ctx.media_repo.upsert_batch(&[tv_show, tv_ep1, tv_ep2]).await.unwrap();
+    ctx.media_repo
+        .upsert_batch(&[tv_show, tv_ep1, tv_ep2])
+        .await
+        .unwrap();
 
     // Trigger library default screen creation
     let req_screen = Request::builder()
@@ -1068,7 +1088,9 @@ async fn test_show_details_returns_hydrated_episodes_with_season() {
     // Fetch the grid widget data for the TV library
     let req_grid = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/widgets/{tv_lib_id}_grid/data?screen_id={tv_lib_id}"))
+        .uri(format!(
+            "/api/v1/widgets/{tv_lib_id}_grid/data?screen_id={tv_lib_id}"
+        ))
         .header("authorization", format!("Bearer {}", ctx.token))
         .body(Body::empty())
         .unwrap();
@@ -1138,7 +1160,9 @@ async fn test_screens_deduplication_and_library_resolution() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let screens: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
 
     // Verify each screen title is strictly unique - no duplicate "Movies" or "TV Shows"
@@ -1171,7 +1195,9 @@ async fn test_screens_deduplication_and_library_resolution() {
         .unwrap();
     let res_movie = ctx.app.clone().oneshot(req_movie_uuid).await.unwrap();
     assert_eq!(res_movie.status(), StatusCode::OK);
-    let bytes_movie = axum::body::to_bytes(res_movie.into_body(), 1024 * 64).await.unwrap();
+    let bytes_movie = axum::body::to_bytes(res_movie.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let movie_layout: ScreenLayout = serde_json::from_slice(&bytes_movie).unwrap();
     assert_eq!(movie_layout.title, "Movies");
 
@@ -1183,7 +1209,9 @@ async fn test_screens_deduplication_and_library_resolution() {
         .unwrap();
     let res_tv = ctx.app.clone().oneshot(req_tv_uuid).await.unwrap();
     assert_eq!(res_tv.status(), StatusCode::OK);
-    let bytes_tv = axum::body::to_bytes(res_tv.into_body(), 1024 * 64).await.unwrap();
+    let bytes_tv = axum::body::to_bytes(res_tv.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let tv_layout: ScreenLayout = serde_json::from_slice(&bytes_tv).unwrap();
     assert_eq!(tv_layout.title, "TV Shows");
 
@@ -1195,7 +1223,9 @@ async fn test_screens_deduplication_and_library_resolution() {
         .unwrap();
     let res_doc = ctx.app.clone().oneshot(req_doc_uuid).await.unwrap();
     assert_eq!(res_doc.status(), StatusCode::OK);
-    let bytes_doc = axum::body::to_bytes(res_doc.into_body(), 1024 * 64).await.unwrap();
+    let bytes_doc = axum::body::to_bytes(res_doc.into_body(), 1024 * 64)
+        .await
+        .unwrap();
     let doc_layout: ScreenLayout = serde_json::from_slice(&bytes_doc).unwrap();
     assert_eq!(doc_layout.title, "Documentaries");
 }
@@ -1259,10 +1289,7 @@ async fn test_get_item_details_includes_library_and_folder_path() {
     let created_item = media_repo.find_by_path(&video_file).await.unwrap().unwrap();
     let item_id = created_item.id.unwrap();
 
-    let resolver = WidgetResolver::new(
-        media_repo.clone(),
-        playback_repo.clone(),
-    );
+    let resolver = WidgetResolver::new(media_repo.clone(), playback_repo.clone());
 
     let details = resolver
         .resolve_item_details(item_id, &user.id)
@@ -1271,7 +1298,10 @@ async fn test_get_item_details_includes_library_and_folder_path() {
         .expect("Item details should exist");
 
     assert_eq!(details.library_id.as_deref(), Some("lib-movies-1"));
-    assert_eq!(details.folder_path.as_deref(), Some("Sci-Fi/Inception (2010)"));
+    assert_eq!(
+        details.folder_path.as_deref(),
+        Some("Sci-Fi/Inception (2010)")
+    );
 
     // Case 2: Root-level file in library root -> folder_path is Some("")
     let root_video_file = lib_dir.join("RootMovie.mkv");
@@ -1291,7 +1321,11 @@ async fn test_get_item_details_includes_library_and_folder_path() {
         metadata: MediaMetadata::default(),
     };
     media_repo.upsert_batch(&[root_item]).await.unwrap();
-    let root_created = media_repo.find_by_path(&root_video_file).await.unwrap().unwrap();
+    let root_created = media_repo
+        .find_by_path(&root_video_file)
+        .await
+        .unwrap()
+        .unwrap();
     let root_details = resolver
         .resolve_item_details(root_created.id.unwrap(), &user.id)
         .await
@@ -1336,7 +1370,11 @@ async fn test_get_item_details_includes_library_and_folder_path() {
         metadata: MediaMetadata::default(),
     };
     media_repo.upsert_batch(&[multi_item]).await.unwrap();
-    let multi_created = media_repo.find_by_path(&video_file_2).await.unwrap().unwrap();
+    let multi_created = media_repo
+        .find_by_path(&video_file_2)
+        .await
+        .unwrap()
+        .unwrap();
     let multi_details = resolver
         .resolve_item_details(multi_created.id.unwrap(), &user.id)
         .await
@@ -1345,9 +1383,3 @@ async fn test_get_item_details_includes_library_and_folder_path() {
     assert_eq!(multi_details.library_id.as_deref(), Some("lib-multi-1"));
     assert_eq!(multi_details.folder_path.as_deref(), Some("Action"));
 }
-
-
-
-
-
-

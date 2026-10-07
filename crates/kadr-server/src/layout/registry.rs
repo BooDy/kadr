@@ -168,7 +168,9 @@ impl LayoutRegistry {
                 self.register_screen(default.clone());
                 Ok(default)
             }
-            ScreenId::Custom(name) => Err(format!("Custom screen '{name}' cannot be reset, use delete")),
+            ScreenId::Custom(name) => Err(format!(
+                "Custom screen '{name}' cannot be reset, use delete"
+            )),
         }
     }
 
@@ -183,7 +185,10 @@ impl LayoutRegistry {
                 if file_path.exists() {
                     if let Err(e) = std::fs::remove_file(&file_path) {
                         if e.kind() != std::io::ErrorKind::NotFound {
-                            tracing::error!("Failed to remove layout file {}: {e}", file_path.display());
+                            tracing::error!(
+                                "Failed to remove layout file {}: {e}",
+                                file_path.display()
+                            );
                             return Err(format!(
                                 "Failed to remove layout file {}: {e}",
                                 file_path.display()
@@ -395,4 +400,3 @@ pub fn default_library_layout(library_id: &str, library_name: &str) -> ScreenLay
         }],
     )
 }
-

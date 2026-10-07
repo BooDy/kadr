@@ -75,7 +75,10 @@ async fn setup_test_context() -> TestContext {
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = dir.path().join("subtitles-cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -130,7 +133,9 @@ async fn test_libraries_crud_and_auth() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let libs: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert!(libs.is_empty());
 
@@ -154,7 +159,10 @@ async fn test_libraries_crud_and_auth() {
         .method("POST")
         .uri("/api/v1/libraries")
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.standard_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", ctx.standard_token),
+        )
         .body(Body::from(create_payload.to_string()))
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -170,7 +178,9 @@ async fn test_libraries_crud_and_auth() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let created_lib: Value = serde_json::from_slice(&body).unwrap();
     let lib_id = created_lib["id"].as_str().unwrap().to_string();
     assert_eq!(created_lib["name"], "Movies");
@@ -183,7 +193,9 @@ async fn test_libraries_crud_and_auth() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let libs: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(libs.len(), 1);
     assert_eq!(libs[0]["id"], lib_id);
@@ -241,7 +253,9 @@ async fn test_system_config_routes() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let cfg: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(cfg["port"], 8492);
     assert_eq!(cfg["host"], "0.0.0.0");
@@ -262,7 +276,9 @@ async fn test_system_config_routes() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1024 * 16).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024 * 16)
+        .await
+        .unwrap();
     let updated: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(updated["port"], 8492);
     assert_eq!(updated["debounce_millis"], 1000);
@@ -274,7 +290,9 @@ async fn test_scan_library_routes_to_ingest_worker() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("test.db");
     let pool = kadr_storage::pool::create_pool(&db_path, 2).unwrap();
-    kadr_storage::pool::initialize_database(&pool).await.unwrap();
+    kadr_storage::pool::initialize_database(&pool)
+        .await
+        .unwrap();
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -294,7 +312,10 @@ async fn test_scan_library_routes_to_ingest_worker() {
     let rate_limiter = RateLimiter::new(10, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let temp_cache = dir.path().join("subtitles-cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
         temp_cache,
@@ -399,7 +420,9 @@ async fn test_update_library_name() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
-    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let created_lib: Value = serde_json::from_slice(&body_bytes).unwrap();
     let lib_id = created_lib["id"].as_str().unwrap();
 
@@ -408,7 +431,10 @@ async fn test_update_library_name() {
     let req = Request::builder()
         .method("PATCH")
         .uri(format!("/api/v1/libraries/{}", lib_id))
-        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.standard_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", ctx.standard_token),
+        )
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&patch_payload).unwrap()))
         .unwrap();
@@ -426,7 +452,9 @@ async fn test_update_library_name() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let updated_lib: Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(updated_lib["name"], "Cinema Classics");
     assert_eq!(updated_lib["id"], lib_id);
@@ -454,4 +482,3 @@ async fn test_update_library_name() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
-

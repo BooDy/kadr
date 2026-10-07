@@ -41,7 +41,11 @@ async fn test_create_and_manage_multiple_library_paths() {
     assert_eq!(lib.paths[1], PathBuf::from("/media/movies2"));
 
     // Fetch by id
-    let fetched = repo.get_by_id("lib-multi").await.unwrap().expect("Library should exist");
+    let fetched = repo
+        .get_by_id("lib-multi")
+        .await
+        .unwrap()
+        .expect("Library should exist");
     assert_eq!(fetched.paths.len(), 2);
 
     // Add a 3rd path
@@ -60,10 +64,14 @@ async fn test_create_and_manage_multiple_library_paths() {
 
     let after_remove = repo.get_by_id("lib-multi").await.unwrap().unwrap();
     assert_eq!(after_remove.paths.len(), 2);
-    assert!(!after_remove.paths.contains(&PathBuf::from("/media/movies2")));
+    assert!(!after_remove
+        .paths
+        .contains(&PathBuf::from("/media/movies2")));
 
     // Removing 3rd path leaves exactly 1 path
-    repo.remove_path("lib-multi", "/media/movies3").await.unwrap();
+    repo.remove_path("lib-multi", "/media/movies3")
+        .await
+        .unwrap();
     let final_lib = repo.get_by_id("lib-multi").await.unwrap().unwrap();
     assert_eq!(final_lib.paths.len(), 1);
 

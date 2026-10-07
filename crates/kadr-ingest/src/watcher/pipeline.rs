@@ -116,16 +116,16 @@ impl IngestPipeline {
                         && lower
                             .trim_start_matches("season")
                             .trim_start_matches('s')
-                            .trim_matches(|c: char| c == '.' || c == '_' || c == '-' || c.is_whitespace())
+                            .trim_matches(|c: char| {
+                                c == '.' || c == '_' || c == '-' || c.is_whitespace()
+                            })
                             .chars()
                             .all(|c| c.is_ascii_digit());
                     if is_season {
                         if let Some(gp) = parent.parent() {
                             if gp != library.path && !gp.as_os_str().is_empty() {
-                                meta.series_title = gp
-                                    .file_name()
-                                    .and_then(|s| s.to_str())
-                                    .map(String::from);
+                                meta.series_title =
+                                    gp.file_name().and_then(|s| s.to_str()).map(String::from);
                             }
                         }
                     } else if parent != library.path && !parent.as_os_str().is_empty() {
@@ -153,7 +153,10 @@ impl IngestPipeline {
         let mut poster_path = artwork.poster.and_then(|p| p.to_str().map(String::from));
         if poster_path.is_none() {
             if let Some(ref extractor) = self.thumbnail_extractor {
-                if let Ok(Some(thumb_path)) = extractor.extract_thumbnail(path, technical.duration_seconds).await {
+                if let Ok(Some(thumb_path)) = extractor
+                    .extract_thumbnail(path, technical.duration_seconds)
+                    .await
+                {
                     poster_path = Some(thumb_path.to_string_lossy().to_string());
                 }
             }

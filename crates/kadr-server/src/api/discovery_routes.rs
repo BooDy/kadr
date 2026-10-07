@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use axum::{extract::Extension, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::config::AppConfig;
@@ -9,14 +9,14 @@ use kadr_storage::repos::UserRepository;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiscoveryResponse {
-    pub app: String,               // "kadr"
-    pub server_id: String,         // persistent UUID
-    pub name: String,              // configured server name
-    pub version: String,           // env!("CARGO_PKG_VERSION")
-    pub protocol_version: u32,     // 1
-    pub port: u16,                 // configured port
-    pub setup_completed: bool,     // user_repo.count() > 0
-    pub status: String,            // "online"
+    pub app: String,           // "kadr"
+    pub server_id: String,     // persistent UUID
+    pub name: String,          // configured server name
+    pub version: String,       // env!("CARGO_PKG_VERSION")
+    pub protocol_version: u32, // 1
+    pub port: u16,             // configured port
+    pub setup_completed: bool, // user_repo.count() > 0
+    pub status: String,        // "online"
 }
 
 pub async fn get_discovery(

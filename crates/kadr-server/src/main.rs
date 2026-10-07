@@ -299,8 +299,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Register default layouts for all active libraries if not already overridden
     for lib in &active_libraries {
-        if layout_registry.find_screen_for_library(&lib.id, &lib.name).is_none() {
-            layout_registry.register_screen(kadr_server::layout::default_library_layout(&lib.id, &lib.name));
+        if layout_registry
+            .find_screen_for_library(&lib.id, &lib.name)
+            .is_none()
+        {
+            layout_registry.register_screen(kadr_server::layout::default_library_layout(
+                &lib.id, &lib.name,
+            ));
         }
     }
 

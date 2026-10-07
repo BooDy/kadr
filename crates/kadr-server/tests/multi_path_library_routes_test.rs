@@ -50,7 +50,10 @@ async fn setup_test_app() -> (axum::Router, String, String) {
         role: UserRole::Standard,
         created_at: 1_700_000_000,
     };
-    user_repo.create(&standard_user).await.expect("create standard");
+    user_repo
+        .create(&standard_user)
+        .await
+        .expect("create standard");
 
     let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
     let admin_token = jwt_svc
@@ -63,7 +66,10 @@ async fn setup_test_app() -> (axum::Router, String, String) {
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = std::env::temp_dir().join(format!("kadr-subtitles-{}", uuid::Uuid::new_v4()));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -274,7 +280,9 @@ async fn test_add_and_remove_library_paths() {
         .uri(format!("/api/v1/libraries/{lib_id}/paths"))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
-        .body(Body::from(json!({ "path": "/nonexistent/xyz" }).to_string()))
+        .body(Body::from(
+            json!({ "path": "/nonexistent/xyz" }).to_string(),
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
@@ -285,7 +293,9 @@ async fn test_add_and_remove_library_paths() {
         .uri(format!("/api/v1/libraries/{lib_id}/paths"))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
-        .body(Body::from(json!({ "path": "relative/sub/dir" }).to_string()))
+        .body(Body::from(
+            json!({ "path": "relative/sub/dir" }).to_string(),
+        ))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);

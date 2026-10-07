@@ -50,7 +50,10 @@ async fn setup_test_app() -> (axum::Router, String) {
     let rate_limiter = RateLimiter::new(5, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = std::env::temp_dir().join(format!("kadr-subtitles-{}", uuid::Uuid::new_v4()));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -124,10 +127,9 @@ async fn test_create_and_unlock_private_library() {
         .unwrap();
     let right_resp = app.clone().oneshot(right_req).await.unwrap();
     assert_eq!(right_resp.status(), StatusCode::OK);
-    let unlock_body: serde_json::Value = serde_json::from_slice(
-        &right_resp.into_body().collect().await.unwrap().to_bytes(),
-    )
-    .unwrap();
+    let unlock_body: serde_json::Value =
+        serde_json::from_slice(&right_resp.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
     assert!(unlock_body["token"].is_string());
 }
 
@@ -254,7 +256,9 @@ async fn test_get_libraries_includes_privacy_and_hides_pin_hash() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // GET /api/v1/libraries
-    let req = Request::get("/api/v1/libraries").body(Body::empty()).unwrap();
+    let req = Request::get("/api/v1/libraries")
+        .body(Body::empty())
+        .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
@@ -308,39 +312,41 @@ async fn test_unlock_non_existent_and_public_library() {
 async fn test_unlocked_libraries_extractor_with_tokens() {
     use kadr_server::api::unlock_token::{UnlockTokenService, UnlockedLibraries};
 
-    let token_svc = UnlockTokenService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
+    let token_svc =
+        UnlockTokenService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
     let (tok1, _) = token_svc.generate_token("lib-1").unwrap();
     let (tok2, _) = token_svc.generate_token("lib-2").unwrap();
 
     let router = axum::Router::new()
         .route(
             "/test-extractor",
-            axum::routing::get(|unlocked: UnlockedLibraries| async move {
-                axum::Json(unlocked.0)
-            }),
+            axum::routing::get(|unlocked: UnlockedLibraries| async move { axum::Json(unlocked.0) }),
         )
         .layer(axum::extract::Extension(token_svc));
 
     // Request with comma-separated tokens in header
     let req = Request::get("/test-extractor")
-        .header("X-Kadr-Unlocked", format!("{}, {}, invalid.token", tok1, tok2))
+        .header(
+            "X-Kadr-Unlocked",
+            format!("{}, {}, invalid.token", tok1, tok2),
+        )
         .body(Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let unlocked_set: std::collections::HashSet<String> = serde_json::from_slice(&body_bytes).unwrap();
+    let unlocked_set: std::collections::HashSet<String> =
+        serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(unlocked_set.len(), 2);
     assert!(unlocked_set.contains("lib-1"));
     assert!(unlocked_set.contains("lib-2"));
 
     // Request with no header
-    let req = Request::get("/test-extractor")
-        .body(Body::empty())
-        .unwrap();
+    let req = Request::get("/test-extractor").body(Body::empty()).unwrap();
     let resp = router.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let unlocked_set: std::collections::HashSet<String> = serde_json::from_slice(&body_bytes).unwrap();
+    let unlocked_set: std::collections::HashSet<String> =
+        serde_json::from_slice(&body_bytes).unwrap();
     assert!(unlocked_set.is_empty());
 }

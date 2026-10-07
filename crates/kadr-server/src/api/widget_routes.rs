@@ -57,7 +57,9 @@ pub async fn get_widget_data(
             Some(s) => {
                 if let ScreenId::Custom(ref id_str) = sid {
                     if let Ok(Some(lib)) = lib_repo.get_by_id(id_str).await {
-                        if let Some(canonical) = registry.find_screen_for_library(&lib.id, &lib.name) {
+                        if let Some(canonical) =
+                            registry.find_screen_for_library(&lib.id, &lib.name)
+                        {
                             canonical
                         } else {
                             s

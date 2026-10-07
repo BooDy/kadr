@@ -63,10 +63,7 @@ fn test_screen_id_variants() {
     assert_eq!(serde_json::to_string(&home).unwrap(), "\"home\"");
     assert_eq!(serde_json::to_string(&movies).unwrap(), "\"movies\"");
     assert_eq!(serde_json::to_string(&shows).unwrap(), "\"shows\"");
-    assert_eq!(
-        serde_json::to_string(&custom).unwrap(),
-        "\"favorites\""
-    );
+    assert_eq!(serde_json::to_string(&custom).unwrap(), "\"favorites\"");
 
     assert_eq!(
         serde_json::from_str::<ScreenId>("\"home\"").unwrap(),
@@ -388,7 +385,6 @@ fn test_item_details_payload_with_library_and_folder_path() {
     assert_eq!(backward_payload.folder_path, None);
 }
 
-
 #[test]
 fn test_screen_layout_serialization_roundtrip() {
     let hero = WidgetNode::HeroBanner {
@@ -485,8 +481,14 @@ fn test_widget_filter_config_full() {
 
     let json_val: serde_json::Value = serde_json::from_str(&serialized).unwrap();
     assert_eq!(json_val["exclude_private"], true);
-    assert_eq!(json_val["exclude_library_ids"], serde_json::json!(["lib-1", "lib-2"]));
-    assert_eq!(json_val["exclude_genres"], serde_json::json!(["Horror", "Action"]));
+    assert_eq!(
+        json_val["exclude_library_ids"],
+        serde_json::json!(["lib-1", "lib-2"])
+    );
+    assert_eq!(
+        json_val["exclude_genres"],
+        serde_json::json!(["Horror", "Action"])
+    );
     assert_eq!(json_val["max_age_days"], 30);
     assert_eq!(json_val["all_libraries"], true);
     assert_eq!(json_val["library_id"], "lib-custom");
@@ -553,8 +555,8 @@ fn test_widget_nodes_roundtrip_with_filters() {
         ..Default::default()
     };
 
-    let carousel_binding = WidgetQueryBinding::new(QueryMacro::ContinueWatching)
-        .with_filters(filters.clone());
+    let carousel_binding =
+        WidgetQueryBinding::new(QueryMacro::ContinueWatching).with_filters(filters.clone());
 
     let carousel = WidgetNode::Carousel {
         id: "continue_watching".to_string(),
@@ -616,4 +618,3 @@ fn test_card_view_model_season_episode_serde() {
     assert_eq!(deserialized.season, Some(4));
     assert_eq!(deserialized.episode, Some(1));
 }
-

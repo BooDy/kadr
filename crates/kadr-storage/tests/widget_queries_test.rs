@@ -382,7 +382,10 @@ async fn test_find_by_library_paginated() {
 async fn test_find_spotlight_candidate() {
     let (media_repo, _) = setup_test_data().await;
 
-    let candidate = media_repo.find_spotlight_candidate(None, &[], None).await.unwrap();
+    let candidate = media_repo
+        .find_spotlight_candidate(None, &[], None)
+        .await
+        .unwrap();
     assert!(candidate.is_some());
     let item = candidate.unwrap();
     // Inception has backdrop_path and highest rating among items with backdrop (8.8)
@@ -723,8 +726,14 @@ fn test_build_filter_clauses_logic() {
     assert!(clause.contains("NOT EXISTS"));
     assert!(clause.contains("json_each(json_extract(m.metadata, '$.genres'))"));
     assert_eq!(params.len(), 2);
-    assert_eq!(params[0], rusqlite::types::Value::Text("action".to_string()));
-    assert_eq!(params[1], rusqlite::types::Value::Text("horror".to_string()));
+    assert_eq!(
+        params[0],
+        rusqlite::types::Value::Text("action".to_string())
+    );
+    assert_eq!(
+        params[1],
+        rusqlite::types::Value::Text("horror".to_string())
+    );
 
     // 5. max_age_days
     let f4 = WidgetFilterConfig {
@@ -734,7 +743,10 @@ fn test_build_filter_clauses_logic() {
     let (clause, params) = build_filter_clauses(Some(&f4), &[], 1_000_000);
     assert!(clause.contains("m.added_at >= ?"));
     assert_eq!(params.len(), 1);
-    assert_eq!(params[0], rusqlite::types::Value::Integer(1_000_000 - 7 * 86_400));
+    assert_eq!(
+        params[0],
+        rusqlite::types::Value::Integer(1_000_000 - 7 * 86_400)
+    );
 }
 
 #[tokio::test]
@@ -872,7 +884,9 @@ async fn test_catalog_queries_exclude_loose_episodes() {
         },
     };
 
-    repo.upsert_batch(&[movie, show, ep1, ep2, ep3]).await.unwrap();
+    repo.upsert_batch(&[movie, show, ep1, ep2, ep3])
+        .await
+        .unwrap();
 
     // 1. find_by_library_paginated returns only Show, not Episodes
     let (shows, total) = repo
@@ -894,10 +908,15 @@ async fn test_catalog_queries_exclude_loose_episodes() {
         2,
         "Recently added should only contain Movie and Show"
     );
-    assert!(recent.iter().all(|item| item.item_type != MediaType::Episode));
+    assert!(recent
+        .iter()
+        .all(|item| item.item_type != MediaType::Episode));
 
     // 3. find_top_rated_paginated excludes episodes
-    let top = repo.find_top_rated_paginated(None, 10, 0, &[], None).await.unwrap();
+    let top = repo
+        .find_top_rated_paginated(None, 10, 0, &[], None)
+        .await
+        .unwrap();
     assert_eq!(top.len(), 2, "Top rated should only contain Movie and Show");
     assert!(top.iter().all(|item| item.item_type != MediaType::Episode));
 
@@ -911,8 +930,7 @@ async fn test_catalog_queries_exclude_loose_episodes() {
         2,
         "Genre Sci-Fi should only contain Movie and Show"
     );
-    assert!(sci_fi.iter().all(|item| item.item_type != MediaType::Episode));
+    assert!(sci_fi
+        .iter()
+        .all(|item| item.item_type != MediaType::Episode));
 }
-
-
-
