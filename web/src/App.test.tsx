@@ -362,5 +362,168 @@ describe('App Shell', () => {
     expect(stored).toBeTruthy();
     expect(stored).toContain('vault-unlock-token-123');
   });
+
+  it('navigates directly to folder in unlocked library when Browse Folder is triggered from item details on Home', async () => {
+    api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
+    api.setToken('test-jwt');
+
+    const mockLibraries = [
+      {
+        id: 'lib-movies',
+        name: 'Movies',
+        path: '/media/movies',
+        media_type: 'movie',
+        is_private: false,
+        created_at: 1700000000,
+      },
+    ];
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue(mockLibraries as any);
+    vi.spyOn(api, 'getScreen').mockImplementation(async (screenId) => {
+      if (screenId === 'home') {
+        return {
+          id: 'home',
+          title: 'Home',
+          widgets: [
+            {
+              type: 'hero_banner',
+              id: 'spotlight',
+              binding: { macro_type: 'spotlight_item', limit: 1 },
+              data: { id: 101, title: 'Inception', media_type: 'movie' },
+            },
+          ],
+        };
+      }
+      return { id: screenId, title: 'Library', widgets: [] };
+    });
+
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue({
+      card: { id: 101, title: 'Inception', media_type: 'movie' },
+      genres: ['Sci-Fi'],
+      stream_url: '/api/v1/stream/101',
+      library_id: 'lib-movies',
+      folder_path: 'Sci-Fi/Inception (2010)',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders').mockResolvedValue({
+      library_id: 'lib-movies',
+      library_name: 'Movies',
+      current_path: 'Sci-Fi/Inception (2010)',
+      parent_path: 'Sci-Fi',
+      breadcrumbs: [{ name: 'Inception (2010)', path: 'Sci-Fi/Inception (2010)' }],
+      directories: [],
+      items: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeInTheDocument();
+    });
+
+    // Click "More Info" on Spotlight hero to open details modal
+    fireEvent.click(screen.getByRole('button', { name: /more info/i }));
+
+    // Browse Folder button should appear
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /browse folder/i })).toBeInTheDocument();
+    });
+
+    // Click Browse Folder
+    fireEvent.click(screen.getByRole('button', { name: /browse folder/i }));
+
+    // Should switch to Movies library in folders mode and request the subfolder
+    await waitFor(() => {
+      expect(getFoldersSpy).toHaveBeenCalledWith('lib-movies', 'Sci-Fi/Inception (2010)');
+    });
+  });
+
+  it('prompts PIN and navigates to target folder after unlock when Browse Folder is triggered for private locked library', async () => {
+    sessionStorage.clear();
+    api.setUser({ id: 'admin-1', username: 'admin', role: 'admin' });
+    api.setToken('test-jwt');
+
+    const mockLibraries = [
+      {
+        id: 'lib-vault',
+        name: 'Private Vault',
+        path: '/media/vault',
+        media_type: 'movie',
+        is_private: true,
+        created_at: 1700000000,
+      },
+    ];
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue(mockLibraries as any);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({
+      id: 'home',
+      title: 'Home',
+      widgets: [
+        {
+          type: 'hero_banner',
+          id: 'spotlight',
+          binding: { macro_type: 'spotlight_item', limit: 1 },
+          data: { id: 999, title: 'Secret Doc', media_type: 'movie' },
+        },
+      ],
+    });
+
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue({
+      card: { id: 999, title: 'Secret Doc', media_type: 'movie' },
+      genres: ['Doc'],
+      stream_url: '/api/v1/stream/999',
+      library_id: 'lib-vault',
+      folder_path: 'Classified/2026',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+
+    vi.spyOn(api, 'unlockLibrary').mockResolvedValue({
+      library_id: 'lib-vault',
+      token: 'vault-token-xyz',
+      expires_at: 1800000000,
+    });
+
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders').mockResolvedValue({
+      library_id: 'lib-vault',
+      library_name: 'Private Vault',
+      current_path: 'Classified/2026',
+      parent_path: 'Classified',
+      breadcrumbs: [{ name: '2026', path: 'Classified/2026' }],
+      directories: [],
+      items: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Secret Doc')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /more info/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /browse folder/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /browse folder/i }));
+
+    // PIN keypad prompt should appear
+    await waitFor(() => {
+      expect(screen.getByText(/Unlock Private Vault/i)).toBeInTheDocument();
+    });
+
+    // Enter PIN: 1, 2, 3, 4
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
+    fireEvent.click(screen.getByRole('button', { name: '4' }));
+
+    // Upon unlocking, should navigate directly to the folder
+    await waitFor(() => {
+      expect(api.unlockLibrary).toHaveBeenCalledWith('lib-vault', '1234');
+      expect(getFoldersSpy).toHaveBeenCalledWith('lib-vault', 'Classified/2026');
+    });
+  });
 });
 

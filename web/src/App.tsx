@@ -60,6 +60,8 @@ export const App: FC = () => {
   const [unlockedLibraryIds, setUnlockedLibraryIds] = useState<string[]>(() => api.getUnlockedLibraryIds());
   const [libraryToUnlock, setLibraryToUnlock] = useState<Library | null>(null);
   const [activeLibrary, setActiveLibrary] = useState<Library | null>(null);
+  const [pendingFolderNav, setPendingFolderNav] = useState<{ libraryId: string; folderPath: string } | null>(null);
+  const [activeFolderNav, setActiveFolderNav] = useState<{ libraryId: string; folderPath: string } | null>(null);
 
   const refreshLibraries = useCallback(() => {
     api.getLibraries().then(setLibraries).catch(() => []);
@@ -79,6 +81,8 @@ export const App: FC = () => {
     setUnlockedLibraryIds([]);
     setActiveLibrary(null);
     setLibraryToUnlock(null);
+    setPendingFolderNav(null);
+    setActiveFolderNav(null);
     api.setToken(token);
     api.setUser(user);
     setCurrentUser(user);
@@ -92,6 +96,8 @@ export const App: FC = () => {
     setUnlockedLibraryIds([]);
     setActiveLibrary(null);
     setLibraryToUnlock(null);
+    setPendingFolderNav(null);
+    setActiveFolderNav(null);
     setIsAuthModalOpen(false);
   };
 
@@ -100,13 +106,43 @@ export const App: FC = () => {
       setLibraryToUnlock(lib);
       return;
     }
+    setActiveFolderNav(null);
     setActiveLibrary(lib);
     setCurrentView(`library-${lib.id}`);
   };
 
   const handleNavigate = (view: NavView) => {
+    setActiveFolderNav(null);
     setActiveLibrary(null);
     setCurrentView(view);
+  };
+
+  const handleNavigateToFolder = (libraryId: string, folderPath: string) => {
+    const lib = libraries.find((l) => l.id === libraryId);
+    if (!lib) return;
+
+    const isLocked = lib.is_private && !api.isLibraryUnlocked(lib.id) && !unlockedLibraryIds.includes(lib.id);
+    if (isLocked) {
+      setPendingFolderNav({ libraryId, folderPath });
+      setLibraryToUnlock(lib);
+      return;
+    }
+
+    setActiveFolderNav({ libraryId, folderPath });
+    setActiveLibrary(lib);
+    setCurrentView(`library-${lib.id}`);
+  };
+
+  const handleUnlockSuccess = (unlockedLib: Library) => {
+    if (pendingFolderNav && pendingFolderNav.libraryId === unlockedLib.id) {
+      setActiveFolderNav(pendingFolderNav);
+      setPendingFolderNav(null);
+    } else {
+      setActiveFolderNav(null);
+    }
+    setActiveLibrary(unlockedLib);
+    setCurrentView(`library-${unlockedLib.id}`);
+    setLibraryToUnlock(null);
   };
 
   const handlePlayItem = (itemId: number) => {
@@ -252,11 +288,22 @@ export const App: FC = () => {
         ) : (
           <>
             {currentView === 'home' && (
-              <BrowseScreen screenId="home" onPlayItem={handlePlayItem} />
+              <BrowseScreen
+                screenId="home"
+                onPlayItem={handlePlayItem}
+                onNavigateToFolder={handleNavigateToFolder}
+              />
             )}
 
             {activeLibrary && currentView === `library-${activeLibrary.id}` && (
-              <BrowseScreen screenId={activeLibrary.id} onPlayItem={handlePlayItem} />
+              <BrowseScreen
+                key={`screen-${activeLibrary.id}-${activeFolderNav?.libraryId === activeLibrary.id ? activeFolderNav.folderPath : 'default'}`}
+                screenId={activeLibrary.id}
+                onPlayItem={handlePlayItem}
+                initialViewMode={activeFolderNav?.libraryId === activeLibrary.id ? 'folders' : undefined}
+                initialFolder={activeFolderNav?.libraryId === activeLibrary.id ? activeFolderNav.folderPath : undefined}
+                onNavigateToFolder={handleNavigateToFolder}
+              />
             )}
 
             {currentView === 'player' && activePlayingItemId !== null && (
@@ -300,12 +347,13 @@ export const App: FC = () => {
                   const res = await api.unlockLibrary(libraryToUnlock.id, pin);
                   api.storeUnlockToken(res.library_id, res.token);
                   setUnlockedLibraryIds(api.getUnlockedLibraryIds());
-                  setActiveLibrary(libraryToUnlock);
-                  setCurrentView(`library-${libraryToUnlock.id}`);
-                  setLibraryToUnlock(null);
+                  handleUnlockSuccess(libraryToUnlock);
                 }}
                 onSuccess={() => {}}
-                onCancel={() => setLibraryToUnlock(null)}
+                onCancel={() => {
+                  setLibraryToUnlock(null);
+                  setPendingFolderNav(null);
+                }}
               />
             </div>
           </div>

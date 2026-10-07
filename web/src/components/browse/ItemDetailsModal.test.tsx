@@ -176,5 +176,73 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
     // 3600s = 1h 0m
     expect(screen.getAllByText('1h 0m').length).toBeGreaterThan(0);
   });
+
+  it('renders "Browse Folder" button when library_id is provided and calls onNavigateToFolder', () => {
+    const onNavigateToFolder = vi.fn();
+    const onClose = vi.fn();
+    const mockMovieDetails: ItemDetailsPayload = {
+      card: {
+        id: 101,
+        title: 'Inception',
+        media_type: 'movie',
+      },
+      overview: 'A thief who steals corporate secrets...',
+      genres: ['Action', 'Sci-Fi'],
+      stream_url: '/api/v1/stream/101',
+    };
+    const detailsWithFolder: ItemDetailsPayload = {
+      ...mockMovieDetails,
+      library_id: 'lib-movies-1',
+      folder_path: 'Sci-Fi/Inception (2010)',
+    };
+
+    render(
+      <ItemDetailsModal
+        isOpen={true}
+        onClose={onClose}
+        itemId={101}
+        initialDetails={detailsWithFolder}
+        onPlay={vi.fn()}
+        onNavigateToFolder={onNavigateToFolder}
+      />
+    );
+
+    const browseBtn = screen.getByRole('button', { name: /browse folder/i });
+    expect(browseBtn).toBeInTheDocument();
+    fireEvent.click(browseBtn);
+
+    expect(onClose).toHaveBeenCalled();
+    expect(onNavigateToFolder).toHaveBeenCalledWith('lib-movies-1', 'Sci-Fi/Inception (2010)');
+  });
+
+  it('does not render "Browse Folder" button when library_id is omitted or onNavigateToFolder not passed', () => {
+    const mockMovieDetails: ItemDetailsPayload = {
+      card: {
+        id: 101,
+        title: 'Inception',
+        media_type: 'movie',
+      },
+      overview: 'A thief who steals corporate secrets...',
+      genres: ['Action', 'Sci-Fi'],
+      stream_url: '/api/v1/stream/101',
+    };
+    const detailsWithoutFolder: ItemDetailsPayload = {
+      ...mockMovieDetails,
+      library_id: undefined,
+      folder_path: undefined,
+    };
+
+    render(
+      <ItemDetailsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        itemId={101}
+        initialDetails={detailsWithoutFolder}
+        onPlay={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /browse folder/i })).not.toBeInTheDocument();
+  });
 });
 

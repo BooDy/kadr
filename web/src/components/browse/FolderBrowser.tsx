@@ -17,6 +17,8 @@ import { ImageViewerModal } from '../player/ImageViewerModal';
 export interface FolderBrowserProps {
   libraryId: string;
   onPlayItem: (itemId: number) => void;
+  initialPath?: string;
+  onNavigateToFolder?: (libraryId: string, folderPath: string) => void;
 }
 
 interface MediaCardProps {
@@ -122,8 +124,10 @@ const MediaCard: FC<MediaCardProps> = ({ item, onSelect, onPlay }) => {
 export const FolderBrowser: FC<FolderBrowserProps> = ({
   libraryId,
   onPlayItem,
+  initialPath,
+  onNavigateToFolder,
 }) => {
-  const [currentPath, setCurrentPath] = useState<string>('');
+  const [currentPath, setCurrentPath] = useState<string>(initialPath ?? '');
   const [data, setData] = useState<LibraryFolderResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,9 +154,18 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
   );
 
   useEffect(() => {
-    setCurrentPath('');
-    navigateTo('');
-  }, [libraryId, navigateTo]);
+    const target = initialPath ?? '';
+    setCurrentPath(target);
+    navigateTo(target);
+  }, [libraryId, initialPath, navigateTo]);
+
+  const handleItemFolderNavigate = (libId: string, fPath: string) => {
+    if (libId === libraryId) {
+      navigateTo(fPath);
+    } else {
+      onNavigateToFolder?.(libId, fPath);
+    }
+  };
 
   const hasParent = data?.parent_path !== null && data?.parent_path !== undefined;
 
@@ -366,6 +379,7 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
         isOpen={selectedItemId !== null}
         onClose={() => setSelectedItemId(null)}
         onPlay={onPlayItem}
+        onNavigateToFolder={handleItemFolderNavigate}
       />
 
       {/* Image Viewer / Slideshow Modal */}

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowseScreen } from './BrowseScreen';
 import { api } from '../../api/client';
@@ -435,5 +436,98 @@ describe('BrowseScreen & Declarative Widgets', () => {
 
     expect(screen.queryByRole('button', { name: /catalog/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /folders/i })).toBeNull();
+  });
+
+  it('initializes with initialViewMode and initialFolder when provided', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(mockLibraryLayout);
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce({
+      ...mockFolderResponse,
+      current_path: 'Sci-Fi/Inception (2010)',
+    });
+
+    render(
+      <BrowseScreen
+        screenId="movies"
+        onPlayItem={onPlayItem}
+        initialViewMode="folders"
+        initialFolder="Sci-Fi/Inception (2010)"
+      />
+    );
+
+    await waitFor(() => {
+      expect(getFoldersSpy).toHaveBeenCalledWith('movies', 'Sci-Fi/Inception (2010)');
+    });
+  });
+
+  it('switches viewMode to folders and sets initialPath when ItemDetailsModal triggers onNavigateToFolder for current library', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(mockLibraryLayout);
+    vi.spyOn(api, 'getItemDetails').mockResolvedValueOnce({
+      card: { id: 201, title: 'Inception', media_type: 'movie' },
+      genres: ['Sci-Fi'],
+      stream_url: '/api/v1/stream/201',
+      library_id: 'movies',
+      folder_path: 'Sci-Fi/Inception (2010)',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValueOnce([]);
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce({
+      ...mockFolderResponse,
+      current_path: 'Sci-Fi/Inception (2010)',
+    });
+
+    render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeInTheDocument();
+    });
+
+    // Click item to open ItemDetailsModal
+    fireEvent.click(screen.getByText('Inception'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /browse folder/i })).toBeInTheDocument();
+    });
+
+    // Click Browse Folder
+    fireEvent.click(screen.getByRole('button', { name: /browse folder/i }));
+
+    // Should switch to folders and fetch folder contents
+    await waitFor(() => {
+      expect(getFoldersSpy).toHaveBeenCalledWith('movies', 'Sci-Fi/Inception (2010)');
+    });
+  });
+
+  it('calls props.onNavigateToFolder when ItemDetailsModal triggers folder nav for a different library', async () => {
+    const onNavProp = vi.fn();
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(mockLibraryLayout);
+    vi.spyOn(api, 'getItemDetails').mockResolvedValueOnce({
+      card: { id: 201, title: 'Inception', media_type: 'movie' },
+      genres: ['Sci-Fi'],
+      stream_url: '/api/v1/stream/201',
+      library_id: 'other-lib',
+      folder_path: 'OtherFolder',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValueOnce([]);
+
+    render(
+      <BrowseScreen
+        screenId="movies"
+        onPlayItem={onPlayItem}
+        onNavigateToFolder={onNavProp}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Inception'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /browse folder/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /browse folder/i }));
+
+    expect(onNavProp).toHaveBeenCalledWith('other-lib', 'OtherFolder');
   });
 });

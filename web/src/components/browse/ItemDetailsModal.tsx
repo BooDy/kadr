@@ -7,6 +7,7 @@ import {
   Search,
   Check,
   Loader2,
+  Folder,
 } from 'lucide-react';
 import type {
   CardViewModel,
@@ -23,6 +24,7 @@ export interface ItemDetailsModalProps {
   onPlay?: (itemId: number) => void;
   onPlayItem?: (itemId: number) => void;
   initialDetails?: ItemDetailsPayload;
+  onNavigateToFolder?: (libraryId: string, folderPath: string) => void;
 }
 
 interface EpisodeCardProps {
@@ -158,6 +160,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   onPlay,
   onPlayItem,
   initialDetails,
+  onNavigateToFolder,
 }) => {
   const [details, setDetails] = useState<ItemDetailsPayload | null>(initialDetails ?? null);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
@@ -430,8 +433,21 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                   )}
                 </div>
 
-                {/* Quick Play Action Button */}
-                <div className="self-center sm:self-end">
+                {/* Quick Play & Actions */}
+                <div className="self-center sm:self-end flex flex-wrap items-center gap-3">
+                  {details.library_id && onNavigateToFolder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onNavigateToFolder(details.library_id!, details.folder_path ?? '');
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-panel hover:bg-panel-hover text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                    >
+                      <Folder className="w-4 h-4 text-accent" />
+                      <span>Browse Folder</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handlePlayItem(itemId)}
                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-lg shadow-cta/25 hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"

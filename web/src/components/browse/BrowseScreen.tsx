@@ -11,6 +11,9 @@ import { FolderBrowser } from './FolderBrowser';
 export interface BrowseScreenProps {
   screenId: string;
   onPlayItem: (itemId: number) => void;
+  initialViewMode?: 'catalog' | 'folders';
+  initialFolder?: string;
+  onNavigateToFolder?: (libraryId: string, folderPath: string) => void;
 }
 
 // Wrapper to handle unhydrated spotlight hero widget
@@ -51,16 +54,30 @@ const HydratedSpotlight: FC<{
 export const BrowseScreen: FC<BrowseScreenProps> = ({
   screenId,
   onPlayItem,
+  initialViewMode,
+  initialFolder,
+  onNavigateToFolder,
 }) => {
   const [layout, setLayout] = useState<ScreenLayout | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'catalog' | 'folders'>('catalog');
+  const [viewMode, setViewMode] = useState<'catalog' | 'folders'>(initialViewMode ?? 'catalog');
+  const [folderPath, setFolderPath] = useState<string>(initialFolder ?? '');
 
   useEffect(() => {
-    setViewMode('catalog');
-  }, [screenId]);
+    setViewMode(initialViewMode ?? 'catalog');
+    setFolderPath(initialFolder ?? '');
+  }, [screenId, initialViewMode, initialFolder]);
+
+  const handleFolderNavigate = (targetLibId: string, targetFolder: string) => {
+    if (targetLibId === screenId) {
+      setViewMode('folders');
+      setFolderPath(targetFolder);
+    } else {
+      onNavigateToFolder?.(targetLibId, targetFolder);
+    }
+  };
 
   const fetchScreen = useCallback(async () => {
     setLoading(true);
@@ -120,7 +137,12 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
 
       {/* Main View: Folders Browser or Declarative Catalog */}
       {screenId !== 'home' && viewMode === 'folders' ? (
-        <FolderBrowser libraryId={screenId} onPlayItem={onPlayItem} />
+        <FolderBrowser
+          libraryId={screenId}
+          initialPath={folderPath}
+          onPlayItem={onPlayItem}
+          onNavigateToFolder={handleFolderNavigate}
+        />
       ) : (
         <>
           {/* Loading State Skeleton */}
@@ -227,6 +249,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
         isOpen={selectedItemId !== null}
         onClose={() => setSelectedItemId(null)}
         onPlay={onPlayItem}
+        onNavigateToFolder={handleFolderNavigate}
       />
     </div>
   );

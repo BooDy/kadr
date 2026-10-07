@@ -133,6 +133,8 @@ export interface ItemDetailsPayload {
   stream_url: string;
   resume_position_seconds?: number;
   episodes?: CardViewModel[];
+  library_id?: string;
+  folder_path?: string;
 }
 
 export interface ScreenLayout {

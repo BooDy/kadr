@@ -423,6 +423,72 @@ describe('FolderBrowser Component', () => {
     expect(screen.getByRole('dialog', { name: /image viewer/i })).toBeInTheDocument();
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
   });
+
+  it('loads initialPath on mount when provided', async () => {
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce({
+      ...mockSubfolderResponse,
+      current_path: 'Sci-Fi/Inception (2010)',
+      breadcrumbs: [
+        { name: 'Root', path: '' },
+        { name: 'Sci-Fi', path: 'Sci-Fi' },
+        { name: 'Inception (2010)', path: 'Sci-Fi/Inception (2010)' },
+      ],
+    });
+
+    render(
+      <FolderBrowser
+        libraryId={mockLibraryId}
+        initialPath="Sci-Fi/Inception (2010)"
+        onPlayItem={mockOnPlayItem}
+      />
+    );
+
+    expect(getFoldersSpy).toHaveBeenCalledWith(mockLibraryId, 'Sci-Fi/Inception (2010)');
+    await waitFor(() => {
+      expect(screen.getByText('Inception (2010)')).toBeInTheDocument();
+    });
+  });
+
+  it('handles child ItemDetailsModal onNavigateToFolder: internal when library matches, callback when different', async () => {
+    const onNavigateToFolder = vi.fn();
+    const getFoldersSpy = vi.spyOn(api, 'getLibraryFolders')
+      .mockResolvedValueOnce(mockRootResponse)
+      .mockResolvedValueOnce(mockSubfolderResponse);
+
+    vi.spyOn(api, 'getItemDetails').mockResolvedValueOnce({
+      card: mockRootResponse.items[0],
+      genres: ['Sci-Fi'],
+      stream_url: '/api/v1/stream/101',
+      library_id: mockLibraryId,
+      folder_path: 'Sci-Fi',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValueOnce([]);
+
+    render(
+      <FolderBrowser
+        libraryId={mockLibraryId}
+        onPlayItem={mockOnPlayItem}
+        onNavigateToFolder={onNavigateToFolder}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Inception')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Inception'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /browse folder/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /browse folder/i }));
+
+    await waitFor(() => {
+      expect(getFoldersSpy).toHaveBeenCalledWith(mockLibraryId, 'Sci-Fi');
+    });
+    expect(onNavigateToFolder).not.toHaveBeenCalled();
+  });
 });
 
 
