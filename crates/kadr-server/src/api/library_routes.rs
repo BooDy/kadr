@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
 use axum::extract::{Extension, Path, Query};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use tokio_util::io::ReaderStream;
@@ -40,6 +40,14 @@ pub struct BreadcrumbItem {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FolderImageEntry {
+    pub name: String,
+    pub path: String,
+    pub url: String,
+    pub size_bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibraryFolderResponse {
     pub library_id: String,
@@ -49,6 +57,8 @@ pub struct LibraryFolderResponse {
     pub breadcrumbs: Vec<BreadcrumbItem>,
     pub directories: Vec<FolderEntry>,
     pub items: Vec<CardViewModel>,
+    #[serde(default)]
+    pub images: Vec<FolderImageEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -626,6 +636,16 @@ fn is_video_file(path: &std::path::Path) -> bool {
     )
 }
 
+fn is_image_file(path: &std::path::Path) -> bool {
+    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "jpg" | "jpeg" | "png" | "webp" | "gif" | "avif" | "bmp"
+    )
+}
+
 /// Handler for `GET /api/v1/libraries/{id}/folders`.
 ///
 /// Returns sandboxed directory contents, subdirectories with item counts,
@@ -814,6 +834,7 @@ pub async fn browse_library_folders(
     let mut dir_map: std::collections::BTreeMap<String, FolderEntry> =
         std::collections::BTreeMap::new();
     let mut video_paths = Vec::new();
+    let mut discovered_images: Vec<(String, PathBuf)> = Vec::new();
 
     for target_dir in matched_target_dirs {
         let mut reader = match tokio::fs::read_dir(&target_dir).await {
@@ -871,6 +892,8 @@ pub async fn browse_library_folders(
                     });
             } else if is_video_file(&entry_path) {
                 video_paths.push(entry_path);
+            } else if is_image_file(&entry_path) {
+                discovered_images.push((file_name, entry_path));
             }
         }
     }
@@ -980,6 +1003,32 @@ pub async fn browse_library_folders(
         }
     }
 
+    let mut image_entries = Vec::new();
+    for (img_name, img_path) in discovered_images {
+        let rel_path = if current_path.is_empty() {
+            img_name.clone()
+        } else {
+            format!("{}/{}", current_path, img_name)
+        };
+        let size_bytes = tokio::fs::metadata(&img_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let url = format!(
+            "/api/v1/libraries/{}/image?path={}",
+            library.id,
+            urlencoding::encode(&rel_path)
+        );
+        image_entries.push(FolderImageEntry {
+            name: img_name,
+            path: rel_path,
+            url,
+            size_bytes,
+        });
+    }
+    image_entries.sort_by_key(|a| a.name.to_lowercase());
+    image_entries.dedup_by(|a, b| a.name.to_lowercase() == b.name.to_lowercase());
+
     let mut directories: Vec<FolderEntry> = dir_map.into_values().collect();
     directories.sort_by_key(|a| a.name.to_lowercase());
     items.sort_by_key(|a| a.title.to_lowercase());
@@ -992,6 +1041,7 @@ pub async fn browse_library_folders(
         breadcrumbs,
         directories,
         items,
+        images: image_entries,
     }))
 }
 
@@ -1218,3 +1268,208 @@ pub async fn get_library_thumbnail(
         .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
+
+fn resolve_image_mime(path: &std::path::Path) -> &'static str {
+    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+        return "application/octet-stream";
+    };
+    match ext.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        _ => "application/octet-stream",
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImageQuery {
+    pub path: String,
+}
+
+/// Handler for `GET /api/v1/libraries/{id}/image?path=...`.
+///
+/// Streams raw image files from within library folders with security sandboxing and caching.
+pub async fn get_library_image(
+    unlocked: UnlockedLibraries,
+    Path(id): Path<String>,
+    Query(query): Query<ImageQuery>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+) -> Response {
+    let library = match lib_repo.get_by_id(&id).await {
+        Ok(Some(lib)) => lib,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Library not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to load library");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            )
+                .into_response();
+        }
+    };
+
+    if library.is_private && !unlocked.is_unlocked(&library.id) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+        )
+            .into_response();
+    }
+
+    let trimmed = query.path.trim();
+    if trimmed.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Path cannot be empty" })),
+        )
+            .into_response();
+    }
+
+    if trimmed.contains('\0') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid path containing null bytes" })),
+        )
+            .into_response();
+    }
+
+    if trimmed.contains("..") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Path traversal not allowed" })),
+        )
+            .into_response();
+    }
+
+    let rel_check = std::path::Path::new(trimmed);
+    if trimmed.starts_with('/')
+        || trimmed.starts_with('\\')
+        || rel_check.is_absolute()
+        || rel_check.has_root()
+        || trimmed.contains(':')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Absolute path not allowed" })),
+        )
+            .into_response();
+    }
+
+    for comp in rel_check.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Path traversal not allowed" })),
+                )
+                    .into_response();
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Absolute path not allowed" })),
+                )
+                    .into_response();
+            }
+            _ => {}
+        }
+    }
+
+    let clean_path = trimmed.trim_matches(|c| c == '/' || c == '\\');
+    let raw_roots = if library.paths.is_empty() {
+        vec![library.path.clone()]
+    } else {
+        library.paths.clone()
+    };
+
+    let mut canonical_roots = Vec::new();
+    for root in &raw_roots {
+        if let Ok(canon) = std::fs::canonicalize(root) {
+            canonical_roots.push(canon);
+        }
+    }
+    canonical_roots.sort();
+    canonical_roots.dedup();
+
+    if canonical_roots.is_empty() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Library path not found on disk" })),
+        )
+            .into_response();
+    }
+
+    let mut found_path: Option<PathBuf> = None;
+    for root in &canonical_roots {
+        let candidate = root.join(clean_path);
+        if candidate.exists() {
+            if let Ok(canon_file) = std::fs::canonicalize(&candidate) {
+                if !canon_file.starts_with(root) {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({ "error": "Path outside library root" })),
+                    )
+                        .into_response();
+                }
+                if canon_file.is_file() {
+                    found_path = Some(canon_file);
+                    break;
+                }
+            }
+        }
+    }
+
+    let Some(target_file) = found_path else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Image file not found" })),
+        )
+            .into_response();
+    };
+
+    let meta = match tokio::fs::metadata(&target_file).await {
+        Ok(m) => m,
+        Err(e) => {
+            error!(error = %e, path = ?target_file, "Failed to read image metadata");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to read image file" })),
+            )
+                .into_response();
+        }
+    };
+
+    let file = match tokio::fs::File::open(&target_file).await {
+        Ok(f) => f,
+        Err(e) => {
+            error!(error = %e, path = ?target_file, "Failed to open image file");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to open image file" })),
+            )
+                .into_response();
+        }
+    };
+
+    let mime = resolve_image_mime(&target_file);
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_LENGTH, meta.len().to_string())
+        .header(header::CACHE_CONTROL, "public, max-age=86400")
+        .body(body)
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR).into_response())
+}
+

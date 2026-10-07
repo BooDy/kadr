@@ -798,3 +798,148 @@ async fn test_library_thumbnail_private_library_locked_and_unlocked() {
     assert_eq!(res_unlocked.status(), StatusCode::OK);
     assert_eq!(res_unlocked.headers().get("content-type").unwrap(), "image/jpeg");
 }
+
+#[tokio::test]
+async fn test_browse_and_stream_library_images() {
+    let ctx = setup_test_context().await;
+
+    // 1. Create a subfolder with images and a movie
+    let gallery_dir = ctx.public_lib_root.join("vacation_photos");
+    std::fs::create_dir_all(&gallery_dir).unwrap();
+    let img1_path = gallery_dir.join("beach.jpg");
+    std::fs::write(&img1_path, b"fake jpeg image data").unwrap();
+    let img2_path = gallery_dir.join("sunset.png");
+    std::fs::write(&img2_path, b"fake png image data").unwrap();
+    let vid_path = gallery_dir.join("clip.mp4");
+    std::fs::write(&vid_path, b"fake video content").unwrap();
+
+    // 2. Request folder contents via GET /api/v1/libraries/:id/folders?path=vacation_photos
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/folders?path=vacation_photos",
+            ctx.public_lib_id
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.standard_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let folder_res: LibraryFolderResponse = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(folder_res.images.len(), 2);
+    assert_eq!(folder_res.images[0].name, "beach.jpg");
+    assert_eq!(folder_res.images[0].path, "vacation_photos/beach.jpg");
+    assert!(folder_res.images[0].url.contains("/image?path="));
+    assert_eq!(folder_res.images[0].size_bytes, b"fake jpeg image data".len() as u64);
+
+    assert_eq!(folder_res.images[1].name, "sunset.png");
+    assert_eq!(folder_res.images[1].path, "vacation_photos/sunset.png");
+
+    // 3. Stream image via GET /api/v1/libraries/:id/image?path=vacation_photos/beach.jpg
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=vacation_photos/beach.jpg",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
+    assert_eq!(
+        res.headers().get(header::CACHE_CONTROL).unwrap(),
+        "public, max-age=86400"
+    );
+    let img_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&img_bytes[..], b"fake jpeg image data");
+
+    // 4. Stream png image
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=vacation_photos/sunset.png",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+
+    // 5. Path traversal rejection (400 Bad Request)
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=../secret.jpg",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 6. Missing image file (404 Not Found)
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=vacation_photos/notfound.jpg",
+            ctx.public_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // 7. Private library access (locked -> 403, unlocked -> 200)
+    let private_root = ctx.temp_dir.path().join("private_movies");
+    let priv_img_path = private_root.join("secret.jpg");
+    std::fs::write(&priv_img_path, b"secret image bytes").unwrap();
+
+    let req_locked = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=secret.jpg",
+            ctx.private_lib_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res_locked = ctx.app.clone().oneshot(req_locked).await.unwrap();
+    assert_eq!(res_locked.status(), StatusCode::FORBIDDEN);
+
+    let unlock_req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/libraries/{}/unlock", ctx.private_lib_id))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "pin": "1234" }).to_string()))
+        .unwrap();
+    let unlock_res = ctx.app.clone().oneshot(unlock_req).await.unwrap();
+    assert_eq!(unlock_res.status(), StatusCode::OK);
+    let unlock_bytes = unlock_res.into_body().collect().await.unwrap().to_bytes();
+    let unlock_data: Value = serde_json::from_slice(&unlock_bytes).unwrap();
+    let unlock_token = unlock_data["token"].as_str().unwrap();
+
+    let req_unlocked = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/image?path=secret.jpg",
+            ctx.private_lib_id
+        ))
+        .header("x-kadr-unlocked", unlock_token)
+        .body(Body::empty())
+        .unwrap();
+    let res_unlocked = ctx.app.clone().oneshot(req_unlocked).await.unwrap();
+    assert_eq!(res_unlocked.status(), StatusCode::OK);
+    let res_bytes = axum::body::to_bytes(res_unlocked.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&res_bytes[..], b"secret image bytes");
+}
+
