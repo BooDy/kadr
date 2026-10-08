@@ -441,6 +441,16 @@ async fn test_update_library_name() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
+    // Query screens before rename to ensure screen is registered
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens")
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
     // 2. Admin successfully renames library (200 OK)
     let patch_payload = json!({ "name": "Cinema Classics" });
     let req = Request::builder()
@@ -481,4 +491,34 @@ async fn test_update_library_name() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // 5. Verify screen list: "Cinema Classics" exists, "Original Name" does NOT exist
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/screens")
+        .header(header::AUTHORIZATION, format!("Bearer {}", ctx.admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let screens: Vec<Value> = serde_json::from_slice(&body_bytes).unwrap();
+    let titles: Vec<&str> = screens
+        .iter()
+        .map(|s| s["title"].as_str().unwrap())
+        .collect();
+
+    assert!(
+        titles.contains(&"Cinema Classics"),
+        "Renamed library screen 'Cinema Classics' must be in screens: {:?}",
+        titles
+    );
+    assert!(
+        !titles.contains(&"Original Name"),
+        "Old screen 'Original Name' must NOT remain in screens: {:?}",
+        titles
+    );
 }
+

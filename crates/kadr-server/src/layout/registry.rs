@@ -100,6 +100,19 @@ impl LayoutRegistry {
             }
         }
 
+        // 6. Match by widget binding pointing to library_id
+        for screen in inner.screens.values() {
+            for widget in &screen.widgets {
+                if let WidgetNode::Grid { binding, .. } | WidgetNode::Carousel { binding, .. } = widget {
+                    if let QueryMacro::LibraryItems { library_id: lib_ref } = &binding.macro_type {
+                        if lib_ref == library_id {
+                            return Some(screen.clone());
+                        }
+                    }
+                }
+            }
+        }
+
         None
     }
 
@@ -195,6 +208,10 @@ impl LayoutRegistry {
                             ));
                         }
                     }
+                }
+                let toml_path = dir.join(format!("{id}.toml"));
+                if toml_path.exists() {
+                    let _ = std::fs::remove_file(&toml_path);
                 }
                 let mut inner = self.inner.write().expect("layout registry lock poisoned");
                 inner.screens.remove(id);

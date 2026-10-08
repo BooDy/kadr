@@ -7,7 +7,7 @@ use axum::extract::{Extension, Path, Query};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use kadr_core::ast::{CardViewModel, ScreenId, WidgetNode};
+use kadr_core::ast::{CardViewModel, QueryMacro, ScreenId, WidgetNode};
 use kadr_core::events::SystemEvent;
 use kadr_core::models::{Library, MediaItem, MediaType};
 use kadr_ingest::watcher::{scan_directory_recursive, IngestMessage, IngestPipeline};
@@ -23,8 +23,9 @@ use crate::api::unlock_token::{UnlockTokenService, UnlockedLibraries};
 use crate::auth::jwt::{AuthUser, RequireAdmin};
 use crate::auth::pin::{hash_pin, validate_pin, verify_pin};
 use crate::auth::rate_limiter::{RateLimitStatus, RateLimiter};
+use crate::config::AppConfig;
 use crate::events::EventBus;
-use crate::layout::LayoutRegistry;
+use crate::layout::{default_library_layout, LayoutRegistry};
 use crate::resolver::to_card_view_model;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -350,13 +351,14 @@ pub async fn unlock_library(
 /// Handler for `PATCH /api/v1/libraries/{id}`.
 ///
 /// Updates the library name, synchronizes associated screen layout title,
-/// and broadcasts a LibraryUpdated event. Requires admin role.
+/// cleans up old screen overrides, and broadcasts a LibraryUpdated event. Requires admin role.
 pub async fn update_library(
     _admin: RequireAdmin,
     Path(id): Path<String>,
     Extension(lib_repo): Extension<LibraryRepository>,
     Extension(layout_registry): Extension<Arc<LayoutRegistry>>,
     Extension(event_bus): Extension<Arc<EventBus>>,
+    Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
     Json(payload): Json<UpdateLibraryRequest>,
 ) -> Result<Json<Library>, StatusCode> {
     let trimmed_name = payload.name.trim();
@@ -364,6 +366,18 @@ pub async fn update_library(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // 1. Fetch library before update so we know its original name
+    let old_lib = match lib_repo.get_by_id(&id).await {
+        Ok(Some(lib)) => lib,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            error!(error = %e, library_id = %id, "Failed to get library before update");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    let old_name = old_lib.name;
+
+    // 2. Update library name in storage repository
     let updated = match lib_repo.update_name(&id, trimmed_name).await {
         Ok(lib) => lib,
         Err(StorageError::NotFound(_)) => return Err(StatusCode::NOT_FOUND),
@@ -374,18 +388,82 @@ pub async fn update_library(
         }
     };
 
-    // Synchronize associated screen layout if one exists
-    let screen_id = id.parse::<ScreenId>().unwrap();
-    if let Some(mut screen) = layout_registry.get_screen(&screen_id) {
-        screen.title = trimmed_name.to_string();
-        for widget in &mut screen.widgets {
-            if let WidgetNode::Grid { title, .. } = widget {
-                if title.starts_with("All ") {
-                    *title = format!("All {trimmed_name}");
+    // 3. Synchronize associated screen layout in registry and on disk
+    let screens_dir = config.read().await.server.data_dir.join("screens");
+    let canonical_id: ScreenId = id.parse().unwrap();
+
+    // Look for an existing screen matching this library either by ID or old name
+    let existing_screen_opt = layout_registry.find_screen_for_library(&id, &old_name);
+
+    if let Some(mut screen) = existing_screen_opt {
+        let old_screen_id = screen.id.clone();
+        match old_screen_id {
+            ScreenId::Home => {}
+            ScreenId::Movies | ScreenId::Shows => {
+                // Built-in screens remain with their built-in ID, but title and widget titles update
+                screen.title = trimmed_name.to_string();
+                for widget in &mut screen.widgets {
+                    if let WidgetNode::Grid { title, .. } = widget {
+                        if title.starts_with("All ") || title == &format!("All {old_name}") {
+                            *title = format!("All {trimmed_name}");
+                        }
+                    }
                 }
+                let _ = layout_registry.save_screen(screen, &screens_dir);
+            }
+            ScreenId::Custom(_) => {
+                // If the old screen had an ID different from the canonical library ID (e.g. named after old_name),
+                // remove it from layout registry and delete its file from screens_dir
+                if old_screen_id != canonical_id {
+                    let _ = layout_registry.delete_custom_screen(&old_screen_id, &screens_dir);
+                }
+
+                // Also delete any {old_name}.json or {old_name}.toml if it exists on disk
+                let old_name_file = screens_dir.join(format!("{old_name}.json"));
+                if old_name_file.exists() {
+                    let _ = std::fs::remove_file(&old_name_file);
+                }
+                let old_name_toml = screens_dir.join(format!("{old_name}.toml"));
+                if old_name_toml.exists() {
+                    let _ = std::fs::remove_file(&old_name_toml);
+                }
+                let old_name_id: ScreenId = old_name.parse().unwrap();
+                if old_name_id != canonical_id && old_name_id != old_screen_id {
+                    let _ = layout_registry.delete_custom_screen(&old_name_id, &screens_dir);
+                }
+
+                screen.id = canonical_id;
+                screen.title = trimmed_name.to_string();
+                for widget in &mut screen.widgets {
+                    if let WidgetNode::Grid { title, binding, .. } = widget {
+                        if title.starts_with("All ") || title == &format!("All {old_name}") {
+                            *title = format!("All {trimmed_name}");
+                        }
+                        if let QueryMacro::LibraryItems { library_id } = &mut binding.macro_type {
+                            *library_id = id.clone();
+                        }
+                    }
+                }
+                let _ = layout_registry.save_screen(screen, &screens_dir);
             }
         }
-        layout_registry.register_screen(screen);
+    } else {
+        // No screen was found matching the library; clean up any old_name files and create default layout
+        let old_name_file = screens_dir.join(format!("{old_name}.json"));
+        if old_name_file.exists() {
+            let _ = std::fs::remove_file(&old_name_file);
+        }
+        let old_name_toml = screens_dir.join(format!("{old_name}.toml"));
+        if old_name_toml.exists() {
+            let _ = std::fs::remove_file(&old_name_toml);
+        }
+        let old_name_id: ScreenId = old_name.parse().unwrap();
+        if old_name_id != canonical_id {
+            let _ = layout_registry.delete_custom_screen(&old_name_id, &screens_dir);
+        }
+
+        let default_layout = default_library_layout(&id, trimmed_name);
+        let _ = layout_registry.save_screen(default_layout, &screens_dir);
     }
 
     let now = SystemTime::now()
@@ -404,15 +482,37 @@ pub async fn update_library(
 
 /// Handler for `DELETE /api/v1/libraries/{id}`.
 ///
-/// Removes a library registration. Requires admin role.
+/// Removes a library registration, cleans up associated custom screen layouts,
+/// and broadcasts a LibraryUpdated event. Requires admin role.
 pub async fn delete_library(
     _admin: RequireAdmin,
     Path(id): Path<String>,
     Extension(lib_repo): Extension<LibraryRepository>,
     Extension(event_bus): Extension<Arc<EventBus>>,
+    Extension(layout_registry): Extension<Arc<LayoutRegistry>>,
+    Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
 ) -> Result<StatusCode, StatusCode> {
+    let old_lib = lib_repo.get_by_id(&id).await.unwrap_or(None);
     match lib_repo.delete(&id).await {
         Ok(true) => {
+            let screens_dir = config.read().await.server.data_dir.join("screens");
+            let canonical_id: ScreenId = id.parse().unwrap();
+            let _ = layout_registry.delete_custom_screen(&canonical_id, &screens_dir);
+            if let Some(lib) = old_lib {
+                let name_id: ScreenId = lib.name.parse().unwrap();
+                if name_id != canonical_id {
+                    let _ = layout_registry.delete_custom_screen(&name_id, &screens_dir);
+                }
+                let name_file = screens_dir.join(format!("{}.json", lib.name));
+                if name_file.exists() {
+                    let _ = std::fs::remove_file(&name_file);
+                }
+                let name_toml = screens_dir.join(format!("{}.toml", lib.name));
+                if name_toml.exists() {
+                    let _ = std::fs::remove_file(&name_toml);
+                }
+            }
+
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
