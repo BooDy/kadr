@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use std::time::Duration;
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use kadr_core::ast::{ScreenId, ScreenLayout, WidgetNode};
@@ -20,6 +18,8 @@ use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
 };
 use serde_json::{json, Value};
+use std::sync::Arc;
+use std::time::Duration;
 use tempfile::tempdir;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
@@ -30,7 +30,9 @@ async fn test_rename_library_with_named_or_disk_screen() {
     let db_path = dir.path().join("kadr.db");
 
     let pool = create_pool(&db_path, 2).expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -48,12 +50,17 @@ async fn test_rename_library_with_named_or_disk_screen() {
     user_repo.create(&admin_user).await.expect("create admin");
 
     let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
-    let admin_token = jwt_svc.generate_token(&admin_user).expect("generate admin token");
+    let admin_token = jwt_svc
+        .generate_token(&admin_user)
+        .expect("generate admin token");
 
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = dir.path().join("subtitles-cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -93,14 +100,18 @@ async fn test_rename_library_with_named_or_disk_screen() {
         vec![WidgetNode::Grid {
             id: "porn_grid".to_string(),
             title: "All Porn".to_string(),
-            binding: kadr_core::ast::WidgetQueryBinding::new(kadr_core::ast::QueryMacro::RecentlyAdded),
+            binding: kadr_core::ast::WidgetQueryBinding::new(
+                kadr_core::ast::QueryMacro::RecentlyAdded,
+            ),
             columns: 4,
             items: None,
             next_cursor: None,
             total_count: None,
         }],
     );
-    layout_registry.save_screen(porn_screen, &screens_dir).unwrap();
+    layout_registry
+        .save_screen(porn_screen, &screens_dir)
+        .unwrap();
 
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
     let dummy_pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false, None));
@@ -149,18 +160,33 @@ async fn test_rename_library_with_named_or_disk_screen() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let screens: Vec<Value> = serde_json::from_slice(&body_bytes).unwrap();
-    let titles: Vec<&str> = screens.iter().map(|s| s["title"].as_str().unwrap()).collect();
+    let titles: Vec<&str> = screens
+        .iter()
+        .map(|s| s["title"].as_str().unwrap())
+        .collect();
 
     println!("Current screens titles: {:?}", titles);
 
     // Assert that "Private" exists
-    assert!(titles.contains(&"Private"), "Screens must contain 'Private'");
+    assert!(
+        titles.contains(&"Private"),
+        "Screens must contain 'Private'"
+    );
     // Assert that old screen "Porn" DOES NOT exist
-    assert!(!titles.contains(&"Porn"), "Old screen 'Porn' must NOT remain in screens: {:?}", titles);
+    assert!(
+        !titles.contains(&"Porn"),
+        "Old screen 'Porn' must NOT remain in screens: {:?}",
+        titles
+    );
     // Assert Porn.json file was deleted from disk
-    assert!(!screens_dir.join("Porn.json").exists(), "Porn.json must not exist on disk");
+    assert!(
+        !screens_dir.join("Porn.json").exists(),
+        "Porn.json must not exist on disk"
+    );
 }
 
 #[tokio::test]
@@ -169,7 +195,9 @@ async fn test_rename_builtin_movies_library() {
     let db_path = dir.path().join("kadr.db");
 
     let pool = create_pool(&db_path, 2).expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -187,12 +215,17 @@ async fn test_rename_builtin_movies_library() {
     user_repo.create(&admin_user).await.expect("create admin");
 
     let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
-    let admin_token = jwt_svc.generate_token(&admin_user).expect("generate admin token");
+    let admin_token = jwt_svc
+        .generate_token(&admin_user)
+        .expect("generate admin token");
 
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = dir.path().join("subtitles-cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -261,16 +294,25 @@ async fn test_rename_builtin_movies_library() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let screens: Vec<Value> = serde_json::from_slice(&body_bytes).unwrap();
-    let titles: Vec<&str> = screens.iter().map(|s| s["title"].as_str().unwrap()).collect();
+    let titles: Vec<&str> = screens
+        .iter()
+        .map(|s| s["title"].as_str().unwrap())
+        .collect();
 
     println!("Current screens after renaming Movies: {:?}", titles);
 
     // Assert that "Cinema" exists
     assert!(titles.contains(&"Cinema"), "Screens must contain 'Cinema'");
     // Assert that old screen "Movies" DOES NOT exist
-    assert!(!titles.contains(&"Movies"), "Old screen 'Movies' must NOT remain in screens: {:?}", titles);
+    assert!(
+        !titles.contains(&"Movies"),
+        "Old screen 'Movies' must NOT remain in screens: {:?}",
+        titles
+    );
 }
 
 #[tokio::test]
@@ -279,7 +321,9 @@ async fn test_delete_library_cleans_up_screen() {
     let db_path = dir.path().join("kadr.db");
 
     let pool = create_pool(&db_path, 2).expect("failed to create pool");
-    initialize_database(&pool).await.expect("failed to initialize db");
+    initialize_database(&pool)
+        .await
+        .expect("failed to initialize db");
 
     let user_repo = UserRepository::new(pool.clone());
     let playback_repo = PlaybackRepository::new(pool.clone());
@@ -297,12 +341,17 @@ async fn test_delete_library_cleans_up_screen() {
     user_repo.create(&admin_user).await.expect("create admin");
 
     let jwt_svc = JwtService::new("test-secret-with-sufficient-entropy-for-hmac-sha256", 3600);
-    let admin_token = jwt_svc.generate_token(&admin_user).expect("generate admin token");
+    let admin_token = jwt_svc
+        .generate_token(&admin_user)
+        .expect("generate admin token");
 
     let rate_limiter = RateLimiter::new(100, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
 
     let temp_cache = dir.path().join("subtitles-cache");
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
@@ -340,7 +389,9 @@ async fn test_delete_library_cleans_up_screen() {
         "Anime",
         vec![],
     );
-    layout_registry.save_screen(anime_screen, &screens_dir).unwrap();
+    layout_registry
+        .save_screen(anime_screen, &screens_dir)
+        .unwrap();
 
     let (dummy_tx, _) = tokio::sync::mpsc::channel(1);
     let dummy_pipeline = Arc::new(kadr_ingest::watcher::IngestPipeline::new(false, None));
@@ -387,13 +438,23 @@ async fn test_delete_library_cleans_up_screen() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let screens: Vec<Value> = serde_json::from_slice(&body_bytes).unwrap();
-    let titles: Vec<&str> = screens.iter().map(|s| s["title"].as_str().unwrap()).collect();
+    let titles: Vec<&str> = screens
+        .iter()
+        .map(|s| s["title"].as_str().unwrap())
+        .collect();
 
     // Assert Anime is deleted from screens and disk
-    assert!(!titles.contains(&"Anime"), "Screens must NOT contain 'Anime': {:?}", titles);
-    assert!(!screens_dir.join("lib-anime-999.json").exists(), "lib-anime-999.json must be deleted from disk");
+    assert!(
+        !titles.contains(&"Anime"),
+        "Screens must NOT contain 'Anime': {:?}",
+        titles
+    );
+    assert!(
+        !screens_dir.join("lib-anime-999.json").exists(),
+        "lib-anime-999.json must be deleted from disk"
+    );
 }
-
-
