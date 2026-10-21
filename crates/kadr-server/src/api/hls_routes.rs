@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Extension, Path, Query},
+    extract::{Extension, Path, Query, RawQuery},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get},
@@ -47,6 +47,7 @@ pub fn parse_segment_seq(segment: &str) -> Option<u32> {
 pub async fn master_playlist(
     Path(item_id): Path<i64>,
     Query(query): Query<HlsQuery>,
+    RawQuery(raw_query): RawQuery,
     unlocked: UnlockedLibraries,
     Extension(media_repo): Extension<MediaItemRepository>,
     Extension(lib_repo): Extension<LibraryRepository>,
@@ -169,6 +170,22 @@ pub async fn master_playlist(
         }
     };
 
+    let auth_params: Vec<&str> = raw_query
+        .as_deref()
+        .unwrap_or_default()
+        .split('&')
+        .filter(|p| {
+            p.starts_with("token=")
+                || p.starts_with("unlocked=")
+                || p.starts_with("unlock_token=")
+        })
+        .collect();
+    let query_suffix = if auth_params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", auth_params.join("&"))
+    };
+
     let mut rewritten = String::with_capacity(playlist_content.len() + 256);
     for line in playlist_content.lines() {
         let trimmed = line.trim();
@@ -179,8 +196,8 @@ pub async fn master_playlist(
                 .unwrap_or(trimmed);
             let _ = writeln!(
                 rewritten,
-                "/api/v1/media/{}/hls/sessions/{}/{}",
-                item_id, session.session_id, filename
+                "/api/v1/media/{}/hls/sessions/{}/{}{}",
+                item_id, session.session_id, filename, query_suffix
             );
         } else {
             rewritten.push_str(line);
