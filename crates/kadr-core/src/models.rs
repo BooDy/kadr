@@ -65,6 +65,35 @@ pub struct TechnicalInfo {
     pub container: Option<String>,
 }
 
+impl TechnicalInfo {
+    pub fn height(&self) -> Option<u32> {
+        let res = self.resolution.as_deref()?.to_lowercase();
+        if res.contains("4k") || res.contains("2160") {
+            return Some(2160);
+        }
+        if res.contains("1080") {
+            return Some(1080);
+        }
+        if res.contains("720") {
+            return Some(720);
+        }
+        if res.contains("480") {
+            return Some(480);
+        }
+        if let Some((_, h)) = res.split_once('x') {
+            if let Ok(val) = h.trim_end_matches('p').parse::<u32>() {
+                return Some(val);
+            }
+        }
+        if let Some(val) = res.strip_suffix('p') {
+            if let Ok(val) = val.parse::<u32>() {
+                return Some(val);
+            }
+        }
+        res.parse::<u32>().ok()
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MediaMetadata {
     pub director: Option<String>,
