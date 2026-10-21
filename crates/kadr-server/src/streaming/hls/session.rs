@@ -36,6 +36,7 @@ pub struct TranscodeSession {
     pub last_accessed_at: Arc<AtomicU64>,
     pub child_process: Arc<Mutex<Option<tokio::process::Child>>>,
     pub params: TranscodeParameters,
+    pub last_stderr: Arc<Mutex<Vec<u8>>>,
 }
 
 impl std::fmt::Debug for TranscodeSession {
@@ -61,6 +62,11 @@ impl TranscodeSession {
             .unwrap_or_default()
             .as_secs();
         self.last_accessed_at.store(now, Ordering::Relaxed);
+    }
+
+    pub async fn stderr_diagnostics(&self) -> String {
+        let buf = self.last_stderr.lock().await;
+        String::from_utf8_lossy(&buf).trim().to_string()
     }
 }
 
@@ -150,13 +156,39 @@ impl HlsSessionManager {
             .stderr(std::process::Stdio::piped())
             .spawn();
 
-        let child = match spawn_res {
+        let mut child = match spawn_res {
             Ok(c) => c,
             Err(err) => {
                 let _ = tokio::fs::remove_dir_all(&session_dir).await;
                 return Err(HlsError::ProcessSpawn(err));
             }
         };
+
+        let last_stderr = Arc::new(Mutex::new(Vec::new()));
+        if let Some(mut stderr) = child.stderr.take() {
+            let last_stderr_clone = Arc::clone(&last_stderr);
+            let session_id_clone = session_id.clone();
+            tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = stderr.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    tracing::trace!(
+                        session_id = %session_id_clone,
+                        stderr = %String::from_utf8_lossy(&buf[..n])
+                    );
+                    let mut stderr_guard = last_stderr_clone.lock().await;
+                    stderr_guard.extend_from_slice(&buf[..n]);
+                    const MAX_STDERR_BYTES: usize = 4096;
+                    if stderr_guard.len() > MAX_STDERR_BYTES {
+                        let excess = stderr_guard.len() - MAX_STDERR_BYTES;
+                        stderr_guard.drain(..excess);
+                    }
+                }
+            });
+        }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -171,6 +203,7 @@ impl HlsSessionManager {
             last_accessed_at: Arc::new(AtomicU64::new(now)),
             child_process: Arc::new(Mutex::new(Some(child))),
             params: params.clone(),
+            last_stderr,
         });
 
         sessions.insert(session_id, session.clone());
@@ -208,10 +241,14 @@ impl HlsSessionManager {
                                 }
                             }
                         }
-                        return Err(HlsError::ProcessExited(format!(
-                            "ffmpeg exited with status {}",
-                            status
-                        )));
+                        let diag = session.stderr_diagnostics().await;
+                        let msg = if diag.is_empty() {
+                            format!("ffmpeg exited with status {}", status)
+                        } else {
+                            format!("ffmpeg exited with status {}: {}", status, diag)
+                        };
+                        tracing::error!(session_id = %session.session_id, "{msg}");
+                        return Err(HlsError::ProcessExited(msg));
                     }
                 }
             }
@@ -257,10 +294,14 @@ impl HlsSessionManager {
                                 }
                             }
                         }
-                        return Err(HlsError::ProcessExited(format!(
-                            "ffmpeg exited with status {}",
-                            status
-                        )));
+                        let diag = session.stderr_diagnostics().await;
+                        let msg = if diag.is_empty() {
+                            format!("ffmpeg exited with status {}", status)
+                        } else {
+                            format!("ffmpeg exited with status {}: {}", status, diag)
+                        };
+                        tracing::error!(session_id = %session.session_id, "{msg}");
+                        return Err(HlsError::ProcessExited(msg));
                     }
                 }
             }
@@ -362,6 +403,7 @@ impl HlsSessionManager {
             last_accessed_at: Arc::new(AtomicU64::new(now)),
             child_process: Arc::new(Mutex::new(None)),
             params: TranscodeParameters::default(),
+            last_stderr: Arc::new(Mutex::new(Vec::new())),
         });
 
         self.sessions

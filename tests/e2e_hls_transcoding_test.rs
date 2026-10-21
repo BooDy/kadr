@@ -97,8 +97,10 @@ mod test_helpers {
         );
 
         let transcode_dir = library_dir.join("transcodes");
-        let mut settings = TranscodingSettings::default();
-        settings.temp_dir = transcode_dir;
+        let settings = TranscodingSettings {
+            temp_dir: transcode_dir,
+            ..Default::default()
+        };
         let session_mgr = Arc::new(HlsSessionManager::new(settings));
         let app = app.layer(axum::Extension(session_mgr));
 

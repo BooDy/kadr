@@ -65,6 +65,7 @@ async fn test_transcode_session_touch() {
         last_accessed_at: Arc::new(AtomicU64::new(100)),
         child_process: Arc::new(Mutex::new(None)),
         params: TranscodeParameters::default(),
+        last_stderr: Arc::new(Mutex::new(Vec::new())),
     };
 
     assert_eq!(session.last_accessed_at.load(Ordering::Relaxed), 100);
