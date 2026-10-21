@@ -9,6 +9,7 @@ use axum::{
 use kadr_core::transcoding::TranscodeParameters;
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 use serde::Deserialize;
+use std::fmt::Write;
 use std::sync::Arc;
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
@@ -176,10 +177,11 @@ pub async fn master_playlist(
                 .file_name()
                 .and_then(|f| f.to_str())
                 .unwrap_or(trimmed);
-            rewritten.push_str(&format!(
-                "/api/v1/media/{}/hls/sessions/{}/{}\n",
+            let _ = writeln!(
+                rewritten,
+                "/api/v1/media/{}/hls/sessions/{}/{}",
                 item_id, session.session_id, filename
-            ));
+            );
         } else {
             rewritten.push_str(line);
             rewritten.push('\n');

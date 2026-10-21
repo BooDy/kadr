@@ -32,6 +32,10 @@ path = "../../tests/e2e_events_telemetry_test.rs"
 name = "e2e_web_serving_test"
 path = "../../tests/e2e_web_serving_test.rs"
 
+[[test]]
+name = "e2e_hls_transcoding_test"
+path = "../../tests/e2e_hls_transcoding_test.rs"
+
 [dependencies]
 kadr-core = { path = "../kadr-core" }
 kadr-storage = { path = "../kadr-storage" }
