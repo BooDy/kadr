@@ -170,3 +170,13 @@ fn test_build_ffmpeg_hls_args_hwaccel_nvenc() {
     assert!(args.contains(&"-c:v".to_string()));
     assert!(args.contains(&"h264_nvenc".to_string()));
 }
+
+#[test]
+fn test_technical_info_height_split_once() {
+    let tech = TechnicalInfo {
+        resolution: Some("720x480".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(tech.height(), Some(480));
+}
+

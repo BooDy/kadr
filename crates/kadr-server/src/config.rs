@@ -40,6 +40,22 @@ pub struct LibraryConfig {
     pub media_type: MediaType,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranscodingSettings {
+    #[serde(default = "default_transcoding_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_ffmpeg_path")]
+    pub ffmpeg_path: String,
+    #[serde(default = "default_max_concurrent_transcodes")]
+    pub max_concurrent_transcodes: usize,
+    #[serde(default = "default_inactivity_timeout_secs")]
+    pub inactivity_timeout_secs: u64,
+    #[serde(default = "default_temp_dir")]
+    pub temp_dir: PathBuf,
+    #[serde(default = "default_hwaccel")]
+    pub hwaccel: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -50,6 +66,8 @@ pub struct AppConfig {
     pub scanner: ScannerSettings,
     #[serde(default)]
     pub libraries: Vec<LibraryConfig>,
+    #[serde(default)]
+    pub transcoding: TranscodingSettings,
 }
 
 fn default_server_name() -> String {
@@ -103,6 +121,38 @@ impl Default for ScannerSettings {
         Self {
             debounce_millis: default_debounce(),
             use_ffprobe: default_ffprobe(),
+        }
+    }
+}
+
+fn default_transcoding_enabled() -> bool {
+    true
+}
+fn default_ffmpeg_path() -> String {
+    "ffmpeg".to_string()
+}
+fn default_max_concurrent_transcodes() -> usize {
+    2
+}
+fn default_inactivity_timeout_secs() -> u64 {
+    60
+}
+fn default_temp_dir() -> PathBuf {
+    PathBuf::from("/tmp/kadr/transcodes")
+}
+fn default_hwaccel() -> String {
+    "none".to_string()
+}
+
+impl Default for TranscodingSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_transcoding_enabled(),
+            ffmpeg_path: default_ffmpeg_path(),
+            max_concurrent_transcodes: default_max_concurrent_transcodes(),
+            inactivity_timeout_secs: default_inactivity_timeout_secs(),
+            temp_dir: default_temp_dir(),
+            hwaccel: default_hwaccel(),
         }
     }
 }
