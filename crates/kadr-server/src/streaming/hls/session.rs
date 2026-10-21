@@ -201,8 +201,12 @@ impl HlsSessionManager {
                 if let Some(child) = child_guard.as_mut() {
                     if let Ok(Some(status)) = child.try_wait() {
                         if tokio::fs::try_exists(&playlist_path).await.unwrap_or(false) {
-                            session.touch();
-                            return Ok(playlist_path);
+                            if let Ok(meta) = tokio::fs::metadata(&playlist_path).await {
+                                if meta.len() > 0 {
+                                    session.touch();
+                                    return Ok(playlist_path);
+                                }
+                            }
                         }
                         return Err(HlsError::ProcessExited(format!(
                             "ffmpeg exited with status {}",
@@ -246,8 +250,12 @@ impl HlsSessionManager {
                 if let Some(child) = child_guard.as_mut() {
                     if let Ok(Some(status)) = child.try_wait() {
                         if tokio::fs::try_exists(&segment_path).await.unwrap_or(false) {
-                            session.touch();
-                            return Ok(segment_path);
+                            if let Ok(meta) = tokio::fs::metadata(&segment_path).await {
+                                if meta.len() > 0 {
+                                    session.touch();
+                                    return Ok(segment_path);
+                                }
+                            }
                         }
                         return Err(HlsError::ProcessExited(format!(
                             "ffmpeg exited with status {}",

@@ -11,4 +11,5 @@ pub mod subtitles;
 pub mod telemetry;
 
 pub use events::EventBus;
+pub use streaming::hls::HlsSessionManager;
 pub use telemetry::TelemetryCollector;

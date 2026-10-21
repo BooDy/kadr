@@ -3,6 +3,7 @@ pub mod auth_routes;
 pub mod config_routes;
 pub mod discovery_routes;
 pub mod events_routes;
+pub mod hls_routes;
 pub mod item_routes;
 pub mod library_routes;
 pub mod playback;
@@ -54,7 +55,19 @@ pub fn create_router_with_ingest(
     config: Arc<tokio::sync::RwLock<crate::config::AppConfig>>,
     identity: Arc<ServerIdentity>,
 ) -> Router {
+    let transcoding_settings = config
+        .try_read()
+        .map(|c| c.transcoding.clone())
+        .unwrap_or_default();
+    let hls_manager = Arc::new(crate::streaming::hls::HlsSessionManager::new(
+        transcoding_settings.clone(),
+    ));
+    if tokio::runtime::Handle::try_current().is_ok() && transcoding_settings.enabled {
+        hls_manager.clone().start_reaper();
+    }
+
     let router = Router::new()
+        .merge(hls_routes::hls_routes())
         // Public discovery route
         .route("/api/v1/discovery", get(discovery_routes::get_discovery))
         // Public profile list & auth
@@ -211,7 +224,22 @@ pub fn create_router_with_ingest(
         .layer(Extension(ingest_tx))
         .layer(Extension(pipeline))
         .layer(Extension(config))
-        .layer(Extension(identity));
+        .layer(Extension(identity))
+        .layer(axum::middleware::from_fn(
+            move |mut req: axum::extract::Request, next: axum::middleware::Next| {
+                let default_mgr = hls_manager.clone();
+                async move {
+                    if req
+                        .extensions()
+                        .get::<Arc<crate::streaming::hls::HlsSessionManager>>()
+                        .is_none()
+                    {
+                        req.extensions_mut().insert(default_mgr);
+                    }
+                    next.run(req).await
+                }
+            },
+        ));
 
     mount_web_serving(router, std::path::Path::new("web/dist"))
 }
