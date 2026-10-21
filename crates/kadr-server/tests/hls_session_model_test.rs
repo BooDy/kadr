@@ -1,3 +1,4 @@
+use kadr_core::transcoding::TranscodeParameters;
 use kadr_server::config::{AppConfig, TranscodingSettings};
 use kadr_server::streaming::hls::session::{HlsSessionManager, TranscodeSession};
 use std::path::PathBuf;
@@ -17,7 +18,7 @@ async fn test_hls_session_manager_init_and_limits() {
     };
 
     let manager = HlsSessionManager::new(settings.clone());
-    assert_eq!(manager.settings().enabled, true);
+    assert!(manager.settings().enabled);
     assert_eq!(manager.settings().max_concurrent_transcodes, 2);
     assert_eq!(manager.active_session_count().await, 0);
     assert_eq!(manager.active_full_transcode_count().await, 0);
@@ -63,6 +64,7 @@ async fn test_transcode_session_touch() {
         is_full_video_transcode: true,
         last_accessed_at: Arc::new(AtomicU64::new(100)),
         child_process: Arc::new(Mutex::new(None)),
+        params: TranscodeParameters::default(),
     };
 
     assert_eq!(session.last_accessed_at.load(Ordering::Relaxed), 100);

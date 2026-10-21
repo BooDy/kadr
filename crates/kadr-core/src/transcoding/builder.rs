@@ -54,11 +54,7 @@ pub fn evaluate_transcode(
     params: &TranscodeParameters,
     hwaccel: Option<&str>,
 ) -> TranscodeDecision {
-    let source_video_codec = tech
-        .video_codec
-        .as_deref()
-        .unwrap_or("")
-        .to_lowercase();
+    let source_video_codec = tech.video_codec.as_deref().unwrap_or("").to_lowercase();
     let target_video_codec = params.video_codec.to_lowercase();
 
     let height_ok = match (tech.height(), params.max_height) {
@@ -76,11 +72,7 @@ pub fn evaluate_transcode(
         }
     };
 
-    let source_audio_codec = tech
-        .audio_codec
-        .as_deref()
-        .unwrap_or("")
-        .to_lowercase();
+    let source_audio_codec = tech.audio_codec.as_deref().unwrap_or("").to_lowercase();
     let target_audio_codec = params.audio_codec.to_lowercase();
 
     let audio_action = if source_audio_codec == target_audio_codec {
@@ -105,11 +97,7 @@ pub fn build_ffmpeg_hls_args(
     decision: &TranscodeDecision,
     params: &TranscodeParameters,
 ) -> Vec<String> {
-    let mut args: Vec<String> = vec![
-        "-hide_banner".into(),
-        "-loglevel".into(),
-        "error".into(),
-    ];
+    let mut args: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
 
     if params.start_time > 0.0 {
         args.push("-ss".into());

@@ -179,4 +179,3 @@ fn test_technical_info_height_split_once() {
     };
     assert_eq!(tech.height(), Some(480));
 }
-

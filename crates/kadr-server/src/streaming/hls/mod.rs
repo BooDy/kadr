@@ -1,3 +1,3 @@
 pub mod session;
 
-pub use session::{HlsSessionManager, TranscodeSession};
+pub use session::{HlsError, HlsSessionManager, TranscodeSession};
