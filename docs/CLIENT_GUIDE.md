@@ -11,7 +11,7 @@ Welcome to the **Kadr Client Developer Guide**. This document is the definitive 
 3. [Authentication, User Profiles & Private Libraries](#3-authentication-user-profiles--private-libraries)
 4. [Declarative Screen Layout Engine (AST)](#4-declarative-screen-layout-engine-ast)
 5. [Media Details & Direct Folder Navigation](#5-media-details--direct-folder-navigation)
-6. [Zero-Transcode Video Streaming & Scrobbling](#6-zero-transcode-video-streaming--scrobbling)
+6. [Video Streaming, HLS Transcoding Fallback & Scrobbling](#6-video-streaming-hls-transcoding-fallback--scrobbling)
 7. [Subtitles & Media Assets](#7-subtitles--media-assets)
 8. [Hierarchical Folder Browsing & Real-Time Events (SSE)](#8-hierarchical-folder-browsing--real-time-events-sse)
 9. [Client Architecture Recipes & Best Practices](#9-client-architecture-recipes--best-practices)
@@ -21,14 +21,15 @@ Welcome to the **Kadr Client Developer Guide**. This document is the definitive 
 
 ## 1. Overview & Protocol Conventions
 
-Kadr is a high-performance personal media streaming server written in Rust with the Axum web framework and SQLite (WAL mode). Its architecture differs fundamentally from legacy media servers like Plex or Emby: Kadr adheres strictly to a **zero-transcode direct-play philosophy**.
+Kadr is a high-performance personal media streaming server written in Rust with the Axum web framework and SQLite (WAL mode). Its architecture is designed for **instant direct-play streaming**, backed by an **on-demand HLS remuxing/transcoding fallback engine** for platforms (such as Samsung Tizen OS or web browsers) that encounter unsupported codecs or containers.
 
 ```mermaid
 flowchart LR
     Client["Client App\n(TV / Mobile / Web)"] -- "1. Autodiscover" --> KadrServer["Kadr Media Server\n(Rust Axum Engine)"]
     Client -- "2. Authenticate & Profile PIN" --> KadrServer
     Client -- "3. Fetch Hydrated Screen AST" --> KadrServer
-    Client -- "4. HTTP 206 Partial Content (Bytes)" --> Storage[("Disk Storage\nMKV / MP4 / WebM")]
+    Client -- "4a. Direct Play: HTTP 206 (Bytes)" --> Storage[("Disk Storage\nMKV / MP4 / WebM")]
+    Client -- "4b. Fallback: HLS Master M3U8" --> Transcoder["HlsSessionManager\n(FFmpeg Remux / Transcode)"]
     Client -- "5. 10s Scrobble Heartbeat" --> KadrServer
     KadrServer -. "6. Server-Sent Events (SSE)" .-> Client
 ```
@@ -60,15 +61,14 @@ http://<server-ip>:8492/api/v1
 > - `?token=<jwt_token>`
 > - `?unlock_token=<unlock_token>` or `?unlocked=<unlock_token>`
 
-### Direct-Play Streaming Philosophy
+### Direct-Play First & Universal Fallback Architecture
 
-Kadr **never transcodes video or audio on the server**.
-1. **Server Efficiency**: The server acts as an ultra-fast, zero-copy, bounded I/O pipe serving raw container bytes using Tokio asynchronous streams (64 KB chunk size) and standard HTTP 206 range requests.
-2. **Client Responsibility**: The client device hardware decodes the video and audio streams natively:
-   - **Android / Google TV / Fire TV**: Use **ExoPlayer** (`media3-exoplayer`) with hardware decoders (`MediaCodec`).
-   - **Apple TV / iOS / macOS**: Use **AVPlayer** (`AVPlayerItem`).
-   - **Desktop**: Embed **libmpv** or **VLCKit** for universal container support (MKV, MP4, AVI, WebM).
-   - **Web Browsers**: Native HTML5 `<video>` for browser-compatible formats (H.264/AAC in MP4, VP9/Opus in WebM).
+Kadr prioritizes **zero-copy direct-play streaming**, backed by an **on-demand HLS fallback pipeline**:
+1. **Direct Stream (Default)**: The server acts as an ultra-fast, zero-copy, bounded I/O pipe serving raw container bytes using Tokio asynchronous streams (64 KB chunk size) and standard HTTP 206 range requests (`GET /api/v1/stream/{id}`).
+2. **Client Capability Probing**: Client devices inspect item `technical` metadata (`container`, `video_codec`, `audio_codec`, `resolution`) returned by `GET /api/v1/items/{id}`.
+3. **Universal HLS Fallback**: If the client lacks native support for the container or codecs (for example, Samsung Tizen TVs lacking DTS/TrueHD decoders or browsers lacking MKV support), the client requests the dynamic HLS master playlist (`GET /api/v1/media/{id}/hls/master.m3u8`).
+   - **Smart Stream Copy**: When video is already compatible (e.g. H.264), the server copies the video track (`-c:v copy`) and only transcodes the audio to AAC, keeping server CPU usage near 0% and starting playback immediately.
+   - **Full Transcode**: When video is unsupported (e.g. HEVC 10-bit or AV1 on older screens), the server transcodes video via `libx264` (or hardware acceleration if configured).
 
 ---
 
@@ -634,7 +634,114 @@ Cache-Control: no-cache
 
 ---
 
-### 6.2 Playback Session Lifecycle & Scrobble Synchronization
+### 6.2 Client Format Inspection: What to Look For
+
+Before initiating playback, the client should inspect the `technical` metadata block returned by `GET /api/v1/items/{item_id}`:
+
+```json
+{
+  "technical": {
+    "duration_seconds": 9960,
+    "resolution": "3840x2160",
+    "video_codec": "hevc",
+    "audio_codec": "dts",
+    "audio_channels": 6,
+    "container": "mkv"
+  }
+}
+```
+
+#### What Attributes to Check:
+1. **`audio_codec`**: Check if the device has a native decoder for the audio format.
+   - **Samsung Tizen OS**: **Lacks decoders for DTS, DTS-HD, and Dolby TrueHD**. Playing these directly results in silent video or player fatal error.
+   - **Browsers (Chrome / Firefox)**: Lack support for DTS, TrueHD, and AC3/E-AC3 (Dolby Digital).
+2. **`container`**: Check if the client's player pipeline supports the container file extension.
+   - **Tizen HTML5 `<video>` / AVPlay**: Often fails on `.mkv` or `.avi` files, but natively plays HLS (`.m3u8`) and `.mp4`.
+   - **Web Browsers**: Native HTML5 `<video>` supports `.mp4` and `.webm`, but **rejects `.mkv`**.
+3. **`video_codec` & `resolution`**:
+   - Check if the screen hardware can decode the resolution and profile (e.g. older 1080p Smart TVs cannot decode 4K HEVC 10-bit or AV1).
+
+#### Client Decision Flowchart:
+
+```mermaid
+flowchart TD
+    Start["User clicks Play on Media Item"] --> FetchDetails["Check item.technical metadata"]
+    FetchDetails --> CheckAudio{"Is audio_codec supported?<br/>(e.g., Not DTS/TrueHD on Tizen)"}
+    CheckAudio -- "No (Unsupported Audio)" --> FallbackHLS["Use HLS Fallback URL<br/>/api/v1/media/:id/hls/master.m3u8"]
+    CheckAudio -- "Yes" --> CheckContainer{"Is container supported?<br/>(e.g., Not MKV on browser/Tizen)"}
+    CheckContainer -- "No (Unsupported Container)" --> FallbackHLS
+    CheckContainer -- "Yes" --> CheckVideo{"Is video_codec & resolution supported?"}
+    CheckVideo -- "No" --> FallbackHLS
+    CheckVideo -- "Yes (Direct Play Compatible)" --> DirectPlay["Use Direct Stream URL<br/>/api/v1/stream/:id"]
+
+    FallbackHLS --> TranscodeMode{"Server Action"}
+    TranscodeMode -->|"Video Compatible (e.g. H.264)"| SmartCopy["Smart Stream Copy (-c:v copy)<br/>Transcode only Audio to AAC<br/>0% CPU, Instant Start"]
+    TranscodeMode -->|"Video Incompatible (e.g. HEVC 10-bit)"| FullTranscode["Transcode Video (libx264)<br/>Scale resolution if max_height requested"]
+```
+
+---
+
+### 6.3 Universal HLS Transcoding & Remuxing Fallback
+
+When direct play is not possible, the client points its player (AVPlay, Hls.js, or native HLS player) to Kadr's HLS master playlist endpoint.
+
+#### 1. Master Playlist Request
+- **Method & Route**: `GET /api/v1/media/{item_id}/hls/master.m3u8`
+- **Authentication**: `Authorization: Bearer <token>` or `?token=<token>`
+- **Unlock Token (Private Libraries)**: `X-Library-Unlock-Token: <token>` or `?unlock_token=<token>`
+
+##### Query Parameters:
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `video_codec` | String | `"h264"` | Target video codec required by the client (`"h264"` or `"hevc"`). |
+| `audio_codec` | String | `"aac"` | Target audio codec required by the client (`"aac"`, `"ac3"`, `"eac3"`). |
+| `max_height` | Integer | Source height | Optional max resolution height: `1080`, `720`, `480`. Automatically scales video down if source exceeds this. |
+| `audio_track` | Integer | `0` | Stream index of the audio track to play. |
+| `start_time` | Float | `0.0` | Initial seek offset in seconds for instant start at a resume position. |
+
+##### Example Request (Tizen TV playing an MKV with DTS audio):
+```http
+GET /api/v1/media/101/hls/master.m3u8?video_codec=h264&audio_codec=aac&max_height=1080&token=eyJhbGci... HTTP/1.1
+Host: 192.168.1.50:8492
+```
+
+##### Response (`200 OK`):
+```http
+HTTP/1.1 200 OK
+Content-Type: application/vnd.apple.mpegurl
+Cache-Control: no-cache
+
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:4.000,
+/api/v1/media/101/hls/sessions/e8b6238b-d72b-47e1-85b8-50fa973ff52c/segment_0000.ts
+#EXTINF:4.000,
+/api/v1/media/101/hls/sessions/e8b6238b-d72b-47e1-85b8-50fa973ff52c/segment_0001.ts
+```
+
+#### 2. Segment Delivery
+- **Method & Route**: `GET /api/v1/media/{item_id}/hls/sessions/{session_id}/segment_{seq}.ts`
+- **Response**: `200 OK` (`Content-Type: video/mp2t`)
+- **Characteristics**:
+  - Validates `session_id` strictly as a UUID and `seq` as a `u32` (eliminating path traversal).
+  - Streams in bounded 64 KB chunks via Tokio `ReaderStream`.
+  - Automatically updates the session's `last_accessed_at` timestamp to keep the session alive.
+
+#### 3. Automatic Inactivity Cleanup
+- The server runs a background reaper task every 15 seconds.
+- If a client stops playing or closes the app, the session goes idle. When `now - last_accessed_at > 60 seconds`, the server automatically terminates the child `ffmpeg` process and deletes all temporary segment files from disk.
+
+#### 4. Explicit Session Teardown (Optional)
+When a user navigates away or stops playback, the client can proactively release server resources immediately:
+- **Method & Route**: `DELETE /api/v1/media/{item_id}/hls/sessions/{session_id}`
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**: `204 No Content`
+
+---
+
+### 6.4 Playback Session Lifecycle & Scrobble Synchronization
 
 To maintain resume positions across devices and synchronize Continue Watching carousels, clients implement a three-step session tracking protocol:
 
@@ -1017,21 +1124,65 @@ const intervalId = window.setInterval(async () => {
 }, 10000);
 ```
 
+#### Samsung Smart TV (Tizen OS + AVPlay / Hls.js)
+
+```javascript
+// 1. Inspect item.technical before playback
+function getPlaybackUrl(serverUrl, item, token) {
+  const tech = item.technical || {};
+  const container = (tech.container || '').toLowerCase();
+  const audioCodec = (tech.audio_codec || '').toLowerCase();
+  const videoCodec = (tech.video_codec || '').toLowerCase();
+
+  // Samsung Tizen does NOT support DTS, DTS-HD, or TrueHD audio.
+  // HTML5 video and AVPlay often struggle with raw MKV containers.
+  const isAudioUnsupported = ['dts', 'dts-hd', 'truehd'].includes(audioCodec);
+  const isContainerUnsupported = ['mkv', 'avi'].includes(container);
+  const isVideoUnsupported = !['h264', 'hevc'].includes(videoCodec);
+
+  if (isAudioUnsupported || isContainerUnsupported || isVideoUnsupported) {
+    // Universal HLS Fallback:
+    // Video is copied (-c:v copy) if compatible (e.g. H.264), audio is transcoded to AAC.
+    return `${serverUrl}/api/v1/media/${item.id}/hls/master.m3u8?video_codec=h264&audio_codec=aac&max_height=1080&token=${encodeURIComponent(token)}`;
+  }
+
+  // Direct Play compatible
+  return `${serverUrl}/api/v1/stream/${item.id}?token=${encodeURIComponent(token)}`;
+}
+
+// 2. Play using Tizen AVPlay API
+try {
+  webapis.avplay.open(getPlaybackUrl(serverUrl, item, token));
+  webapis.avplay.setDisplayRect(0, 0, 1920, 1080);
+  webapis.avplay.prepareAsync(() => {
+    if (resumePositionSeconds > 0) {
+      webapis.avplay.seekTo(resumePositionSeconds * 1000);
+    }
+    webapis.avplay.play();
+  });
+} catch (e) {
+  console.error("AVPlay error:", e);
+}
+```
+
 ---
 
 ## 10. Error Handling & HTTP Status Matrix
 
 | HTTP Status | Error Identifier | Cause | Client Action |
 | :--- | :--- | :--- | :--- |
-| `400 Bad Request` | Validation Error | Malformed JSON, empty PIN, or invalid parameter. | Validate user input before submission. |
+| `400 Bad Request` | Validation Error | Malformed JSON, empty PIN, or invalid parameter (e.g. non-UUID session ID). | Validate user input before submission. |
 | `401 Unauthorized` | Invalid PIN / Session Expired | PIN incorrect or JWT token expired. | Prompt user for profile PIN or re-login. |
 | `403 Forbidden` | `LIBRARY_LOCKED` | Request targets an item inside a private library that has not been unlocked. | Present 4-digit Library PIN dialog, submit to `/unlock`, and retry. |
-| `404 Not Found` | Not Found | Media item, subtitle, library, or screen does not exist. | Display a friendly error state; return to catalog. |
+| `404 Not Found` | Not Found | Media item, subtitle, library, or transcode session does not exist. | Display a friendly error state; return to catalog. |
 | `416 Range Not Satisfiable` | Unsatisfiable Range | Video seek requested a byte offset beyond the file's total size. | Clamp seek offset to `[0, total_size - 1]`. |
 | `429 Too Many Requests` | Rate Limited | Exceeded 5 consecutive failed PIN attempts. | Display countdown timer using `retry_after_seconds`. |
-| `500 Internal Error` | Database / Disk Error | Unexpected server error. | Log error and offer retry button. |
+| `501 Not Implemented` | `FFMPEG_UNAVAILABLE` | Server host does not have `ffmpeg` installed to transcode HLS fallback. | Install ffmpeg on server or direct-play compatible formats. |
+| `503 Service Unavailable` | `TRANSCODE_CAPACITY_EXCEEDED` | Server reached `max_concurrent_transcodes` limit for full video re-encodes. | Notify user to wait or select a direct-play compatible title. |
+| `500 Internal Error` | Database / Disk / Transcode Error | Unexpected server or ffmpeg process error. | Log error and offer retry button. |
 
 ---
 
-*Document Version: 1.0.0 (Kadr 0.1.1-alpha)*  
+*Document Version: 1.1.0 (Kadr 0.1.1-alpha with Universal HLS Fallback)*  
 *Maintained by the Kadr Core Engineering Team.*
+
