@@ -34,6 +34,7 @@ use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
 };
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 
 #[allow(clippy::too_many_arguments)]
 pub fn create_router_with_ingest(
@@ -239,7 +240,8 @@ pub fn create_router_with_ingest(
                     next.run(req).await
                 }
             },
-        ));
+        ))
+        .layer(CorsLayer::permissive());
 
     mount_web_serving(router, std::path::Path::new("web/dist"))
 }
