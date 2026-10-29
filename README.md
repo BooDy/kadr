@@ -8,7 +8,7 @@
 
   [![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
   [![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
-  [![Version](https://img.shields.io/badge/version-v0.1.1--alpha-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-v0.1.2--alpha-blue.svg)](CHANGELOG.md)
   [![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
   [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
   [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -32,6 +32,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Blazing Fast & Lightweight**: Operates within a strict $\le 30\text{ MB}$ RSS memory envelope under standard multi-client streaming and layout hydration workloads.
 - **Pure-Rust & Portability First**: Zero external C/native runtime dependencies baseline (`reqwest` with `rustls-tls`, pure-Rust crypto via `argon2`, static SQLite engine). Compiles cleanly against `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`.
 - **Zero-Copy HTTP 206 Direct Play**: Axum-based streaming pipeline with 64 KiB chunk buffering supporting single and multipart byte-range requests without whole-file memory allocation.
+- **Universal On-Demand HLS Transcoding & Smart Stream Copy**: Automatic HTTP Live Streaming (HLS) fallback for Smart TVs (such as Samsung Tizen OS) and web players encountering unsupported audio/video codecs (`DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`) or containers (`MKV`, `AVI`). Features zero-CPU remuxing (`-c:v copy -c:a copy`), smart audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with an automatic 15s inactivity reaper.
 - **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (001–004).
 - **Network Autodiscovery & Server Identity**: Zero-conf unauthenticated `/api/v1/discovery` endpoint and persistent server identity configuration for instantaneous client detection across local networks.
 - **Declarative Widget AST Layout Engine**: Single-roundtrip screen hydration (`Home`, `Movies`, `Shows`) powering hero spotlights, horizontal card carousels, and catalog grids with badge computation (`4K`, `NEW`, `RESUME` progress bars).
@@ -102,10 +103,10 @@ The project is organized as a Cargo workspace with four focused crates and a fro
 
 | Directory | Crate / Component | Description |
 |:---|:---|:---|
-| `crates/kadr-core` | `kadr-core` | Shared domain models, Declarative Widget AST definitions, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
+| `crates/kadr-core` | `kadr-core` | Shared domain models, Declarative Widget AST definitions, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
 | `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (001–004), and repositories (`User`, `MediaItem`, `Playback`, `Subtitle`). |
 | `crates/kadr-ingest` | `kadr-ingest` | Filesystem watcher (`notify`), media scanner, ffprobe parser, sidecar subtitle detector, and batch ingestion worker. |
-| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 streaming, AST widget resolver, subtitle delivery service, OpenSubtitles client, SSE event bus, and static web serving. |
+| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, AST widget resolver, subtitle delivery service, OpenSubtitles client, SSE event bus, and static web serving. |
 | `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React. |
 | `tests/` | Workspace Tests | Comprehensive end-to-end user journey tests covering ingestion, auth, streaming, AST resolution, subtitles, events, and web serving. |
 
@@ -113,7 +114,7 @@ The project is organized as a Cargo workspace with four focused crates and a fro
 
 ## Quick Install for Users (Linux)
 
-Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.1.1-alpha`).
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.1.2-alpha`).
 
 ### Option 1: Automated One-Line Installer (Recommended — All Linux Distributions)
 
@@ -133,9 +134,9 @@ Download the appropriate `.deb` package from the [Kadr Releases Page](https://gi
 
 ```bash
 # Install the Debian package (creates 'kadr' user, registers systemd service, installs web app)
-sudo dpkg -i kadr_0.1.1_amd64.deb    # For 64-bit PC / Server
+sudo dpkg -i kadr_0.1.2_amd64.deb    # For 64-bit PC / Server
 # OR
-sudo dpkg -i kadr_0.1.1_arm64.deb    # For Raspberry Pi 4/5 / ARM64
+sudo dpkg -i kadr_0.1.2_arm64.deb    # For Raspberry Pi 4/5 / ARM64
 
 # Start Kadr and enable automatic start on system boot
 sudo systemctl enable --now kadr
@@ -152,8 +153,8 @@ For offline installation on generic Linux distributions:
 
 ```bash
 # 1. Download and extract the standalone bundle from Releases
-tar -xzf kadr-v0.1.1-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.1.1-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.1.2-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.1.2-alpha-x86_64-unknown-linux-musl
 
 # 2. Run the automated installer (installs binary, web assets, and systemd service)
 sudo ./install.sh
@@ -181,7 +182,7 @@ curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh 
 Download the updated package and reinstall with `dpkg`:
 
 ```bash
-sudo dpkg -i kadr_0.1.1_amd64.deb    # or kadr_0.1.1_arm64.deb
+sudo dpkg -i kadr_0.1.2_amd64.deb    # or kadr_0.1.2_arm64.deb
 sudo systemctl restart kadr
 ```
 
@@ -190,8 +191,8 @@ sudo systemctl restart kadr
 Extract the new archive and execute the bundled installer (it automatically detects the active service and upgrades in-place):
 
 ```bash
-tar -xzf kadr-v0.1.1-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.1.1-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.1.2-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.1.2-alpha-x86_64-unknown-linux-musl
 sudo ./install.sh
 ```
 
@@ -234,8 +235,8 @@ sudo ./install.sh
 For maintainers, pushing any semantic version tag triggers the automated build and release pipeline:
 
 ```bash
-git tag -a v0.1.1-alpha -m "Release v0.1.1-alpha"
-git push origin v0.1.1-alpha
+git tag -a v0.1.2-alpha -m "Release v0.1.2-alpha"
+git push origin v0.1.2-alpha
 ```
 
 The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/workflows/release.yml)) will:
@@ -254,7 +255,7 @@ The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/w
 
 - **Rust**: Version `1.80` or later ([install via rustup](https://rustup.rs))
 - **Node.js**: Version `20.x` or later & `npm` (for building the web client)
-- **Optional**: `ffprobe` (for detailed video/audio codec extraction; falls back to metadata inference if omitted)
+- **Optional**: `ffmpeg` & `ffprobe` (for detailed video/audio codec extraction, video thumbnail generation, and on-demand HLS transcoding fallback)
 
 ---
 
@@ -290,6 +291,14 @@ max_readers = 4
 [scanner]
 debounce_millis = 500
 use_ffprobe = true
+
+[transcoding]
+enabled = true
+ffmpeg_path = "ffmpeg"
+max_concurrent_transcodes = 2
+inactivity_timeout_secs = 60
+temp_dir = "/tmp/kadr/transcodes"
+hwaccel = "none" # "none" | "vaapi" | "nvenc"
 
 # Optional media libraries
 [[libraries]]
@@ -346,6 +355,7 @@ cargo test --workspace
 
 # Run full Rust integration tests specifically
 cargo test --test e2e_streaming_auth_test
+cargo test --test e2e_hls_transcoding_test
 cargo test --test e2e_widget_ast_test
 cargo test --test e2e_subtitles_test
 cargo test --test e2e_events_telemetry_test
@@ -398,8 +408,11 @@ All protected endpoints require an `Authorization: Bearer <token>` header, acqui
 - `GET /api/v1/libraries/:id/stream-file` — Stream arbitrary library files (photos, media) within sandboxed paths.
 - `GET /api/v1/fs/directories` — Server-side filesystem directory picker for library creation/editing.
 
-### Video Streaming, Thumbnails & Artwork
+### Video Streaming, HLS Transcoding, Thumbnails & Artwork
 - `GET /api/v1/stream/:item_id` — Zero-copy HTTP 206 range streaming (supports Bearer header and `?token=` query param).
+- `GET /api/v1/media/:item_id/hls/master.m3u8` — On-demand HLS fallback master playlist with codec negotiation (`video_codec`, `audio_codec`, `max_height`, `max_bitrate`, `audio_track`, `start_time`).
+- `GET /api/v1/media/:item_id/hls/sessions/:session_id/segment_:seq.ts` — Stream 4-second MPEG-TS HLS segments (`video/mp2t`) for an active transcode session.
+- `DELETE /api/v1/media/:item_id/hls/sessions/:session_id` — Immediately terminate an active HLS transcode session and clean up temporary segment files.
 - `GET /api/v1/thumbnails/videos/:id` — Pure-Rust video thumbnail extraction and cached delivery.
 - `GET /api/v1/artwork/:item_id/poster` — Stream cached poster artwork (`image/jpeg`, `image/png`, `image/webp`).
 - `GET /api/v1/artwork/:item_id/backdrop` — Stream cached backdrop artwork.
@@ -432,7 +445,7 @@ All protected endpoints require an `Authorization: Bearer <token>` header, acqui
 
 ## Documentation
 
-- [Client Developer Guide](docs/CLIENT_GUIDE.md) — Comprehensive reference for building third-party or native Kadr clients, covering autodiscovery, PIN authentication, declarative layout ASTs, HTTP 206 video playback, scrobbling lifecycle, subtitles, and real-time SSE events.
+- [Client Developer Guide](docs/CLIENT_GUIDE.md) — Comprehensive reference for building third-party or native Kadr clients, covering autodiscovery, PIN authentication, declarative layout ASTs, HTTP 206 Direct Play & HLS fallback streaming, scrobbling lifecycle, subtitles, and real-time SSE events.
 - [Changelog](CHANGELOG.md) — Chronological log of notable additions, improvements, and bug fixes across all versions.
 - [Product Requirements Document](kadr_media_server_prd.md) — Architecture requirements, design philosophy, and technical specifications.
 - [UI Theme & Design Guidelines](theme.md) — Dark cinema color palette, typography scales, and 10-foot TV UI focus ring specifications.

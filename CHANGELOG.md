@@ -5,6 +5,19 @@ All notable changes to the Kadr media server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.2-alpha] - 2026-10-29
+
+### Added
+- **On-Demand HLS Transcoding & Universal Playback Fallback**: Added universal HTTP Live Streaming (HLS) fallback pipeline for Smart TVs (such as Samsung Tizen OS) and web clients encountering unsupported audio/video codecs or container formats (`MKV`, `AVI`, `DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`).
+- **Smart Stream Copy & Transcode Decision Engine**: Implemented `TranscodeDecisionEngine` and `FFmpegCommandBuilder` in `kadr-core` supporting zero-CPU pure remuxing (`-c:v copy -c:a copy`), audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with resolution downscaling.
+- **HLS Session Manager & Inactivity Reaper**: Added `HlsSessionManager` in `kadr-server` to manage ephemeral `ffmpeg` child processes, session deduplication, concurrency throttling (`max_concurrent_transcodes`), stderr diagnostics draining, and a 15-second background reaper task to terminate idle transcode sessions and purge temporary segment directories.
+- **HLS Streaming & Session Teardown API**: Added `GET /api/v1/media/:id/hls/master.m3u8`, `GET /api/v1/media/:id/hls/sessions/:session_id/segment_:seq.ts`, and `DELETE /api/v1/media/:id/hls/sessions/:session_id` endpoints with library unlock validation and bounded 64 KiB chunked delivery.
+- **Permissive CORS Support**: Enabled permissive CORS layer on the HTTP API router to support cross-origin web clients, Smart TV apps, and local development environments.
+- **Client Guide HLS Documentation**: Updated `docs/CLIENT_GUIDE.md` with codec capability inspection matrices, HLS fallback URL construction, and Samsung Tizen `AVPlay` integration examples.
+
+### Fixed
+- Preserved authentication query parameters (`token` and `unlock_tokens`) across rewritten segment URLs in HLS playlists for native players that do not forward custom HTTP headers on segment requests.
+
 ## [v0.1.1-alpha] - 2026-10-07
 
 ### Added
@@ -54,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded Server-Sent Events (SSE) bus for system telemetry and realtime updates.
 - Profile-based PIN authentication and JWT session management.
 
+[v0.1.2-alpha]: https://github.com/BooDy/kadr/compare/v0.1.1-alpha...v0.1.2-alpha
 [v0.1.1-alpha]: https://github.com/BooDy/kadr/compare/v0.1.0-alpha.2...v0.1.1-alpha
 [v0.1.0-alpha.2]: https://github.com/BooDy/kadr/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [v0.1.0-alpha]: https://github.com/BooDy/kadr/releases/tag/v0.1.0-alpha
