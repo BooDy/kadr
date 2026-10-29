@@ -12,10 +12,15 @@ case "$1" in
         mkdir -p /var/lib/kadr /var/lib/kadr/media /etc/kadr
         chown -R kadr:kadr /var/lib/kadr
         chmod 0750 /var/lib/kadr
+        chown root:kadr /etc/kadr/kadr.env /etc/kadr/kadr.toml 2>/dev/null || true
+        chmod 0640 /etc/kadr/kadr.env /etc/kadr/kadr.toml 2>/dev/null || true
 
-        # Reload systemd
+        # Reload systemd and restart service if active
         if [ -d /run/systemd/system ]; then
             systemctl --system daemon-reload >/dev/null 2>&1 || true
+            if systemctl is-active --quiet kadr.service 2>/dev/null; then
+                systemctl try-restart kadr.service >/dev/null 2>&1 || true
+            fi
         fi
     ;;
 esac
