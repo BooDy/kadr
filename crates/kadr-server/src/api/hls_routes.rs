@@ -175,9 +175,7 @@ pub async fn master_playlist(
         .unwrap_or_default()
         .split('&')
         .filter(|p| {
-            p.starts_with("token=")
-                || p.starts_with("unlocked=")
-                || p.starts_with("unlock_token=")
+            p.starts_with("token=") || p.starts_with("unlocked=") || p.starts_with("unlock_token=")
         })
         .collect();
     let query_suffix = if auth_params.is_empty() {
