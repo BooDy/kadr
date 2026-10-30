@@ -191,10 +191,10 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
 
         {/* Error State */}
         {error && (
-          <div className="mb-3 p-3 bg-cta/15 border border-cta/30 rounded-xl text-sm text-cta flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span className="truncate">{error}</span>
+          <div className="mb-3 p-3 bg-cta/15 border border-cta/30 rounded-xl text-xs text-cta flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="break-words">{error}</span>
             </div>
             <button
               type="button"

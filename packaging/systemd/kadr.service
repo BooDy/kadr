@@ -16,7 +16,7 @@ RestartSec=5s
 # Process Sandboxing & Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 PrivateTmp=true
 ReadWritePaths=/var/lib/kadr /etc/kadr
 ProtectKernelTunables=true

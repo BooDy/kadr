@@ -46,10 +46,29 @@ pub async fn browse_filesystem(
 
     let canonical = match std::fs::canonicalize(target_path) {
         Ok(p) => p,
-        Err(_) => {
+        Err(e) => {
+            error!(error = %e, kind = ?e.kind(), path = %target_path, "Failed to resolve directory path");
+            let detail = match e.kind() {
+                std::io::ErrorKind::PermissionDenied => format!(
+                    "Permission denied accessing '{}' ({}). Ensure the 'kadr' service user has read/execute permissions on this directory (and check ProtectHome in kadr.service if browsing /home).",
+                    target_path, e
+                ),
+                std::io::ErrorKind::NotFound => format!(
+                    "Path not found: '{}' ({})",
+                    target_path, e
+                ),
+                _ => format!(
+                    "Path not found or invalid '{}': {}",
+                    target_path, e
+                ),
+            };
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Path not found or invalid" })),
+                Json(serde_json::json!({
+                    "error": detail,
+                    "path": target_path,
+                    "error_kind": format!("{:?}", e.kind()),
+                })),
             ));
         }
     };
@@ -57,7 +76,10 @@ pub async fn browse_filesystem(
     if !canonical.is_dir() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Path is not a directory" })),
+            Json(serde_json::json!({
+                "error": format!("Path is not a directory: '{}'", canonical.display()),
+                "path": canonical.to_string_lossy(),
+            })),
         ));
     }
 
@@ -97,10 +119,21 @@ pub async fn browse_filesystem(
             }
         }
         Err(e) => {
-            error!(error = %e, path = %current_path, "Failed to read directory");
+            error!(error = %e, kind = ?e.kind(), path = %current_path, "Failed to read directory");
+            let detail = match e.kind() {
+                std::io::ErrorKind::PermissionDenied => format!(
+                    "Permission denied reading directory '{}' ({}). Ensure the 'kadr' service user has read/execute permissions (and check ProtectHome in kadr.service if browsing /home).",
+                    current_path, e
+                ),
+                _ => format!("Failed to read directory '{}': {}", current_path, e),
+            };
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to read directory" })),
+                Json(serde_json::json!({
+                    "error": detail,
+                    "path": current_path,
+                    "error_kind": format!("{:?}", e.kind()),
+                })),
             ));
         }
     }
