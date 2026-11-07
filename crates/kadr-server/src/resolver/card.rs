@@ -74,6 +74,7 @@ pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) ->
         MediaType::Music => "music",
         MediaType::HomeVideos => "home_videos",
         MediaType::Audiobook => "audiobook",
+        MediaType::LiveChannel => "live_channel",
         MediaType::Unknown => "unknown",
     }
     .to_string();

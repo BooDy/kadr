@@ -418,4 +418,85 @@ impl LibraryRepository {
         })
         .await?
     }
+
+    /// Creates a library owned by a plugin. It has no real directory: its `path` is the
+    /// synthetic `plugin://<plugin_id>/library/<id>` and no `library_paths` row is written.
+    pub async fn create_virtual(
+        &self,
+        plugin_id: &str,
+        id: &str,
+        name: &str,
+        media_type: MediaType,
+    ) -> Result<Library> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let path = PathBuf::from(format!("plugin://{plugin_id}/library/{id}"));
+        let lib = Library {
+            id: id.to_string(),
+            name: name.to_string(),
+            path: path.clone(),
+            paths: vec![path],
+            media_type,
+            is_private: false,
+            pin_hash: None,
+            created_at: now,
+        };
+        let row = lib.clone();
+        let plugin_id = plugin_id.to_string();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| -> rusqlite::Result<()> {
+            c.execute(
+                "INSERT INTO libraries (id, name, path, media_type, is_private, pin_hash, created_at, plugin_id)
+                 VALUES (?1, ?2, ?3, ?4, 0, NULL, ?5, ?6)",
+                params![
+                    row.id,
+                    row.name,
+                    row.path.to_string_lossy().into_owned(),
+                    serde_json::to_string(&row.media_type)
+                        .unwrap_or_default()
+                        .trim_matches('"'),
+                    row.created_at,
+                    plugin_id,
+                ],
+            )?;
+            Ok(())
+        })
+        .await??;
+        Ok(lib)
+    }
+
+    /// Returns the owning plugin id for a virtual library, or `None` for regular/unknown libraries.
+    pub async fn plugin_id_of(&self, library_id: &str) -> Result<Option<String>> {
+        let library_id = library_id.to_string();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let mut stmt = c.prepare("SELECT plugin_id FROM libraries WHERE id = ?1")?;
+            let mut rows = stmt.query(params![library_id])?;
+            match rows.next()? {
+                Some(row) => Ok(row.get::<_, Option<String>>(0)?),
+                None => Ok(None),
+            }
+        })
+        .await?
+    }
+
+    /// Deletes every library owned by the plugin (items cascade). Returns the number removed.
+    pub async fn delete_by_plugin(&self, plugin_id: &str) -> Result<usize> {
+        let plugin_id = plugin_id.to_string();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let tx = c.transaction()?;
+            tx.execute(
+                "DELETE FROM library_paths WHERE library_id IN
+                 (SELECT id FROM libraries WHERE plugin_id = ?1)",
+                params![plugin_id],
+            )?;
+            let n = tx.execute("DELETE FROM libraries WHERE plugin_id = ?1", params![plugin_id])?;
+            tx.commit()?;
+            Ok(n)
+        })
+        .await?
+    }
 }

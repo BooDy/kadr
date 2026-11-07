@@ -20,6 +20,8 @@ pub enum MediaType {
     HomeVideos,
     #[serde(alias = "Audiobook", alias = "AUDIOBOOK")]
     Audiobook,
+    #[serde(alias = "LiveChannel", alias = "LIVE_CHANNEL")]
+    LiveChannel,
     #[default]
     #[serde(alias = "Unknown", alias = "UNKNOWN")]
     Unknown,
