@@ -73,3 +73,52 @@ async fn test_transcode_session_touch() {
     let updated = session.last_accessed_at.load(Ordering::Relaxed);
     assert!(updated > 100);
 }
+
+#[tokio::test]
+async fn test_session_for_url_source_passes_url_to_ffmpeg() {
+    use kadr_core::models::TechnicalInfo;
+    use kadr_core::plugin::PlaybackSource;
+    use kadr_core::transcoding::TranscodeParameters;
+    use kadr_server::config::TranscodingSettings;
+    use kadr_server::HlsSessionManager;
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("args.log");
+    let script = dir.path().join("fake-ffmpeg.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {log}\nfor last; do :; done\nprintf '#EXTM3U\\n' > \"$last\"\n",
+            log = log.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let settings = TranscodingSettings {
+        ffmpeg_path: script.to_string_lossy().to_string(),
+        temp_dir: dir.path().join("tmp"),
+        ..Default::default()
+    };
+    let mgr = HlsSessionManager::new(settings);
+    let source = PlaybackSource::Url {
+        url: "https://example.com/stream.ts".into(),
+        headers: Default::default(),
+    };
+    let session = mgr
+        .get_or_create_session_for_source(
+            7,
+            &source,
+            &TechnicalInfo::default(),
+            &TranscodeParameters::default(),
+        )
+        .await
+        .unwrap();
+    mgr.wait_for_playlist(&session, 5).await.unwrap();
+
+    let logged = std::fs::read_to_string(&log).unwrap();
+    assert!(logged.contains("https://example.com/stream.ts"));
+    assert!(logged.contains("-protocol_whitelist"));
+}
+

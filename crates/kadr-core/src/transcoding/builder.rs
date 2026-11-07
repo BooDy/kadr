@@ -1,4 +1,5 @@
 use crate::models::TechnicalInfo;
+use crate::plugin::PlaybackSource;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -97,6 +98,20 @@ pub fn build_ffmpeg_hls_args(
     decision: &TranscodeDecision,
     params: &TranscodeParameters,
 ) -> Vec<String> {
+    build_ffmpeg_hls_args_for_source(
+        &PlaybackSource::File(input_path.to_path_buf()),
+        output_dir,
+        decision,
+        params,
+    )
+}
+
+pub fn build_ffmpeg_hls_args_for_source(
+    source: &PlaybackSource,
+    output_dir: &Path,
+    decision: &TranscodeDecision,
+    params: &TranscodeParameters,
+) -> Vec<String> {
     let mut args: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
 
     if params.start_time > 0.0 {
@@ -104,8 +119,27 @@ pub fn build_ffmpeg_hls_args(
         args.push(format!("{:.3}", params.start_time));
     }
 
-    args.push("-i".into());
-    args.push(input_path.to_string_lossy().to_string());
+    match source {
+        PlaybackSource::File(path) => {
+            args.push("-i".into());
+            args.push(path.to_string_lossy().to_string());
+        }
+        PlaybackSource::Url { url, headers } => {
+            // Restrict ffmpeg to network protocols only (no file:, concat:, etc).
+            args.push("-protocol_whitelist".into());
+            args.push("http,https,tcp,tls,crypto".into());
+            if !headers.is_empty() {
+                let mut block = String::new();
+                for (name, value) in headers {
+                    block.push_str(&format!("{name}: {value}\r\n"));
+                }
+                args.push("-headers".into());
+                args.push(block);
+            }
+            args.push("-i".into());
+            args.push(url.clone());
+        }
+    }
 
     // Stream mapping
     args.push("-map".into());

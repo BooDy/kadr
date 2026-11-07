@@ -1,7 +1,8 @@
 use crate::config::TranscodingSettings;
 use kadr_core::models::TechnicalInfo;
+use kadr_core::plugin::PlaybackSource;
 use kadr_core::transcoding::{
-    build_ffmpeg_hls_args, evaluate_transcode, TranscodeParameters, VideoAction,
+    build_ffmpeg_hls_args_for_source, evaluate_transcode, TranscodeParameters, VideoAction,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -110,6 +111,22 @@ impl HlsSessionManager {
         tech: &TechnicalInfo,
         params: &TranscodeParameters,
     ) -> Result<Arc<TranscodeSession>, HlsError> {
+        self.get_or_create_session_for_source(
+            media_id,
+            &PlaybackSource::File(media_path.to_path_buf()),
+            tech,
+            params,
+        )
+        .await
+    }
+
+    pub async fn get_or_create_session_for_source(
+        &self,
+        media_id: i64,
+        source: &PlaybackSource,
+        tech: &TechnicalInfo,
+        params: &TranscodeParameters,
+    ) -> Result<Arc<TranscodeSession>, HlsError> {
         if !self.settings.enabled {
             return Err(HlsError::Disabled);
         }
@@ -148,7 +165,7 @@ impl HlsSessionManager {
         let session_dir = self.settings.temp_dir.join(&session_id);
         tokio::fs::create_dir_all(&session_dir).await?;
 
-        let args = build_ffmpeg_hls_args(media_path, &session_dir, &decision, params);
+        let args = build_ffmpeg_hls_args_for_source(source, &session_dir, &decision, params);
 
         let spawn_res = tokio::process::Command::new(&self.settings.ffmpeg_path)
             .args(&args)
