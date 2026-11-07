@@ -5,6 +5,7 @@ pub mod events;
 pub mod identity;
 pub mod layout;
 pub mod playback;
+pub mod plugins;
 pub mod resolver;
 pub mod streaming;
 pub mod subtitles;

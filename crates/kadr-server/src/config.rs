@@ -56,6 +56,30 @@ pub struct TranscodingSettings {
     pub hwaccel: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_plugin_resolve_timeout_secs")]
+    pub resolve_timeout_secs: u64,
+    #[serde(default)]
+    pub allow_private_proxy: bool,
+}
+
+fn default_plugin_resolve_timeout_secs() -> u64 {
+    5
+}
+
+impl Default for PluginSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            resolve_timeout_secs: default_plugin_resolve_timeout_secs(),
+            allow_private_proxy: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -68,6 +92,8 @@ pub struct AppConfig {
     pub libraries: Vec<LibraryConfig>,
     #[serde(default)]
     pub transcoding: TranscodingSettings,
+    #[serde(default)]
+    pub plugins: PluginSettings,
 }
 
 fn default_server_name() -> String {

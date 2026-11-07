@@ -141,3 +141,22 @@ fn test_system_config_response_and_payload_name() {
     let payload: UpdateConfigPayload = serde_json::from_str(r#"{"name":"New Name"}"#).unwrap();
     assert_eq!(payload.name, Some("New Name".to_string()));
 }
+
+#[test]
+fn test_plugin_settings_defaults_and_parsing() {
+    use kadr_server::config::AppConfig;
+
+    let cfg: AppConfig = toml::from_str("").unwrap();
+    assert!(!cfg.plugins.enabled);
+    assert_eq!(cfg.plugins.resolve_timeout_secs, 5);
+    assert!(!cfg.plugins.allow_private_proxy);
+
+    let cfg: AppConfig = toml::from_str(
+        "[plugins]\nenabled = true\nresolve_timeout_secs = 9\nallow_private_proxy = true\n",
+    )
+    .unwrap();
+    assert!(cfg.plugins.enabled);
+    assert_eq!(cfg.plugins.resolve_timeout_secs, 9);
+    assert!(cfg.plugins.allow_private_proxy);
+}
+
