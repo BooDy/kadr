@@ -87,7 +87,7 @@ if [ -z "${TAG}" ]; then
     fi
     # Fallback to current release if API lookup fails or is rate-limited
     if [ -z "${TAG}" ]; then
-        TAG="v0.1.2-alpha"
+        TAG="v0.1.3-alpha"
         echo -e "${YELLOW}Notice: Could not query GitHub API (rate limit or offline). Falling back to ${TAG}.${NC}"
     fi
 fi

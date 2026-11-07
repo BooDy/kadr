@@ -1183,6 +1183,6 @@ try {
 
 ---
 
-*Document Version: 1.1.0 (Kadr 0.1.2-alpha with Universal HLS Fallback)*  
+*Document Version: 1.1.0 (Kadr 0.1.3-alpha with Universal HLS Fallback)*  
 *Maintained by the Kadr Core Engineering Team.*
 

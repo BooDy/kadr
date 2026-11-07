@@ -5,6 +5,12 @@ All notable changes to the Kadr media server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.3-alpha] - 2026-11-07
+
+### Fixed
+- Allowed read-only access to `/home` in the systemd unit and added detailed filesystem error diagnostics to the folder browsing API and folder picker modal.
+- Debian `postinst` now automatically restarts the `kadr` service if it is active during upgrades.
+
 ## [v0.1.2-alpha] - 2026-10-29
 
 ### Added
@@ -67,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded Server-Sent Events (SSE) bus for system telemetry and realtime updates.
 - Profile-based PIN authentication and JWT session management.
 
+[v0.1.3-alpha]: https://github.com/BooDy/kadr/compare/v0.1.2-alpha...v0.1.3-alpha
 [v0.1.2-alpha]: https://github.com/BooDy/kadr/compare/v0.1.1-alpha...v0.1.2-alpha
 [v0.1.1-alpha]: https://github.com/BooDy/kadr/compare/v0.1.0-alpha.2...v0.1.1-alpha
 [v0.1.0-alpha.2]: https://github.com/BooDy/kadr/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
