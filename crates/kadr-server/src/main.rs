@@ -352,6 +352,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let server_identity = Arc::new(ServerIdentity { id: server_id });
 
+    let shared_config = Arc::new(tokio::sync::RwLock::new(config.clone()));
+    let plugin_service = kadr_server::plugins::PluginService::new(
+        pool.clone(),
+        jwt_secret.as_bytes(),
+        shared_config.clone(),
+        event_bus.clone(),
+    );
+    let health_monitor_handle = kadr_server::plugins::health::spawn_health_monitor(
+        plugin_service,
+        std::time::Duration::from_secs(30),
+    );
+
     // Assemble Axum HTTP router
     let mut app = create_router_with_ingest(
         user_repo,
@@ -369,7 +381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_collector,
         ingest_tx.clone(),
         pipeline.clone(),
-        Arc::new(tokio::sync::RwLock::new(config.clone())),
+        shared_config,
         server_identity,
     );
 
@@ -423,6 +435,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Shutdown signal received. Stopping maintenance, watchers, and flushing storage...");
     telemetry_handle.abort();
     prune_handle.abort();
+    health_monitor_handle.abort();
     drop(watchers);
     drop(ingest_tx);
     if let Err(e) = worker_handle.await {

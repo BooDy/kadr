@@ -97,7 +97,7 @@ pub async fn create_session(
         last_heartbeat_at: now,
     };
 
-    sessions.insert(session.clone()).await;
+    sessions.insert_live(session.clone(), item.is_live()).await;
 
     (
         StatusCode::CREATED,
@@ -116,7 +116,6 @@ pub async fn progress_heartbeat(
     Path(session_id): Path<String>,
     Extension(playback_repo): Extension<PlaybackRepository>,
     Extension(sessions): Extension<Arc<SessionRegistry>>,
-    media_repo: Option<Extension<MediaItemRepository>>,
     event_bus: Option<Extension<Arc<EventBus>>>,
     Json(payload): Json<ProgressHeartbeatRequest>,
 ) -> impl IntoResponse {
@@ -131,18 +130,12 @@ pub async fn progress_heartbeat(
         }
     };
 
-    // Live items have no duration: skip scrobbling and never persist watch state.
-    if session.duration_seconds == 0 {
-        if let Some(Extension(media_repo)) = media_repo {
-            if let Ok(Some(item)) = media_repo.get_by_id(session.media_item_id).await {
-                if item.is_live() {
-                    sessions
-                        .update_progress(&session_id, payload.position_seconds)
-                        .await;
-                    return StatusCode::OK.into_response();
-                }
-            }
-        }
+    // Live items: skip scrobbling and never persist watch state.
+    if sessions.is_live(&session_id).await {
+        sessions
+            .update_progress(&session_id, payload.position_seconds)
+            .await;
+        return StatusCode::OK.into_response();
     }
 
     let watch_state = evaluate_scrobble(payload.position_seconds, session.duration_seconds);

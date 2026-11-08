@@ -28,9 +28,14 @@ impl PluginService {
                 .await;
             match (record.status, result) {
                 (PluginStatus::Enabled, Err(e)) => {
-                    self.repo()
+                    if let Err(err) = self
+                        .repo()
                         .set_status(&record.id, PluginStatus::Unhealthy)
-                        .await?;
+                        .await
+                    {
+                        tracing::error!(plugin = %record.id, "Failed to update plugin status to unhealthy: {err}");
+                        continue;
+                    }
                     tracing::warn!(plugin = %record.id, "Plugin became unhealthy: {e}");
                     self.events().publish(SystemEvent::PluginError {
                         plugin_id: record.id.clone(),
@@ -39,9 +44,14 @@ impl PluginService {
                     });
                 }
                 (PluginStatus::Unhealthy, Ok(())) => {
-                    self.repo()
+                    if let Err(err) = self
+                        .repo()
                         .set_status(&record.id, PluginStatus::Enabled)
-                        .await?;
+                        .await
+                    {
+                        tracing::error!(plugin = %record.id, "Failed to update plugin status to enabled: {err}");
+                        continue;
+                    }
                     tracing::info!(plugin = %record.id, "Plugin recovered");
                 }
                 _ => {}

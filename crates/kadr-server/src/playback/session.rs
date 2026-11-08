@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 pub struct ActiveSession {
     pub session: PlaybackSession,
     pub last_heartbeat_instant: Instant,
+    pub is_live: bool,
 }
 
 #[derive(Default, Debug)]
@@ -22,14 +23,24 @@ impl SessionRegistry {
     }
 
     pub async fn insert(&self, session: PlaybackSession) {
+        self.insert_live(session, false).await;
+    }
+
+    pub async fn insert_live(&self, session: PlaybackSession, is_live: bool) {
         let mut write = self.sessions.write().await;
         write.insert(
             session.session_id.clone(),
             ActiveSession {
                 session,
                 last_heartbeat_instant: Instant::now(),
+                is_live,
             },
         );
+    }
+
+    pub async fn is_live(&self, session_id: &str) -> bool {
+        let read = self.sessions.read().await;
+        read.get(session_id).map(|s| s.is_live).unwrap_or(false)
     }
 
     pub async fn get(&self, session_id: &str) -> Option<PlaybackSession> {

@@ -61,3 +61,28 @@ async fn disabled_and_pending_plugins_are_not_probed() {
     svc.check_all().await.unwrap();
     assert_eq!(h.plugin_repo.get("hello").await.unwrap().unwrap().status, PluginStatus::Disabled);
 }
+
+#[tokio::test]
+async fn check_all_continues_probing_other_plugins_on_failure() {
+    let h = build(enabled_settings()).await;
+    let mock1 = spawn_mock("plug1", &["items:publish"]).await;
+    let mock2 = spawn_mock("plug2", &["items:publish"]).await;
+    register_and_approve(&h, &mock1).await;
+    register_and_approve(&h, &mock2).await;
+
+    let mut config = AppConfig::default();
+    config.plugins = enabled_settings();
+    let svc = PluginService::new(
+        h.media_repo.pool().clone(),
+        h.jwt_secret.as_bytes(),
+        Arc::new(tokio::sync::RwLock::new(config)),
+        h.events.clone(),
+    );
+
+    mock1.healthy.store(false, Ordering::SeqCst);
+    mock2.healthy.store(true, Ordering::SeqCst);
+
+    svc.check_all().await.unwrap();
+    assert_eq!(h.plugin_repo.get("plug1").await.unwrap().unwrap().status, PluginStatus::Unhealthy);
+    assert_eq!(h.plugin_repo.get("plug2").await.unwrap().unwrap().status, PluginStatus::Enabled);
+}
