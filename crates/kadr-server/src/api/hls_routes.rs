@@ -15,7 +15,11 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::api::unlock_token::UnlockedLibraries;
+use crate::auth::jwt::AuthUser;
+use crate::plugins::playback::plugin_error_response;
+use crate::plugins::PluginService;
 use crate::streaming::hls::session::{HlsError, HlsSessionManager};
+use kadr_core::plugin::{ClientCapabilities, PlaybackMode, PlaybackSource};
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct HlsQuery {
@@ -49,6 +53,8 @@ pub async fn master_playlist(
     Query(query): Query<HlsQuery>,
     RawQuery(raw_query): RawQuery,
     unlocked: UnlockedLibraries,
+    auth_user: Option<AuthUser>,
+    plugins: Option<Extension<PluginService>>,
     Extension(media_repo): Extension<MediaItemRepository>,
     Extension(lib_repo): Extension<LibraryRepository>,
     Extension(session_mgr): Extension<Arc<HlsSessionManager>>,
@@ -93,22 +99,58 @@ pub async fn master_playlist(
         }
     }
 
-    if !tokio::fs::try_exists(&item.file_path)
-        .await
-        .unwrap_or(false)
-    {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Media file missing from disk" })),
-        )
-            .into_response();
-    }
+    let source = if item.plugin_ref().is_some() {
+        let Some(Extension(plugins)) = plugins else {
+            return plugin_error_response(&crate::plugins::client::PluginError::Unavailable(
+                "Plugins are not available".to_string(),
+            ));
+        };
+        let user_id = auth_user
+            .as_ref()
+            .map(|u| u.id.clone())
+            .unwrap_or_else(|| "anonymous".to_string());
+        let capabilities = ClientCapabilities {
+            codecs: [query.video_codec.clone(), query.audio_codec.clone()]
+                .into_iter()
+                .flatten()
+                .collect(),
+            containers: Vec::new(),
+            max_height: query.max_height,
+        };
+        match plugins.resolve_item(&item, &user_id, capabilities).await {
+            // Direct descriptors are not SSRF-validated, so they are never handed to ffmpeg.
+            Ok(d) if d.mode == PlaybackMode::Direct => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({ "error": "PLAYBACK_DIRECT_ONLY", "url": d.url })),
+                )
+                    .into_response();
+            }
+            Ok(d) => PlaybackSource::Url {
+                url: d.url,
+                headers: d.headers,
+            },
+            Err(e) => return plugin_error_response(&e),
+        }
+    } else {
+        if !tokio::fs::try_exists(&item.file_path)
+            .await
+            .unwrap_or(false)
+        {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Media file missing from disk" })),
+            )
+                .into_response();
+        }
+        PlaybackSource::File(item.file_path.clone())
+    };
 
     let params = TranscodeParameters::from(query);
     let session = match session_mgr
-        .get_or_create_session(
+        .get_or_create_session_for_source(
             item.id.unwrap_or(item_id),
-            &item.file_path,
+            &source,
             &item.technical,
             &params,
         )

@@ -58,7 +58,6 @@ impl IntoResponse for ServiceError {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) struct CachedDescriptor {
     pub descriptor: PlaybackDescriptor,
     pub expires_at: Instant,
@@ -73,8 +72,9 @@ struct Inner {
     config: Arc<RwLock<AppConfig>>,
     events: Arc<EventBus>,
     client: PluginClient,
+    /// Used to fetch upstream media in `proxy` mode: never follows redirects, no total timeout.
+    proxy_http: reqwest::Client,
     /// Short-lived, in-memory playback descriptor cache keyed by (item id, user id).
-    #[allow(dead_code)]
     pub(crate) cache: Mutex<HashMap<(i64, String), CachedDescriptor>>,
 }
 
@@ -122,6 +122,11 @@ impl PluginService {
                 config,
                 events,
                 client: PluginClient::new(Duration::from_secs(settings.resolve_timeout_secs.max(1))),
+                proxy_http: reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .connect_timeout(Duration::from_secs(10))
+                    .build()
+                    .expect("reqwest client builds with static configuration"),
                 cache: Mutex::new(HashMap::new()),
             }),
         }
@@ -142,7 +147,9 @@ impl PluginService {
     pub fn client(&self) -> &PluginClient {
         &self.inner.client
     }
-    #[allow(dead_code)]
+    pub fn proxy_client(&self) -> &reqwest::Client {
+        &self.inner.proxy_http
+    }
     pub(crate) fn cache(&self) -> &Mutex<HashMap<(i64, String), CachedDescriptor>> {
         &self.inner.cache
     }

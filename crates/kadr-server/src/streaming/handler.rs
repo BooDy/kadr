@@ -12,6 +12,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
+use crate::plugins::PluginService;
 use crate::streaming::range::{parse_range_header, RangeResult};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 
@@ -32,12 +33,13 @@ pub fn resolve_mime(ext: &str) -> &'static str {
 }
 
 pub async fn stream_media_item(
-    _auth_user: Option<AuthUser>,
+    auth_user: Option<AuthUser>,
     Path(item_id): Path<i64>,
     headers: HeaderMap,
     unlocked: UnlockedLibraries,
     Extension(media_repo): Extension<MediaItemRepository>,
     Extension(lib_repo): Extension<LibraryRepository>,
+    plugins: Option<Extension<PluginService>>,
 ) -> Response {
     let item = match media_repo.get_by_id(item_id).await {
         Ok(Some(i)) => i,
@@ -77,6 +79,22 @@ pub async fn stream_media_item(
             )
                 .into_response();
         }
+    }
+
+    if item.plugin_ref().is_some() {
+        let Some(Extension(plugins)) = plugins else {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "PLUGIN_UNAVAILABLE", "message": "Plugins are not available" })),
+            )
+                .into_response();
+        };
+        let user_id = auth_user
+            .as_ref()
+            .map(|u| u.id.clone())
+            .unwrap_or_else(|| "anonymous".to_string());
+        return crate::plugins::playback::stream_plugin_item(&plugins, &item, &user_id, &headers)
+            .await;
     }
 
     let file = match File::open(&item.file_path).await {

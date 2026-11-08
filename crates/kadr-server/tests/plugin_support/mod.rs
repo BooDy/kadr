@@ -343,3 +343,22 @@ pub async fn register_and_approve(h: &Harness, mock: &MockPlugin) -> (String, St
     (body["token"].as_str().unwrap().to_string(), secret)
 }
 
+/// Writes a fake `ffmpeg` shell script that logs its arguments and creates a playlist at the
+/// last argument. Returns `(script_path, args_log_path)`.
+pub fn fake_ffmpeg(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let log = dir.join("ffmpeg-args.log");
+    let script = dir.join("fake-ffmpeg.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {log}\nfor last; do :; done\nprintf '#EXTM3U\\n' > \"$last\"\n",
+            log = log.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (script, log)
+}
+
+
