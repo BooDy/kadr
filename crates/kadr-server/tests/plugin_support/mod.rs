@@ -218,6 +218,8 @@ pub async fn build(settings: PluginSettings) -> Harness {
         role,
         created_at: 0,
     };
+    user_repo.create(&mk(UserRole::Admin, "admin")).await.unwrap();
+    user_repo.create(&mk(UserRole::Standard, "viewer")).await.unwrap();
     let admin_token = jwt_svc.generate_token(&mk(UserRole::Admin, "admin")).unwrap();
     let user_token = jwt_svc.generate_token(&mk(UserRole::Standard, "viewer")).unwrap();
 

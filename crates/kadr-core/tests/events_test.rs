@@ -135,6 +135,26 @@ fn test_system_event_system_telemetry_serde() {
 }
 
 #[test]
+fn test_system_event_plugin_error_serde() {
+    let event = SystemEvent::PluginError {
+        plugin_id: "iptv".to_string(),
+        message: "connection refused".to_string(),
+        timestamp: 1700000060,
+    };
+
+    assert_eq!(event.event_type(), "plugin:error");
+
+    let val = serde_json::to_value(&event).expect("to_value");
+    assert_eq!(val["type"], "plugin:error");
+    assert_eq!(val["payload"]["plugin_id"], "iptv");
+    assert_eq!(val["payload"]["message"], "connection refused");
+    assert_eq!(val["payload"]["timestamp"], 1700000060);
+
+    let roundtrip: SystemEvent = serde_json::from_value(val).expect("from_value");
+    assert_eq!(event, roundtrip);
+}
+
+#[test]
 fn test_deserialize_raw_json_payloads() {
     let raw_json = json!({
         "type": "library:updated",

@@ -65,18 +65,22 @@ pub async fn create_session(
         }
     };
 
-    let resume_pos = match playback_repo
-        .get_state(&auth_user.id, payload.media_item_id)
-        .await
-    {
-        Ok(Some(s)) => {
-            if s.watch_state == WatchState::Completed {
-                0
-            } else {
-                s.playback_position_seconds
+    let resume_pos = if item.is_live() {
+        0
+    } else {
+        match playback_repo
+            .get_state(&auth_user.id, payload.media_item_id)
+            .await
+        {
+            Ok(Some(s)) => {
+                if s.watch_state == WatchState::Completed {
+                    0
+                } else {
+                    s.playback_position_seconds
+                }
             }
+            _ => 0,
         }
-        _ => 0,
     };
 
     let now = SystemTime::now()
@@ -112,6 +116,7 @@ pub async fn progress_heartbeat(
     Path(session_id): Path<String>,
     Extension(playback_repo): Extension<PlaybackRepository>,
     Extension(sessions): Extension<Arc<SessionRegistry>>,
+    media_repo: Option<Extension<MediaItemRepository>>,
     event_bus: Option<Extension<Arc<EventBus>>>,
     Json(payload): Json<ProgressHeartbeatRequest>,
 ) -> impl IntoResponse {
@@ -125,6 +130,20 @@ pub async fn progress_heartbeat(
                 .into_response();
         }
     };
+
+    // Live items have no duration: skip scrobbling and never persist watch state.
+    if session.duration_seconds == 0 {
+        if let Some(Extension(media_repo)) = media_repo {
+            if let Ok(Some(item)) = media_repo.get_by_id(session.media_item_id).await {
+                if item.is_live() {
+                    sessions
+                        .update_progress(&session_id, payload.position_seconds)
+                        .await;
+                    return StatusCode::OK.into_response();
+                }
+            }
+        }
+    }
 
     let watch_state = evaluate_scrobble(payload.position_seconds, session.duration_seconds);
     let now = SystemTime::now()

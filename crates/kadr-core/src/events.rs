@@ -37,6 +37,12 @@ pub enum SystemEvent {
     },
     #[serde(rename = "system:telemetry")]
     SystemTelemetry(TelemetrySnapshot),
+    #[serde(rename = "plugin:error")]
+    PluginError {
+        plugin_id: String,
+        message: String,
+        timestamp: i64,
+    },
 }
 
 impl SystemEvent {
@@ -47,6 +53,7 @@ impl SystemEvent {
             Self::SubtitleDownloaded { .. } => "subtitle:downloaded",
             Self::SessionSynced { .. } => "session:synced",
             Self::SystemTelemetry(_) => "system:telemetry",
+            Self::PluginError { .. } => "plugin:error",
         }
     }
 }

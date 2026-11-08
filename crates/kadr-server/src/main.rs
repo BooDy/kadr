@@ -181,6 +181,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut watchers = Vec::new();
 
     for lib in &active_libraries {
+        if kadr_core::plugin::is_plugin_path(&lib.path) {
+            continue; // virtual plugin library: nothing on disk to watch
+        }
         let has_existing_path = lib.paths.iter().any(|p| p.exists()) || lib.path.exists();
         if has_existing_path {
             info!(library = %lib.name, path = ?lib.path, paths = ?lib.paths, "Starting filesystem watcher");

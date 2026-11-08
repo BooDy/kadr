@@ -1,6 +1,7 @@
 pub mod admin_routes;
 pub mod auth;
 pub mod client;
+pub mod health;
 pub mod playback;
 pub mod publish_routes;
 pub mod service;

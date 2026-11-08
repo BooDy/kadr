@@ -75,6 +75,13 @@ pub fn create_router_with_ingest(
     );
     let plugin_tokens = crate::plugins::auth::PluginTokenService::new(jwt_svc.secret());
 
+    if tokio::runtime::Handle::try_current().is_ok() {
+        crate::plugins::health::spawn_health_monitor(
+            plugin_service.clone(),
+            std::time::Duration::from_secs(30),
+        );
+    }
+
     let router = Router::new()
         .merge(hls_routes::hls_routes())
         .merge(crate::plugins::plugin_routes())
