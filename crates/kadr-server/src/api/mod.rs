@@ -67,8 +67,17 @@ pub fn create_router_with_ingest(
         hls_manager.clone().start_reaper();
     }
 
+    let plugin_service = crate::plugins::PluginService::new(
+        media_repo.pool().clone(),
+        jwt_svc.secret(),
+        config.clone(),
+        event_bus.clone(),
+    );
+    let plugin_tokens = crate::plugins::auth::PluginTokenService::new(jwt_svc.secret());
+
     let router = Router::new()
         .merge(hls_routes::hls_routes())
+        .merge(crate::plugins::plugin_routes())
         // Public discovery route
         .route("/api/v1/discovery", get(discovery_routes::get_discovery))
         // Public profile list & auth
@@ -226,6 +235,8 @@ pub fn create_router_with_ingest(
         .layer(Extension(pipeline))
         .layer(Extension(config))
         .layer(Extension(identity))
+        .layer(Extension(plugin_service))
+        .layer(Extension(plugin_tokens))
         .layer(axum::middleware::from_fn(
             move |mut req: axum::extract::Request, next: axum::middleware::Next| {
                 let default_mgr = hls_manager.clone();
