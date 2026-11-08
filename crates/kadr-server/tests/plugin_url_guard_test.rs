@@ -10,7 +10,8 @@ fn desc(json: &str) -> PlaybackDescriptor {
 fn private_and_special_ranges_are_detected() {
     for ip in [
         "127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.1.1", "0.0.0.0",
-        "100.64.0.1", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1",
+        "0.1.2.3", "100.64.0.1", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1",
+        "::127.0.0.1", "::10.0.0.1",
     ] {
         assert!(is_private_ip(ip.parse::<IpAddr>().unwrap()), "{ip} should be private");
     }
@@ -52,6 +53,10 @@ async fn proxy_and_transcode_block_private_hosts_unless_allowed() {
 
         let v6 = desc(&format!(r#"{{"mode":"{mode}","url":"http://[::1]:9/x"}}"#));
         assert!(validate_descriptor(&v6, false).await.is_err());
+
+        let v6_compat = desc(&format!(r#"{{"mode":"{mode}","url":"http://[::127.0.0.1]:9/x"}}"#));
+        assert!(validate_descriptor(&v6_compat, false).await.is_err());
+        assert!(validate_descriptor(&v6_compat, true).await.is_ok());
 
         let public = desc(&format!(r#"{{"mode":"{mode}","url":"http://8.8.8.8/x"}}"#));
         assert!(validate_descriptor(&public, false).await.is_ok());

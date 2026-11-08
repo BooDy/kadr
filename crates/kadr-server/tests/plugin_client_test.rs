@@ -36,6 +36,53 @@ fn breaker_opens_after_three_failures_and_half_opens_after_cooldown() {
 }
 
 #[test]
+fn breaker_half_open_allows_single_probe_and_expires_lease() {
+    let mut b = CircuitBreaker::default();
+    let t0 = Instant::now();
+
+    // Trip the breaker to open state
+    b.record_failure(t0);
+    b.record_failure(t0);
+    b.record_failure(t0);
+    assert!(!b.allow(t0));
+
+    // Wait until cooldown elapses -> half-open
+    let t_half_open = t0 + Duration::from_secs(31);
+    assert!(b.allow(t_half_open), "first probe admitted");
+
+    // Second allow() during an in-flight probe is false
+    assert!(!b.allow(t_half_open), "second allow during in-flight probe is false");
+    assert!(!b.allow(t_half_open + Duration::from_secs(10)), "probe still in-flight");
+
+    // After the probe reports failure it is open again
+    b.record_failure(t_half_open + Duration::from_secs(10));
+    assert!(!b.allow(t_half_open + Duration::from_secs(11)), "failure re-opens the breaker");
+
+    // Cooldown again to half-open
+    let t_half_open_2 = t_half_open + Duration::from_secs(10) + Duration::from_secs(31);
+    assert!(b.allow(t_half_open_2), "probe admitted again after second cooldown");
+
+    // After success it is closed
+    b.record_success();
+    assert!(b.allow(t_half_open_2), "breaker is closed after success");
+    assert!(b.allow(t_half_open_2), "subsequent requests are allowed when closed");
+
+    // Trip the breaker again to test lease expiration
+    b.record_failure(t_half_open_2);
+    b.record_failure(t_half_open_2);
+    b.record_failure(t_half_open_2);
+    assert!(!b.allow(t_half_open_2));
+
+    let t_half_open_3 = t_half_open_2 + Duration::from_secs(31);
+    assert!(b.allow(t_half_open_3), "probe admitted");
+    assert!(!b.allow(t_half_open_3), "second allow blocked");
+
+    // An unreported probe lease expires after 30s (Duration::from_secs(30))
+    let t_expired = t_half_open_3 + Duration::from_secs(31);
+    assert!(b.allow(t_expired), "unreported probe lease expired after 30s so a new probe is allowed");
+}
+
+#[test]
 fn error_status_and_code_mapping() {
     assert_eq!(PluginError::Unavailable("x".into()).status().as_u16(), 503);
     assert_eq!(PluginError::Unavailable("x".into()).code(), "PLUGIN_UNAVAILABLE");

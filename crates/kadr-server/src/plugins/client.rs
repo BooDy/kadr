@@ -42,6 +42,7 @@ impl PluginError {
 pub struct CircuitBreaker {
     failures: u32,
     open_until: Option<Instant>,
+    probing: Option<Instant>,
 }
 
 impl CircuitBreaker {
@@ -49,8 +50,12 @@ impl CircuitBreaker {
         match self.open_until {
             Some(until) if now < until => false,
             Some(_) => {
-                self.open_until = None;
-                self.failures = FAILURE_THRESHOLD - 1;
+                if let Some(probe_expiry) = self.probing {
+                    if now < probe_expiry {
+                        return false;
+                    }
+                }
+                self.probing = Some(now + COOLDOWN);
                 true
             }
             None => true,
@@ -60,12 +65,19 @@ impl CircuitBreaker {
     pub fn record_success(&mut self) {
         self.failures = 0;
         self.open_until = None;
+        self.probing = None;
     }
 
     pub fn record_failure(&mut self, now: Instant) {
-        self.failures += 1;
-        if self.failures >= FAILURE_THRESHOLD {
+        if self.open_until.is_some() || self.probing.is_some() {
+            self.probing = None;
             self.open_until = Some(now + COOLDOWN);
+            self.failures = FAILURE_THRESHOLD;
+        } else {
+            self.failures += 1;
+            if self.failures >= FAILURE_THRESHOLD {
+                self.open_until = Some(now + COOLDOWN);
+            }
         }
     }
 }

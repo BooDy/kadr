@@ -11,6 +11,7 @@ pub fn is_private_ip(ip: IpAddr) -> bool {
                 || v4.is_link_local()
                 || v4.is_unspecified()
                 || v4.is_broadcast()
+                || o[0] == 0
                 || (o[0] == 100 && (o[1] & 0xc0) == 64)
         }
         IpAddr::V6(v6) => {
@@ -20,7 +21,7 @@ pub fn is_private_ip(ip: IpAddr) -> bool {
                 || (seg0 & 0xfe00) == 0xfc00
                 || (seg0 & 0xffc0) == 0xfe80
                 || v6
-                    .to_ipv4_mapped()
+                    .to_ipv4()
                     .map(|v4| is_private_ip(IpAddr::V4(v4)))
                     .unwrap_or(false)
         }
