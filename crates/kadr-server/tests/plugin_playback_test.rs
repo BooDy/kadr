@@ -266,6 +266,86 @@ async fn locked_libraries_never_trigger_a_resolve_call() {
 }
 
 #[tokio::test]
+async fn hls_locked_libraries_never_trigger_a_resolve_call() {
+    let (h, mock) = setup(enabled_settings()).await;
+    h.lib_repo
+        .insert(&Library {
+            id: "priv".into(),
+            name: "Private".into(),
+            path: "plugin://hello/library/priv".into(),
+            paths: vec![],
+            media_type: MediaType::Movie,
+            is_private: true,
+            pin_hash: Some(kadr_server::auth::pin::hash_pin("1234").unwrap()),
+            created_at: 0,
+        })
+        .await
+        .unwrap();
+    let item = seed_item(&h, "priv", "hello", "secret", false).await;
+
+    let hls = format!("/api/v1/media/{}/hls/master.m3u8", item.id.unwrap());
+    let (status, _, body) = call_raw(&h.app, "GET", &hls, Some(&h.user_token), &[], None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json_body(&body)["error"], "LIBRARY_LOCKED");
+    assert_eq!(mock.calls(), 0);
+}
+
+#[tokio::test]
+async fn descriptor_cache_distinguishes_client_capabilities() {
+    let (h, mock) = setup(enabled_settings()).await;
+    mock.set_descriptor(json!({
+        "mode": "transcode",
+        "url": "http://8.8.8.8/live.ts",
+        "expires_in_secs": 60,
+    }));
+    let item = seed_item(&h, "lib-1", "hello", "m1", false).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (script, _log) = fake_ffmpeg(dir.path());
+    let mgr = Arc::new(HlsSessionManager::new(TranscodingSettings {
+        ffmpeg_path: script.to_string_lossy().to_string(),
+        temp_dir: dir.path().join("sessions"),
+        ..Default::default()
+    }));
+    let app = h.app.clone().layer(axum::Extension(mgr));
+
+    let hls_base = format!("/api/v1/media/{}/hls/master.m3u8", item.id.unwrap());
+    let hls_480 = format!("{hls_base}?max_height=480");
+    let hls_720 = format!("{hls_base}?max_height=720");
+
+    // 1. Direct-play endpoint uses default capabilities -> reaches plugin.
+    let (status, _, body) = get(&h, &stream_uri(&item), &[]).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(json_body(&body)["error"], "PLAYBACK_REQUIRES_TRANSCODE");
+    assert_eq!(mock.calls(), 1);
+
+    // 2. Repeat direct-play request -> served from cache.
+    let (status, _, _) = get(&h, &stream_uri(&item), &[]).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(mock.calls(), 1);
+
+    // 3. Different capabilities (?max_height=480) -> reaches plugin.
+    let (status, _, _) = call_raw(&app, "GET", &hls_480, Some(&h.user_token), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mock.calls(), 2);
+
+    // 4. Identical request with ?max_height=480 -> served from cache.
+    let (status, _, _) = call_raw(&app, "GET", &hls_480, Some(&h.user_token), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mock.calls(), 2);
+
+    // 5. Another different capability (?max_height=720) -> reaches plugin.
+    let (status, _, _) = call_raw(&app, "GET", &hls_720, Some(&h.user_token), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mock.calls(), 3);
+
+    // 6. Repeat ?max_height=720 request -> served from cache.
+    let (status, _, _) = call_raw(&app, "GET", &hls_720, Some(&h.user_token), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mock.calls(), 3);
+}
+
+#[tokio::test]
 async fn hls_feeds_proxy_and_transcode_urls_to_ffmpeg_and_refuses_direct() {
     let (h, mock) = setup(enabled_settings()).await;
     let item = seed_item(&h, "lib-1", "hello", "m1", false).await;

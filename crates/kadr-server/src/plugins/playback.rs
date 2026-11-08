@@ -61,7 +61,11 @@ impl PluginService {
             ));
         }
 
-        let key = (item.id.unwrap_or_default(), user_id.to_string());
+        let key = (
+            item.id.unwrap_or_default(),
+            user_id.to_string(),
+            client.clone(),
+        );
         {
             let mut cache = self.cache().lock().await;
             if let Some(cached) = cache.get(&key) {

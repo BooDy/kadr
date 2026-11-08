@@ -119,6 +119,18 @@ async fn publish_update_and_delete_items() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // control characters in remote_id are rejected with 400.
+    let (status, body) = call(
+        &h.app,
+        "DELETE",
+        "/api/v1/plugin/libraries/lib-1/items/bad%0Aid",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "INVALID_REQUEST");
 }
 
 #[tokio::test]

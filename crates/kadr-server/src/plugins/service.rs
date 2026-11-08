@@ -7,7 +7,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kadr_core::plugin::{PlaybackDescriptor, PluginPermission, PluginRecord, PluginStatus};
+use kadr_core::plugin::{
+    ClientCapabilities, PlaybackDescriptor, PluginPermission, PluginRecord, PluginStatus,
+};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PluginRepository};
 use kadr_storage::{StorageError, StoragePool};
 use std::collections::HashMap;
@@ -81,8 +83,8 @@ struct Inner {
     client: PluginClient,
     /// Used to fetch upstream media in `proxy` mode: never follows redirects, no total timeout.
     proxy_http: reqwest::Client,
-    /// Short-lived, in-memory playback descriptor cache keyed by (item id, user id).
-    pub(crate) cache: Mutex<HashMap<(i64, String), CachedDescriptor>>,
+    /// Short-lived, in-memory playback descriptor cache keyed by (item id, user id, client capabilities).
+    pub(crate) cache: Mutex<HashMap<(i64, String, ClientCapabilities), CachedDescriptor>>,
 }
 
 #[derive(Clone)]
@@ -159,7 +161,9 @@ impl PluginService {
     pub fn proxy_client(&self) -> &reqwest::Client {
         &self.inner.proxy_http
     }
-    pub(crate) fn cache(&self) -> &Mutex<HashMap<(i64, String), CachedDescriptor>> {
+    pub(crate) fn cache(
+        &self,
+    ) -> &Mutex<HashMap<(i64, String, ClientCapabilities), CachedDescriptor>> {
         &self.inner.cache
     }
 

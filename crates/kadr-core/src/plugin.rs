@@ -216,7 +216,7 @@ pub enum PlaybackSource {
     },
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ClientCapabilities {
     #[serde(default)]
     pub codecs: Vec<String>,

@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 #[derive(Clone)]
 struct Config {
-    secret: String,
+    secret: Option<String>,
 }
 
 const SAMPLES: &[(&str, &str, &str)] = &[
@@ -30,8 +30,11 @@ const SAMPLES: &[(&str, &str, &str)] = &[
 ];
 
 fn authorized(cfg: &Config, headers: &HeaderMap) -> bool {
+    let Some(secret) = &cfg.secret else {
+        return false;
+    };
     headers.get("authorization").and_then(|h| h.to_str().ok())
-        == Some(format!("Bearer {}", cfg.secret).as_str())
+        == Some(format!("Bearer {secret}").as_str())
 }
 
 async fn manifest() -> Json<Value> {
@@ -97,7 +100,10 @@ async fn publish(kadr_url: &str, token: &str) -> Result<(), reqwest::Error> {
 
 #[tokio::main]
 async fn main() {
-    let secret = std::env::var("KADR_PLUGIN_SECRET").unwrap_or_else(|_| "unset".to_string());
+    let secret = std::env::var("KADR_PLUGIN_SECRET").ok();
+    if secret.is_none() {
+        eprintln!("KADR_PLUGIN_SECRET is unset: authenticated routes (/health, /playback/resolve) will reject requests until it is configured");
+    }
     let bind = std::env::var("PLUGIN_BIND").unwrap_or_else(|_| "127.0.0.1:9100".to_string());
     let kadr_url =
         std::env::var("KADR_URL").unwrap_or_else(|_| "http://127.0.0.1:8492".to_string());

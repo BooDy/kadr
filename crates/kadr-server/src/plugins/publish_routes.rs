@@ -222,6 +222,7 @@ async fn delete_item(
 ) -> Result<StatusCode, ServiceError> {
     svc.authorize(&auth, PluginPermission::ItemsPublish).await?;
     owned_library(&svc, &auth, &library_id).await?;
+    validate_remote_id(&remote_id).map_err(ServiceError::Invalid)?;
     let path = plugin_item_path(&auth.plugin_id, &remote_id);
     match svc.media().find_by_path(&path).await? {
         Some(item) if item.library_id == library_id => {
