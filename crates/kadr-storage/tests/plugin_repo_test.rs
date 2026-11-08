@@ -44,7 +44,13 @@ async fn plugin_insert_get_list_roundtrip() {
     assert_eq!(got, record("iptv"));
     assert!(repo.get("missing").await.unwrap().is_none());
 
-    let ids: Vec<String> = repo.list().await.unwrap().into_iter().map(|p| p.id).collect();
+    let ids: Vec<String> = repo
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
     assert_eq!(ids, vec!["hello".to_string(), "iptv".to_string()]);
 }
 
@@ -53,16 +59,25 @@ async fn plugin_status_and_permissions_update_and_delete() {
     let (repo, _, _) = setup().await;
     repo.insert(&record("iptv")).await.unwrap();
 
-    assert!(repo.set_status("iptv", PluginStatus::Enabled).await.unwrap());
+    assert!(repo
+        .set_status("iptv", PluginStatus::Enabled)
+        .await
+        .unwrap());
     assert!(repo
         .set_granted("iptv", &[PluginPermission::ItemsPublish])
         .await
         .unwrap());
     let got = repo.get("iptv").await.unwrap().unwrap();
     assert_eq!(got.status, PluginStatus::Enabled);
-    assert_eq!(got.granted_permissions, vec![PluginPermission::ItemsPublish]);
+    assert_eq!(
+        got.granted_permissions,
+        vec![PluginPermission::ItemsPublish]
+    );
 
-    assert!(!repo.set_status("nope", PluginStatus::Enabled).await.unwrap());
+    assert!(!repo
+        .set_status("nope", PluginStatus::Enabled)
+        .await
+        .unwrap());
     assert!(repo.delete("iptv").await.unwrap());
     assert!(!repo.delete("iptv").await.unwrap());
 }
@@ -76,7 +91,10 @@ async fn virtual_library_lifecycle_and_purge() {
         .await
         .unwrap();
     assert_eq!(lib.path.to_string_lossy(), "plugin://iptv/library/lib-1");
-    assert_eq!(libs.plugin_id_of("lib-1").await.unwrap().as_deref(), Some("iptv"));
+    assert_eq!(
+        libs.plugin_id_of("lib-1").await.unwrap().as_deref(),
+        Some("iptv")
+    );
 
     // Regular libraries have no plugin owner.
     libs.create("real", "Real", "/tmp/real", MediaType::Movie, false, None)
@@ -87,7 +105,12 @@ async fn virtual_library_lifecycle_and_purge() {
 
     // The virtual library is returned by get_all and get_by_id.
     assert!(libs.get_by_id("lib-1").await.unwrap().is_some());
-    assert!(libs.get_all().await.unwrap().iter().any(|l| l.id == "lib-1"));
+    assert!(libs
+        .get_all()
+        .await
+        .unwrap()
+        .iter()
+        .any(|l| l.id == "lib-1"));
 
     let item = MediaItem {
         library_id: "lib-1".to_string(),

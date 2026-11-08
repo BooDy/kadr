@@ -27,7 +27,14 @@ async fn admin_routes_require_admin() {
     let h = build(enabled_settings()).await;
     let (s, _) = call(&h.app, "GET", "/api/v1/admin/plugins", None, None).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
-    let (s, _) = call(&h.app, "GET", "/api/v1/admin/plugins", Some(&h.user_token), None).await;
+    let (s, _) = call(
+        &h.app,
+        "GET",
+        "/api/v1/admin/plugins",
+        Some(&h.user_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
 
@@ -37,35 +44,58 @@ async fn register_then_approve_flow() {
     let mock = spawn_mock("hello", &["items:publish", "playback:resolve"]).await;
 
     let (status, body) = call(
-        &h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
         Some(json!({ "base_url": format!("{}/", mock.base_url) })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["plugin"]["id"], "hello");
     assert_eq!(body["plugin"]["status"], "pending");
-    assert_eq!(body["plugin"]["base_url"], mock.base_url, "trailing slash is trimmed");
+    assert_eq!(
+        body["plugin"]["base_url"], mock.base_url,
+        "trailing slash is trimmed"
+    );
     assert!(!body["secret"].as_str().unwrap().is_empty());
     assert!(body["plugin"].get("secret").is_none());
 
     // Duplicate registration conflicts.
     let (status, _) = call(
-        &h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
         Some(json!({ "base_url": mock.base_url })),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, body) = call(
-        &h.app, "POST", "/api/v1/admin/plugins/hello/approve", Some(&h.admin_token), None,
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/approve",
+        Some(&h.admin_token),
+        None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["plugin"]["status"], "enabled");
-    assert_eq!(body["plugin"]["granted_permissions"], json!(["items:publish", "playback:resolve"]));
+    assert_eq!(
+        body["plugin"]["granted_permissions"],
+        json!(["items:publish", "playback:resolve"])
+    );
     assert!(!body["token"].as_str().unwrap().is_empty());
 
-    let (status, body) = call(&h.app, "GET", "/api/v1/admin/plugins", Some(&h.admin_token), None).await;
+    let (status, body) = call(
+        &h.app,
+        "GET",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_array().unwrap().len(), 1);
 }
@@ -74,18 +104,30 @@ async fn register_then_approve_flow() {
 async fn approve_can_grant_a_subset_but_not_unrequested_permissions() {
     let h = build(enabled_settings()).await;
     let mock = spawn_mock("hello", &["items:publish"]).await;
-    call(&h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
-         Some(json!({ "base_url": mock.base_url }))).await;
+    call(
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
+        Some(json!({ "base_url": mock.base_url })),
+    )
+    .await;
 
     let (status, _) = call(
-        &h.app, "POST", "/api/v1/admin/plugins/hello/approve", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/approve",
+        Some(&h.admin_token),
         Some(json!({ "permissions": ["playback:resolve"] })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, body) = call(
-        &h.app, "POST", "/api/v1/admin/plugins/hello/approve", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/approve",
+        Some(&h.admin_token),
         Some(json!({ "permissions": [] })),
     )
     .await;
@@ -98,7 +140,10 @@ async fn register_rejects_unreachable_plugin_and_bad_manifests() {
     let h = build(enabled_settings()).await;
 
     let (status, body) = call(
-        &h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
         Some(json!({ "base_url": "http://127.0.0.1:1" })),
     )
     .await;
@@ -110,14 +155,20 @@ async fn register_rejects_unreachable_plugin_and_bad_manifests() {
     m["api_version"] = json!(2);
     mock.set_manifest(m);
     let (status, _) = call(
-        &h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
         Some(json!({ "base_url": mock.base_url })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, _) = call(
-        &h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
         Some(json!({ "base_url": "ftp://example.com" })),
     )
     .await;
@@ -134,26 +185,61 @@ async fn enable_disable_and_remove_with_and_without_purge() {
         .await
         .unwrap();
 
-    let (s, body) = call(&h.app, "POST", "/api/v1/admin/plugins/hello/disable", Some(&h.admin_token), None).await;
+    let (s, body) = call(
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/disable",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(body["status"], "disabled");
-    let (s, body) = call(&h.app, "POST", "/api/v1/admin/plugins/hello/enable", Some(&h.admin_token), None).await;
+    let (s, body) = call(
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/enable",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(body["status"], "enabled");
 
     // Remove without purge keeps the library.
-    let (s, _) = call(&h.app, "DELETE", "/api/v1/admin/plugins/hello", Some(&h.admin_token), None).await;
+    let (s, _) = call(
+        &h.app,
+        "DELETE",
+        "/api/v1/admin/plugins/hello",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::NO_CONTENT);
     assert!(h.plugin_repo.get("hello").await.unwrap().is_none());
     assert!(h.lib_repo.get_by_id("lib-1").await.unwrap().is_some());
 
     // Re-register and remove with purge deletes it.
     register_and_approve(&h, &mock).await;
-    let (s, _) = call(&h.app, "DELETE", "/api/v1/admin/plugins/hello?purge=true", Some(&h.admin_token), None).await;
+    let (s, _) = call(
+        &h.app,
+        "DELETE",
+        "/api/v1/admin/plugins/hello?purge=true",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::NO_CONTENT);
     assert!(h.lib_repo.get_by_id("lib-1").await.unwrap().is_none());
 
-    let (s, _) = call(&h.app, "DELETE", "/api/v1/admin/plugins/hello", Some(&h.admin_token), None).await;
+    let (s, _) = call(
+        &h.app,
+        "DELETE",
+        "/api/v1/admin/plugins/hello",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 }
 
@@ -161,8 +247,21 @@ async fn enable_disable_and_remove_with_and_without_purge() {
 async fn pending_plugins_cannot_be_enabled_before_approval() {
     let h = build(enabled_settings()).await;
     let mock = spawn_mock("hello", &["items:publish"]).await;
-    call(&h.app, "POST", "/api/v1/admin/plugins", Some(&h.admin_token),
-         Some(json!({ "base_url": mock.base_url }))).await;
-    let (s, _) = call(&h.app, "POST", "/api/v1/admin/plugins/hello/enable", Some(&h.admin_token), None).await;
+    call(
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
+        Some(json!({ "base_url": mock.base_url })),
+    )
+    .await;
+    let (s, _) = call(
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/enable",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
 }

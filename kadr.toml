@@ -10,3 +10,8 @@ max_readers = 4
 [scanner]
 debounce_millis = 500
 use_ffprobe = true
+
+[plugins]
+enabled = false
+resolve_timeout_secs = 5
+allow_private_proxy = false

@@ -233,4 +233,3 @@ pub struct ResolveRequest {
     #[serde(default)]
     pub client: ClientCapabilities,
 }
-

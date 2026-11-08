@@ -46,7 +46,10 @@ impl IntoResponse for ServiceError {
             Self::Plugin(e) => (e.status(), e.code().to_string()),
             Self::Storage(e) => {
                 tracing::error!("Plugin storage error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "STORAGE_ERROR".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "STORAGE_ERROR".to_string(),
+                )
             }
             Self::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL".to_string()),
         };
@@ -54,7 +57,11 @@ impl IntoResponse for ServiceError {
             Self::Storage(_) => "Database error".to_string(),
             other => other.to_string(),
         };
-        (status, Json(serde_json::json!({ "error": code, "message": message }))).into_response()
+        (
+            status,
+            Json(serde_json::json!({ "error": code, "message": message })),
+        )
+            .into_response()
     }
 }
 
@@ -121,7 +128,9 @@ impl PluginService {
                 server_secret: server_secret.to_vec(),
                 config,
                 events,
-                client: PluginClient::new(Duration::from_secs(settings.resolve_timeout_secs.max(1))),
+                client: PluginClient::new(Duration::from_secs(
+                    settings.resolve_timeout_secs.max(1),
+                )),
                 proxy_http: reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
                     .connect_timeout(Duration::from_secs(10))
@@ -238,7 +247,10 @@ impl PluginService {
         granted.dedup();
 
         self.inner.repo.set_granted(id, &granted).await?;
-        self.inner.repo.set_status(id, PluginStatus::Enabled).await?;
+        self.inner
+            .repo
+            .set_status(id, PluginStatus::Enabled)
+            .await?;
         let token = self
             .inner
             .tokens
@@ -288,7 +300,10 @@ impl PluginService {
             .get(&auth.plugin_id)
             .await?
             .ok_or_else(|| ServiceError::Forbidden("plugin is not registered".to_string()))?;
-        if !matches!(record.status, PluginStatus::Enabled | PluginStatus::Unhealthy) {
+        if !matches!(
+            record.status,
+            PluginStatus::Enabled | PluginStatus::Unhealthy
+        ) {
             return Err(ServiceError::Forbidden("plugin is not enabled".to_string()));
         }
         if !record.has_permission(perm) {

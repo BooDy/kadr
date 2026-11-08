@@ -7,7 +7,10 @@ use plugin_support::*;
 use serde_json::json;
 
 async fn seed(h: &Harness, live: bool) -> MediaItem {
-    h.lib_repo.create_virtual("hello", "lib-1", "Lib", MediaType::LiveChannel).await.unwrap();
+    h.lib_repo
+        .create_virtual("hello", "lib-1", "Lib", MediaType::LiveChannel)
+        .await
+        .unwrap();
     let mut item = MediaItem {
         library_id: "lib-1".into(),
         item_type: MediaType::LiveChannel,
@@ -21,7 +24,11 @@ async fn seed(h: &Harness, live: bool) -> MediaItem {
         item.metadata.extra.insert("live".into(), json!(true));
     }
     h.media_repo.upsert_batch(&[item]).await.unwrap();
-    h.media_repo.find_by_path(plugin_item_path("hello", "ch1")).await.unwrap().unwrap()
+    h.media_repo
+        .find_by_path(plugin_item_path("hello", "ch1"))
+        .await
+        .unwrap()
+        .unwrap()
 }
 
 #[tokio::test]
@@ -32,23 +39,47 @@ async fn live_items_never_resume_and_never_persist_progress() {
 
     // Pre-existing state must not be used for resume, and must not be overwritten.
     h.playback_repo
-        .upsert_progress("viewer", id, 400, kadr_core::models::WatchState::InProgress, 1)
+        .upsert_progress(
+            "viewer",
+            id,
+            400,
+            kadr_core::models::WatchState::InProgress,
+            1,
+        )
         .await
         .unwrap();
 
-    let (status, body) = call(&h.app, "POST", "/api/v1/playback/sessions", Some(&h.user_token), Some(json!({ "media_item_id": id }))).await;
+    let (status, body) = call(
+        &h.app,
+        "POST",
+        "/api/v1/playback/sessions",
+        Some(&h.user_token),
+        Some(json!({ "media_item_id": id })),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["resume_position_seconds"], 0);
     let session_id = body["session_id"].as_str().unwrap().to_string();
 
     let (status, _) = call(
-        &h.app, "POST", &format!("/api/v1/playback/{session_id}/progress"),
-        Some(&h.user_token), Some(json!({ "position_seconds": 500 })),
+        &h.app,
+        "POST",
+        &format!("/api/v1/playback/{session_id}/progress"),
+        Some(&h.user_token),
+        Some(json!({ "position_seconds": 500 })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let state = h.playback_repo.get_state("viewer", id).await.unwrap().unwrap();
-    assert_eq!(state.playback_position_seconds, 400, "live heartbeats must not persist progress");
+    let state = h
+        .playback_repo
+        .get_state("viewer", id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        state.playback_position_seconds, 400,
+        "live heartbeats must not persist progress"
+    );
 }
 
 #[tokio::test]
@@ -57,21 +88,39 @@ async fn non_live_plugin_items_persist_progress_like_files() {
     let item = seed(&h, false).await;
     let id = item.id.unwrap();
 
-    let (_, body) = call(&h.app, "POST", "/api/v1/playback/sessions", Some(&h.user_token), Some(json!({ "media_item_id": id }))).await;
-    let session_id = body["session_id"].as_str().unwrap().to_string();
-    call(
-        &h.app, "POST", &format!("/api/v1/playback/{session_id}/progress"),
-        Some(&h.user_token), Some(json!({ "position_seconds": 30 })),
+    let (_, body) = call(
+        &h.app,
+        "POST",
+        "/api/v1/playback/sessions",
+        Some(&h.user_token),
+        Some(json!({ "media_item_id": id })),
     )
     .await;
-    let state = h.playback_repo.get_state("viewer", id).await.unwrap().unwrap();
+    let session_id = body["session_id"].as_str().unwrap().to_string();
+    call(
+        &h.app,
+        "POST",
+        &format!("/api/v1/playback/{session_id}/progress"),
+        Some(&h.user_token),
+        Some(json!({ "position_seconds": 30 })),
+    )
+    .await;
+    let state = h
+        .playback_repo
+        .get_state("viewer", id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(state.playback_position_seconds, 30);
 }
 
 #[tokio::test]
 async fn live_item_with_nonzero_duration_never_resumes_and_never_persists_progress() {
     let h = build(enabled_settings()).await;
-    h.lib_repo.create_virtual("hello", "lib-2", "Lib", MediaType::LiveChannel).await.unwrap();
+    h.lib_repo
+        .create_virtual("hello", "lib-2", "Lib", MediaType::LiveChannel)
+        .await
+        .unwrap();
     let mut item = MediaItem {
         library_id: "lib-2".into(),
         item_type: MediaType::LiveChannel,
@@ -87,27 +136,56 @@ async fn live_item_with_nonzero_duration_never_resumes_and_never_persists_progre
     };
     item.metadata.extra.insert("live".into(), json!(true));
     h.media_repo.upsert_batch(&[item]).await.unwrap();
-    let seeded = h.media_repo.find_by_path(plugin_item_path("hello", "ch2")).await.unwrap().unwrap();
+    let seeded = h
+        .media_repo
+        .find_by_path(plugin_item_path("hello", "ch2"))
+        .await
+        .unwrap()
+        .unwrap();
     let id = seeded.id.unwrap();
 
     h.playback_repo
-        .upsert_progress("viewer", id, 400, kadr_core::models::WatchState::InProgress, 1)
+        .upsert_progress(
+            "viewer",
+            id,
+            400,
+            kadr_core::models::WatchState::InProgress,
+            1,
+        )
         .await
         .unwrap();
 
-    let (status, body) = call(&h.app, "POST", "/api/v1/playback/sessions", Some(&h.user_token), Some(json!({ "media_item_id": id }))).await;
+    let (status, body) = call(
+        &h.app,
+        "POST",
+        "/api/v1/playback/sessions",
+        Some(&h.user_token),
+        Some(json!({ "media_item_id": id })),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["resume_position_seconds"], 0);
     let session_id = body["session_id"].as_str().unwrap().to_string();
 
     let (status, _) = call(
-        &h.app, "POST", &format!("/api/v1/playback/{session_id}/progress"),
-        Some(&h.user_token), Some(json!({ "position_seconds": 500 })),
+        &h.app,
+        "POST",
+        &format!("/api/v1/playback/{session_id}/progress"),
+        Some(&h.user_token),
+        Some(json!({ "position_seconds": 500 })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let state = h.playback_repo.get_state("viewer", id).await.unwrap().unwrap();
-    assert_eq!(state.playback_position_seconds, 400, "live heartbeats must not persist progress even with duration > 0");
+    let state = h
+        .playback_repo
+        .get_state("viewer", id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        state.playback_position_seconds, 400,
+        "live heartbeats must not persist progress even with duration > 0"
+    );
 }
 
 #[tokio::test]
@@ -117,14 +195,32 @@ async fn non_live_item_with_zero_duration_persists_progress() {
     let id = item.id.unwrap();
     assert_eq!(item.technical.duration_seconds, 0);
 
-    let (_, body) = call(&h.app, "POST", "/api/v1/playback/sessions", Some(&h.user_token), Some(json!({ "media_item_id": id }))).await;
+    let (_, body) = call(
+        &h.app,
+        "POST",
+        "/api/v1/playback/sessions",
+        Some(&h.user_token),
+        Some(json!({ "media_item_id": id })),
+    )
+    .await;
     let session_id = body["session_id"].as_str().unwrap().to_string();
     let (status, _) = call(
-        &h.app, "POST", &format!("/api/v1/playback/{session_id}/progress"),
-        Some(&h.user_token), Some(json!({ "position_seconds": 45 })),
+        &h.app,
+        "POST",
+        &format!("/api/v1/playback/{session_id}/progress"),
+        Some(&h.user_token),
+        Some(json!({ "position_seconds": 45 })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let state = h.playback_repo.get_state("viewer", id).await.unwrap().unwrap();
-    assert_eq!(state.playback_position_seconds, 45, "non-live 0-duration item must persist progress");
+    let state = h
+        .playback_repo
+        .get_state("viewer", id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        state.playback_position_seconds, 45,
+        "non-live 0-duration item must persist progress"
+    );
 }

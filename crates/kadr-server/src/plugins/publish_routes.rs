@@ -86,7 +86,10 @@ async fn owned_library(
         Some(owner) if owner == auth.plugin_id => {}
         _ => return Err(not_found()),
     }
-    svc.libs().get_by_id(library_id).await?.ok_or_else(not_found)
+    svc.libs()
+        .get_by_id(library_id)
+        .await?
+        .ok_or_else(not_found)
 }
 
 async fn create_library(
@@ -99,16 +102,16 @@ async fn create_library(
     if name.is_empty() {
         return Err(ServiceError::Invalid("name must not be empty".to_string()));
     }
-    let id = body
-        .id
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let id = body.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     if !valid_library_id(&id) {
         return Err(ServiceError::Invalid(
             "library id must be 1-64 characters of [A-Za-z0-9_-]".to_string(),
         ));
     }
     if svc.libs().get_by_id(&id).await?.is_some() {
-        return Err(ServiceError::Conflict(format!("library '{id}' already exists")));
+        return Err(ServiceError::Conflict(format!(
+            "library '{id}' already exists"
+        )));
     }
     let library = svc
         .libs()

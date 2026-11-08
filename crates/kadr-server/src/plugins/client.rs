@@ -122,10 +122,14 @@ impl PluginClient {
         let resp = rb.timeout(self.timeout).send().await.map_err(map_reqwest)?;
         let status = resp.status();
         if status.is_server_error() {
-            return Err(PluginError::Unavailable(format!("plugin returned {status}")));
+            return Err(PluginError::Unavailable(format!(
+                "plugin returned {status}"
+            )));
         }
         if !status.is_success() {
-            return Err(PluginError::BadResponse(format!("plugin returned {status}")));
+            return Err(PluginError::BadResponse(format!(
+                "plugin returned {status}"
+            )));
         }
         resp.json::<T>().await.map_err(|e| {
             if e.is_timeout() {

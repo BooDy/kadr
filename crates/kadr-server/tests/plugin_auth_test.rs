@@ -52,8 +52,14 @@ fn user_tokens_are_not_plugin_tokens_and_vice_versa() {
     let user_token = jwt.generate_token(&user).unwrap();
     let plugin_token = plugin.issue("iptv").unwrap();
 
-    assert!(plugin.verify(&user_token).is_err(), "user token must not verify as plugin token");
-    assert!(jwt.verify_token(&plugin_token).is_err(), "plugin token must not verify as user token");
+    assert!(
+        plugin.verify(&user_token).is_err(),
+        "user token must not verify as plugin token"
+    );
+    assert!(
+        jwt.verify_token(&plugin_token).is_err(),
+        "plugin token must not verify as user token"
+    );
 }
 
 #[tokio::test]
@@ -97,7 +103,8 @@ async fn plugin_auth_extractor_success_and_failure() {
         .unwrap()
         .into_parts();
     parts.extensions.insert(svc.clone());
-    let auth = PluginAuth::from_request_parts(&mut parts, &()).await.unwrap();
+    let auth = PluginAuth::from_request_parts(&mut parts, &())
+        .await
+        .unwrap();
     assert_eq!(auth.plugin_id, "iptv");
 }
-

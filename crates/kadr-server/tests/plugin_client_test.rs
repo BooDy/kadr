@@ -26,13 +26,22 @@ fn breaker_opens_after_three_failures_and_half_opens_after_cooldown() {
     b.record_failure(t0);
     assert!(!b.allow(t0), "third failure opens it");
     assert!(!b.allow(t0 + Duration::from_secs(29)));
-    assert!(b.allow(t0 + Duration::from_secs(31)), "half-open after cooldown");
+    assert!(
+        b.allow(t0 + Duration::from_secs(31)),
+        "half-open after cooldown"
+    );
     b.record_failure(t0 + Duration::from_secs(31));
-    assert!(!b.allow(t0 + Duration::from_secs(32)), "one failure while half-open re-opens");
+    assert!(
+        !b.allow(t0 + Duration::from_secs(32)),
+        "one failure while half-open re-opens"
+    );
     assert!(b.allow(t0 + Duration::from_secs(62)));
     b.record_success();
     b.record_failure(t0 + Duration::from_secs(63));
-    assert!(b.allow(t0 + Duration::from_secs(63)), "success fully resets the counter");
+    assert!(
+        b.allow(t0 + Duration::from_secs(63)),
+        "success fully resets the counter"
+    );
 }
 
 #[test]
@@ -51,21 +60,36 @@ fn breaker_half_open_allows_single_probe_and_expires_lease() {
     assert!(b.allow(t_half_open), "first probe admitted");
 
     // Second allow() during an in-flight probe is false
-    assert!(!b.allow(t_half_open), "second allow during in-flight probe is false");
-    assert!(!b.allow(t_half_open + Duration::from_secs(10)), "probe still in-flight");
+    assert!(
+        !b.allow(t_half_open),
+        "second allow during in-flight probe is false"
+    );
+    assert!(
+        !b.allow(t_half_open + Duration::from_secs(10)),
+        "probe still in-flight"
+    );
 
     // After the probe reports failure it is open again
     b.record_failure(t_half_open + Duration::from_secs(10));
-    assert!(!b.allow(t_half_open + Duration::from_secs(11)), "failure re-opens the breaker");
+    assert!(
+        !b.allow(t_half_open + Duration::from_secs(11)),
+        "failure re-opens the breaker"
+    );
 
     // Cooldown again to half-open
     let t_half_open_2 = t_half_open + Duration::from_secs(10) + Duration::from_secs(31);
-    assert!(b.allow(t_half_open_2), "probe admitted again after second cooldown");
+    assert!(
+        b.allow(t_half_open_2),
+        "probe admitted again after second cooldown"
+    );
 
     // After success it is closed
     b.record_success();
     assert!(b.allow(t_half_open_2), "breaker is closed after success");
-    assert!(b.allow(t_half_open_2), "subsequent requests are allowed when closed");
+    assert!(
+        b.allow(t_half_open_2),
+        "subsequent requests are allowed when closed"
+    );
 
     // Trip the breaker again to test lease expiration
     b.record_failure(t_half_open_2);
@@ -79,17 +103,26 @@ fn breaker_half_open_allows_single_probe_and_expires_lease() {
 
     // An unreported probe lease expires after 30s (Duration::from_secs(30))
     let t_expired = t_half_open_3 + Duration::from_secs(31);
-    assert!(b.allow(t_expired), "unreported probe lease expired after 30s so a new probe is allowed");
+    assert!(
+        b.allow(t_expired),
+        "unreported probe lease expired after 30s so a new probe is allowed"
+    );
 }
 
 #[test]
 fn error_status_and_code_mapping() {
     assert_eq!(PluginError::Unavailable("x".into()).status().as_u16(), 503);
-    assert_eq!(PluginError::Unavailable("x".into()).code(), "PLUGIN_UNAVAILABLE");
+    assert_eq!(
+        PluginError::Unavailable("x".into()).code(),
+        "PLUGIN_UNAVAILABLE"
+    );
     assert_eq!(PluginError::Timeout.status().as_u16(), 504);
     assert_eq!(PluginError::Timeout.code(), "PLUGIN_TIMEOUT");
     assert_eq!(PluginError::BadResponse("x".into()).status().as_u16(), 502);
-    assert_eq!(PluginError::BadResponse("x".into()).code(), "PLUGIN_BAD_RESPONSE");
+    assert_eq!(
+        PluginError::BadResponse("x".into()).code(),
+        "PLUGIN_BAD_RESPONSE"
+    );
 }
 
 #[tokio::test]
@@ -123,12 +156,21 @@ async fn resolve_sends_bearer_secret_and_parses_descriptor() {
     mock.set_secret("s3cret");
     let client = PluginClient::new(Duration::from_secs(2));
 
-    let d = client.resolve("hello", &mock.base_url, "s3cret", &req()).await.unwrap();
+    let d = client
+        .resolve("hello", &mock.base_url, "s3cret", &req())
+        .await
+        .unwrap();
     assert_eq!(d.mode, PlaybackMode::Direct);
-    assert_eq!(mock.last_resolve_body.lock().unwrap().as_ref().unwrap()["remote_id"], "ch1");
+    assert_eq!(
+        mock.last_resolve_body.lock().unwrap().as_ref().unwrap()["remote_id"],
+        "ch1"
+    );
 
     // Wrong secret -> plugin answers 401 -> treated as a bad response, not an outage.
-    let err = client.resolve("hello", &mock.base_url, "wrong", &req()).await.unwrap_err();
+    let err = client
+        .resolve("hello", &mock.base_url, "wrong", &req())
+        .await
+        .unwrap_err();
     assert!(matches!(err, PluginError::BadResponse(_)), "got {err:?}");
 }
 
@@ -168,11 +210,17 @@ async fn circuit_opens_after_repeated_failures_and_stops_calling_the_plugin() {
     let client = PluginClient::new(Duration::from_secs(2));
 
     for _ in 0..3 {
-        assert!(client.resolve("flaky", &mock.base_url, "s", &req()).await.is_err());
+        assert!(client
+            .resolve("flaky", &mock.base_url, "s", &req())
+            .await
+            .is_err());
     }
     assert_eq!(mock.calls(), 3);
 
-    let err = client.resolve("flaky", &mock.base_url, "s", &req()).await.unwrap_err();
+    let err = client
+        .resolve("flaky", &mock.base_url, "s", &req())
+        .await
+        .unwrap_err();
     assert!(matches!(err, PluginError::Unavailable(_)));
     assert_eq!(mock.calls(), 3, "open circuit must not reach the plugin");
 }

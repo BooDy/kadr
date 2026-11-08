@@ -45,7 +45,9 @@ fn media_item_accessors() {
     assert!(!item.is_seekable(), "live items are never seekable");
 
     let mut vod = MediaItem::default();
-    vod.metadata.extra.insert("seekable".into(), serde_json::json!(false));
+    vod.metadata
+        .extra
+        .insert("seekable".into(), serde_json::json!(false));
     assert!(!vod.is_seekable());
 }
 
@@ -81,7 +83,10 @@ fn descriptor_and_manifest_json_shapes() {
     .unwrap();
     assert_eq!(
         m.permissions,
-        vec![PluginPermission::ItemsPublish, PluginPermission::PlaybackResolve]
+        vec![
+            PluginPermission::ItemsPublish,
+            PluginPermission::PlaybackResolve
+        ]
     );
 
     let d: PlaybackDescriptor =

@@ -493,7 +493,10 @@ impl LibraryRepository {
                  (SELECT id FROM libraries WHERE plugin_id = ?1)",
                 params![plugin_id],
             )?;
-            let n = tx.execute("DELETE FROM libraries WHERE plugin_id = ?1", params![plugin_id])?;
+            let n = tx.execute(
+                "DELETE FROM libraries WHERE plugin_id = ?1",
+                params![plugin_id],
+            )?;
             tx.commit()?;
             Ok(n)
         })

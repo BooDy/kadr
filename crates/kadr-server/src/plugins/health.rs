@@ -19,7 +19,10 @@ impl PluginService {
             return Ok(());
         }
         for record in self.repo().list().await? {
-            if !matches!(record.status, PluginStatus::Enabled | PluginStatus::Unhealthy) {
+            if !matches!(
+                record.status,
+                PluginStatus::Enabled | PluginStatus::Unhealthy
+            ) {
                 continue;
             }
             let result = self

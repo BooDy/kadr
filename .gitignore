@@ -1,4 +1,5 @@
 /target
+examples/plugin-hello/target/
 data/
 *.db
 *.db-wal

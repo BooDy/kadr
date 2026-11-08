@@ -205,12 +205,23 @@ fn test_build_args_for_url_source_adds_whitelist_and_headers_before_input() {
         headers,
     };
 
-    let args = build_ffmpeg_hls_args_for_source(&source, std::path::Path::new("/tmp/out"), &decision, &params);
+    let args = build_ffmpeg_hls_args_for_source(
+        &source,
+        std::path::Path::new("/tmp/out"),
+        &decision,
+        &params,
+    );
 
     let i = args.iter().position(|a| a == "-i").unwrap();
     assert_eq!(args[i + 1], "https://example.com/live.ts");
-    let wl = args.iter().position(|a| a == "-protocol_whitelist").unwrap();
-    assert!(wl < i, "protocol whitelist is an input option and must precede -i");
+    let wl = args
+        .iter()
+        .position(|a| a == "-protocol_whitelist")
+        .unwrap();
+    assert!(
+        wl < i,
+        "protocol whitelist is an input option and must precede -i"
+    );
     assert_eq!(args[wl + 1], "http,https,tcp,tls,crypto");
     let h = args.iter().position(|a| a == "-headers").unwrap();
     assert!(h < i);
@@ -236,8 +247,13 @@ fn test_file_source_wrapper_matches_path_function() {
     let out = std::path::Path::new("/tmp/out");
     assert_eq!(
         build_ffmpeg_hls_args(path, out, &decision, &params),
-        build_ffmpeg_hls_args_for_source(&PlaybackSource::File(path.to_path_buf()), out, &decision, &params)
+        build_ffmpeg_hls_args_for_source(
+            &PlaybackSource::File(path.to_path_buf()),
+            out,
+            &decision,
+            &params
+        )
     );
-    assert!(!build_ffmpeg_hls_args(path, out, &decision, &params).contains(&"-protocol_whitelist".to_string()));
+    assert!(!build_ffmpeg_hls_args(path, out, &decision, &params)
+        .contains(&"-protocol_whitelist".to_string()));
 }
-

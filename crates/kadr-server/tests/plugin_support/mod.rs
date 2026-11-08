@@ -49,7 +49,9 @@ fn authorized(m: &MockPlugin, headers: &HeaderMap) -> bool {
     match &*m.expected_secret.lock().unwrap() {
         None => true,
         Some(secret) => {
-            headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok())
+            headers
+                .get(header::AUTHORIZATION)
+                .and_then(|h| h.to_str().ok())
                 == Some(format!("Bearer {secret}").as_str())
         }
     }
@@ -218,14 +220,27 @@ pub async fn build(settings: PluginSettings) -> Harness {
         role,
         created_at: 0,
     };
-    user_repo.create(&mk(UserRole::Admin, "admin")).await.unwrap();
-    user_repo.create(&mk(UserRole::Standard, "viewer")).await.unwrap();
-    let admin_token = jwt_svc.generate_token(&mk(UserRole::Admin, "admin")).unwrap();
-    let user_token = jwt_svc.generate_token(&mk(UserRole::Standard, "viewer")).unwrap();
+    user_repo
+        .create(&mk(UserRole::Admin, "admin"))
+        .await
+        .unwrap();
+    user_repo
+        .create(&mk(UserRole::Standard, "viewer"))
+        .await
+        .unwrap();
+    let admin_token = jwt_svc
+        .generate_token(&mk(UserRole::Admin, "admin"))
+        .unwrap();
+    let user_token = jwt_svc
+        .generate_token(&mk(UserRole::Standard, "viewer"))
+        .unwrap();
 
     let session_registry = Arc::new(SessionRegistry::new());
     let event_bus = Arc::new(EventBus::default_bus());
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
         std::env::temp_dir().join(format!("kadr-plugin-test-{}", uuid::Uuid::new_v4())),
         SubtitleRepository::new(pool.clone()),
@@ -237,8 +252,10 @@ pub async fn build(settings: PluginSettings) -> Harness {
         event_bus.clone(),
     ));
     let (ingest_tx, _rx) = tokio::sync::mpsc::channel(1);
-    let mut config = AppConfig::default();
-    config.plugins = settings;
+    let config = AppConfig {
+        plugins: settings,
+        ..Default::default()
+    };
 
     let playback_repo_handle = playback_repo.clone();
     let app = create_router_with_ingest(
@@ -301,7 +318,13 @@ pub async fn call_raw(
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
     let headers = resp.headers().clone();
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes().to_vec();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
     (status, headers, bytes)
 }
 
@@ -314,7 +337,10 @@ pub async fn call(
     body: Option<Value>,
 ) -> (StatusCode, Value) {
     let (status, _, bytes) = call_raw(app, method, uri, token, &[], body).await;
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// Registers the mock through the admin API, approves it with all requested permissions,
@@ -362,5 +388,3 @@ pub fn fake_ffmpeg(dir: &std::path::Path) -> (std::path::PathBuf, std::path::Pat
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     (script, log)
 }
-
-

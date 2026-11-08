@@ -121,4 +121,3 @@ async fn test_session_for_url_source_passes_url_to_ffmpeg() {
     assert!(logged.contains("https://example.com/stream.ts"));
     assert!(logged.contains("-protocol_whitelist"));
 }
-

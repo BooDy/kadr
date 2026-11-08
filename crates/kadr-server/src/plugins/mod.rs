@@ -13,4 +13,3 @@ pub use service::{PluginService, ServiceError};
 pub fn plugin_routes() -> axum::Router {
     admin_routes::admin_routes().merge(publish_routes::publish_routes())
 }
-

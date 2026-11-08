@@ -10,7 +10,13 @@ use serde_json::json;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-async fn seed_item(h: &Harness, library_id: &str, plugin_id: &str, remote_id: &str, live: bool) -> MediaItem {
+async fn seed_item(
+    h: &Harness,
+    library_id: &str,
+    plugin_id: &str,
+    remote_id: &str,
+    live: bool,
+) -> MediaItem {
     if h.lib_repo.get_by_id(library_id).await.unwrap().is_none() {
         h.lib_repo
             .create_virtual(plugin_id, library_id, "Lib", MediaType::Movie)
@@ -48,7 +54,11 @@ fn stream_uri(item: &MediaItem) -> String {
     format!("/api/v1/stream/{}", item.id.unwrap())
 }
 
-async fn get(h: &Harness, uri: &str, headers: &[(&str, &str)]) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+async fn get(
+    h: &Harness,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
     call_raw(&h.app, "GET", uri, Some(&h.user_token), headers, None).await
 }
 
@@ -64,8 +74,14 @@ async fn direct_mode_redirects_to_the_descriptor_url() {
     let (status, headers, _) = get(&h, &stream_uri(&item), &[]).await;
     assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
     assert_eq!(headers["location"], "https://cdn.example.com/video.mp4");
-    assert_eq!(mock.last_resolve_body.lock().unwrap().as_ref().unwrap()["remote_id"], "m1");
-    assert_eq!(mock.last_resolve_body.lock().unwrap().as_ref().unwrap()["user_id"], "viewer");
+    assert_eq!(
+        mock.last_resolve_body.lock().unwrap().as_ref().unwrap()["remote_id"],
+        "m1"
+    );
+    assert_eq!(
+        mock.last_resolve_body.lock().unwrap().as_ref().unwrap()["user_id"],
+        "viewer"
+    );
 }
 
 #[tokio::test]
@@ -106,12 +122,19 @@ async fn transcode_mode_points_clients_at_the_hls_endpoint() {
     assert_eq!(status, StatusCode::CONFLICT);
     let v = json_body(&body);
     assert_eq!(v["error"], "PLAYBACK_REQUIRES_TRANSCODE");
-    assert_eq!(v["hls_url"], format!("/api/v1/media/{}/hls/master.m3u8", item.id.unwrap()));
+    assert_eq!(
+        v["hls_url"],
+        format!("/api/v1/media/{}/hls/master.m3u8", item.id.unwrap())
+    );
 }
 
 #[tokio::test]
 async fn plugin_failures_map_to_503_504_502() {
-    let (h, mock) = setup(PluginSettings { resolve_timeout_secs: 1, ..enabled_settings() }).await;
+    let (h, mock) = setup(PluginSettings {
+        resolve_timeout_secs: 1,
+        ..enabled_settings()
+    })
+    .await;
     let item = seed_item(&h, "lib-1", "hello", "m1", false).await;
 
     mock.resolve_status.store(500, Ordering::SeqCst);
@@ -134,7 +157,11 @@ async fn plugin_failures_map_to_503_504_502() {
 
 #[tokio::test]
 async fn private_proxy_targets_are_rejected_unless_allowed() {
-    let (h, mock) = setup(PluginSettings { allow_private_proxy: false, ..enabled_settings() }).await;
+    let (h, mock) = setup(PluginSettings {
+        allow_private_proxy: false,
+        ..enabled_settings()
+    })
+    .await;
     mock.set_descriptor(json!({ "mode": "proxy", "url": mock.media_url() }));
     let item = seed_item(&h, "lib-1", "hello", "m1", false).await;
 
@@ -162,13 +189,23 @@ async fn descriptors_are_cached_only_when_the_plugin_sets_expires_in_secs() {
     get(&h, &stream_uri(&item), &[]).await;
     assert_eq!(mock.calls(), 2, "no expires_in_secs -> never cached");
 
-    mock.set_descriptor(json!({ "mode": "direct", "url": "https://cdn.example.com/a.mp4", "expires_in_secs": 60 }));
+    mock.set_descriptor(
+        json!({ "mode": "direct", "url": "https://cdn.example.com/a.mp4", "expires_in_secs": 60 }),
+    );
     get(&h, &stream_uri(&item), &[]).await;
     get(&h, &stream_uri(&item), &[]).await;
     assert_eq!(mock.calls(), 3, "second request served from cache");
 
     // A different user has their own cache entry.
-    call_raw(&h.app, "GET", &stream_uri(&item), Some(&h.admin_token), &[], None).await;
+    call_raw(
+        &h.app,
+        "GET",
+        &stream_uri(&item),
+        Some(&h.admin_token),
+        &[],
+        None,
+    )
+    .await;
     assert_eq!(mock.calls(), 4);
 }
 
@@ -177,14 +214,28 @@ async fn unavailable_plugins_are_never_called() {
     let (h, mock) = setup(enabled_settings()).await;
     let item = seed_item(&h, "lib-1", "hello", "m1", false).await;
 
-    call(&h.app, "POST", "/api/v1/admin/plugins/hello/disable", Some(&h.admin_token), None).await;
+    call(
+        &h.app,
+        "POST",
+        "/api/v1/admin/plugins/hello/disable",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     let (status, _, body) = get(&h, &stream_uri(&item), &[]).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(json_body(&body)["error"], "PLUGIN_UNAVAILABLE");
     assert_eq!(mock.calls(), 0);
 
     // Plugin removed entirely (no purge): items remain but cannot be played.
-    call(&h.app, "DELETE", "/api/v1/admin/plugins/hello", Some(&h.admin_token), None).await;
+    call(
+        &h.app,
+        "DELETE",
+        "/api/v1/admin/plugins/hello",
+        Some(&h.admin_token),
+        None,
+    )
+    .await;
     let (status, _, _) = get(&h, &stream_uri(&item), &[]).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(mock.calls(), 0);
@@ -247,7 +298,10 @@ async fn hls_feeds_proxy_and_transcode_urls_to_ffmpeg_and_refuses_direct() {
 #[tokio::test]
 async fn file_items_are_unaffected() {
     let (h, _mock) = setup(enabled_settings()).await;
-    h.lib_repo.create("real", "Real", "/tmp/real", MediaType::Movie, false, None).await.unwrap();
+    h.lib_repo
+        .create("real", "Real", "/tmp/real", MediaType::Movie, false, None)
+        .await
+        .unwrap();
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("movie.mp4");
     std::fs::write(&file, b"abcdefghij").unwrap();

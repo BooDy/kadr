@@ -159,4 +159,3 @@ fn test_plugin_settings_defaults_and_parsing() {
     assert_eq!(cfg.plugins.resolve_timeout_secs, 9);
     assert!(cfg.plugins.allow_private_proxy);
 }
-

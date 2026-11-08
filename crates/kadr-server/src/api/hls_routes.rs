@@ -48,6 +48,7 @@ pub fn parse_segment_seq(segment: &str) -> Option<u32> {
     s.parse::<u32>().ok()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn master_playlist(
     Path(item_id): Path<i64>,
     Query(query): Query<HlsQuery>,

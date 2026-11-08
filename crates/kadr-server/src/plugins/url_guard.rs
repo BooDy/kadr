@@ -52,7 +52,9 @@ async fn ensure_public_host(url: &reqwest::Url) -> Result<(), String> {
     for addr in addrs {
         seen = true;
         if is_private_ip(addr.ip()) {
-            return Err(format!("host {bare} resolves to a private or loopback address"));
+            return Err(format!(
+                "host {bare} resolves to a private or loopback address"
+            ));
         }
     }
     if seen {

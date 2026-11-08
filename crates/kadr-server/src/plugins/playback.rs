@@ -200,7 +200,11 @@ async fn proxy_upstream(
     let mut builder = Response::builder()
         .status(status.as_u16())
         .header(header::CONTENT_TYPE, content_type);
-    for name in [header::CONTENT_LENGTH, header::CONTENT_RANGE, header::ACCEPT_RANGES] {
+    for name in [
+        header::CONTENT_LENGTH,
+        header::CONTENT_RANGE,
+        header::ACCEPT_RANGES,
+    ] {
         if let Some(v) = upstream.headers().get(&name) {
             builder = builder.header(name, v.clone());
         }
