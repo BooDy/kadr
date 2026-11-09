@@ -39,6 +39,8 @@ pub fn admin_routes() -> Router {
             get(list_plugins).post(register_plugin),
         )
         .route("/api/v1/admin/plugins/{id}/approve", post(approve_plugin))
+        .route("/api/v1/admin/plugins/{id}/connection", get(plugin_connection))
+        .route("/api/v1/admin/plugins/{id}/token", post(issue_plugin_token))
         .route("/api/v1/admin/plugins/{id}/enable", post(enable_plugin))
         .route("/api/v1/admin/plugins/{id}/disable", post(disable_plugin))
         .route("/api/v1/admin/plugins/{id}", delete(remove_plugin))
@@ -72,6 +74,24 @@ async fn approve_plugin(
     let requested = body.and_then(|Json(b)| b.permissions);
     let (plugin, token) = svc.approve(&id, requested).await?;
     Ok(Json(json!({ "plugin": plugin, "token": token })))
+}
+
+async fn plugin_connection(
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+    Extension(svc): Extension<PluginService>,
+) -> Result<Json<Value>, ServiceError> {
+    let (record, secret) = svc.connection(&id).await?;
+    Ok(Json(json!({ "base_url": record.base_url, "secret": secret })))
+}
+
+async fn issue_plugin_token(
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+    Extension(svc): Extension<PluginService>,
+) -> Result<Json<Value>, ServiceError> {
+    let token = svc.issue_token(&id).await?;
+    Ok(Json(json!({ "token": token })))
 }
 
 async fn enable_plugin(

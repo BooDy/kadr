@@ -320,6 +320,30 @@ impl PluginService {
         self.get_or_404(id).await
     }
 
+    /// Connection details an admin copies into the plugin process. The secret is derived, so it
+    /// can be shown again at any time (including before approval).
+    pub async fn connection(&self, id: &str) -> Result<(PluginRecord, String), ServiceError> {
+        self.ensure_enabled().await?;
+        let record = self.get_or_404(id).await?;
+        let secret = self.secret_for(&record.id);
+        Ok((record, secret))
+    }
+
+    /// Issues a fresh plugin-to-server token for an approved plugin.
+    pub async fn issue_token(&self, id: &str) -> Result<String, ServiceError> {
+        self.ensure_enabled().await?;
+        let record = self.get_or_404(id).await?;
+        if record.status == PluginStatus::Pending {
+            return Err(ServiceError::Invalid(
+                "plugin has not been approved yet".to_string(),
+            ));
+        }
+        self.inner
+            .tokens
+            .issue(&record.id)
+            .map_err(|e| ServiceError::Internal(format!("failed to issue token: {e}")))
+    }
+
     pub async fn remove(&self, id: &str, purge: bool) -> Result<(), ServiceError> {
         self.ensure_enabled().await?;
         self.get_or_404(id).await?;
