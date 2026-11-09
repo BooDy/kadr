@@ -380,3 +380,53 @@ export interface CreateUserPayload {
   pin: string;
   role: UserRole;
 }
+
+// Plugin Types
+export type PluginStatus = 'pending' | 'enabled' | 'disabled' | 'unhealthy';
+export type PluginPermission = 'items:publish' | 'playback:resolve';
+
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  api_version: number;
+  permissions: PluginPermission[];
+  capabilities: {
+    virtual_library: boolean;
+    playback_resolver: boolean;
+  };
+}
+
+export interface PluginRecord {
+  id: string;
+  name: string;
+  base_url: string;
+  manifest: PluginManifest;
+  granted_permissions: PluginPermission[];
+  status: PluginStatus;
+  created_at: number;
+}
+
+export interface PluginSettings {
+  enabled: boolean;
+  resolve_timeout_secs: number;
+  allow_private_proxy: boolean;
+}
+
+export type UpdatePluginSettingsPayload = Partial<PluginSettings>;
+
+export interface PluginConnection {
+  base_url: string;
+  secret: string;
+}
+
+export interface RegisterPluginResponse {
+  plugin: PluginRecord;
+  secret: string;
+}
+
+export interface ApprovePluginResponse {
+  plugin: PluginRecord;
+  token: string;
+}
+

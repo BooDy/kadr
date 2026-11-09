@@ -1,4 +1,5 @@
 import type {
+  ApprovePluginResponse,
   CardViewModel,
   CreateLibraryPayload,
   CreateScreenPayload,
@@ -12,6 +13,11 @@ import type {
   OnlineSubtitleSearchResponse,
   PlaybackSessionResponse,
   PlaybackState,
+  PluginConnection,
+  PluginPermission,
+  PluginRecord,
+  PluginSettings,
+  RegisterPluginResponse,
   ScanResultResponse,
   ScreenLayout,
   ScreenSummary,
@@ -21,6 +27,7 @@ import type {
   UnlockLibraryResponse,
   UpdateConfigPayload,
   UpdateLibraryPayload,
+  UpdatePluginSettingsPayload,
   User,
   WidgetDataResponse,
 } from '../types';
@@ -556,6 +563,89 @@ export class ApiClient {
       body: JSON.stringify(payload),
     });
   }
+
+  // Plugin Management
+  public async getPluginSettings(): Promise<PluginSettings> {
+    return this.request<PluginSettings>('/api/v1/admin/plugins/settings');
+  }
+
+  public async updatePluginSettings(payload: UpdatePluginSettingsPayload): Promise<PluginSettings> {
+    return this.request<PluginSettings>('/api/v1/admin/plugins/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async listPlugins(): Promise<PluginRecord[]> {
+    return this.request<PluginRecord[]>('/api/v1/admin/plugins');
+  }
+
+  public async registerPlugin(baseUrl: string): Promise<RegisterPluginResponse> {
+    return this.request<RegisterPluginResponse>('/api/v1/admin/plugins', {
+      method: 'POST',
+      body: JSON.stringify({ base_url: baseUrl }),
+    });
+  }
+
+  public async approvePlugin(
+    id: string,
+    permissions?: PluginPermission[]
+  ): Promise<ApprovePluginResponse> {
+    return this.request<ApprovePluginResponse>(
+      `/api/v1/admin/plugins/${encodeURIComponent(id)}/approve`,
+      {
+        method: 'POST',
+        body: permissions ? JSON.stringify({ permissions }) : undefined,
+      }
+    );
+  }
+
+  public async setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord> {
+    return this.request<PluginRecord>(
+      `/api/v1/admin/plugins/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`,
+      { method: 'POST' }
+    );
+  }
+
+  public async removePlugin(id: string, purge = false): Promise<void> {
+    await this.request<void>(
+      `/api/v1/admin/plugins/${encodeURIComponent(id)}${purge ? '?purge=true' : ''}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  public async getPluginConnection(id: string): Promise<PluginConnection> {
+    return this.request<PluginConnection>(
+      `/api/v1/admin/plugins/${encodeURIComponent(id)}/connection`
+    );
+  }
+
+  public async issuePluginToken(id: string): Promise<{ token: string }> {
+    return this.request<{ token: string }>(
+      `/api/v1/admin/plugins/${encodeURIComponent(id)}/token`,
+      { method: 'POST' }
+    );
+  }
+}
+
+/** Human-readable text for an API error: prefers the server's `message` over its `error` code. */
+export function describeApiError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const details = err.details;
+    if (
+      details &&
+      typeof details === 'object' &&
+      'message' in details &&
+      typeof (details as { message: unknown }).message === 'string'
+    ) {
+      return (details as { message: string }).message;
+    }
+    return err.message;
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return 'Unexpected error';
 }
 
 export const api = new ApiClient();

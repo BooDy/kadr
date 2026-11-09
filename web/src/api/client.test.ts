@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ApiClient, ApiError } from './client';
+import { ApiClient, ApiError, describeApiError } from './client';
 import type { User, DownloadSubtitleRequest } from '../types';
 
 describe('ApiClient', () => {
@@ -630,5 +630,116 @@ describe('ApiClient', () => {
     });
   });
 });
+
+describe('ApiClient plugin management', () => {
+  let client: ApiClient;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const jsonResponse = (body: unknown, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: 'x',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => body,
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+    client = new ApiClient();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('gets and updates plugin settings', async () => {
+    const settings = { enabled: false, resolve_timeout_secs: 5, allow_private_proxy: false };
+    mockFetch.mockResolvedValueOnce(jsonResponse(settings));
+    expect(await client.getPluginSettings()).toEqual(settings);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/admin/plugins/settings');
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ...settings, enabled: true }));
+    const updated = await client.updatePluginSettings({ enabled: true });
+    expect(updated.enabled).toBe(true);
+    const [url, init] = mockFetch.mock.calls[1];
+    expect(url).toBe('/api/v1/admin/plugins/settings');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({ enabled: true });
+  });
+
+  it('lists and registers plugins', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse([]));
+    expect(await client.listPlugins()).toEqual([]);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/admin/plugins');
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ plugin: { id: 'hello' }, secret: 's3' }, 201));
+    const res = await client.registerPlugin('http://127.0.0.1:9100');
+    expect(res.secret).toBe('s3');
+    const [url, init] = mockFetch.mock.calls[1];
+    expect(url).toBe('/api/v1/admin/plugins');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ base_url: 'http://127.0.0.1:9100' });
+  });
+
+  it('approves with and without an explicit permission list', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ plugin: { id: 'hello' }, token: 't' }));
+    await client.approvePlugin('hello', ['items:publish']);
+    let [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/v1/admin/plugins/hello/approve');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ permissions: ['items:publish'] });
+
+    await client.approvePlugin('hello');
+    [url, init] = mockFetch.mock.calls[1];
+    expect(init.body).toBeUndefined();
+  });
+
+  it('enables, disables and removes plugins', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ id: 'hello', status: 'disabled' }));
+    await client.setPluginEnabled('hello', false);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/admin/plugins/hello/disable');
+    mockFetch.mockResolvedValueOnce(jsonResponse({ id: 'hello', status: 'enabled' }));
+    await client.setPluginEnabled('hello', true);
+    expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/admin/plugins/hello/enable');
+
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content', headers: new Headers() });
+    await client.removePlugin('hello');
+    expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/admin/plugins/hello');
+    expect(mockFetch.mock.calls[2][1].method).toBe('DELETE');
+
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content', headers: new Headers() });
+    await client.removePlugin('hello', true);
+    expect(mockFetch.mock.calls[3][0]).toBe('/api/v1/admin/plugins/hello?purge=true');
+  });
+
+  it('fetches connection details and issues tokens, encoding the id', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ base_url: 'http://x', secret: 's' }));
+    const conn = await client.getPluginConnection('a b');
+    expect(conn.secret).toBe('s');
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/admin/plugins/a%20b/connection');
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ token: 'tok' }));
+    expect((await client.issuePluginToken('hello')).token).toBe('tok');
+    expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/admin/plugins/hello/token');
+    expect(mockFetch.mock.calls[1][1].method).toBe('POST');
+  });
+
+  it('describeApiError prefers the API message over the error code', async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ error: 'PLUGIN_UNAVAILABLE', message: 'Plugin unavailable: connection failed' }, 503)
+    );
+    const err = await client.registerPlugin('http://x').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toBe('PLUGIN_UNAVAILABLE');
+    expect(describeApiError(err)).toBe('Plugin unavailable: connection failed');
+
+    expect(describeApiError(new ApiError(500, 'boom'))).toBe('boom');
+    expect(describeApiError(new Error('plain'))).toBe('plain');
+    expect(describeApiError('weird')).toBe('Unexpected error');
+  });
+});
+
 
 
