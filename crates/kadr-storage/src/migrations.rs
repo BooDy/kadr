@@ -11,6 +11,7 @@ pub fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/005_private_libraries.sql")),
         M::up(include_str!("migrations/006_multiple_library_paths.sql")),
         M::up(include_str!("migrations/007_plugins.sql")),
+        M::up(include_str!("migrations/008_settings.sql")),
     ])
 }
 
