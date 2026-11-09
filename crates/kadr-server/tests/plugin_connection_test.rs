@@ -175,18 +175,27 @@ async fn both_routes_require_an_admin_and_reject_plugin_tokens() {
 async fn the_secret_never_appears_in_the_plugin_list() {
     let h = build(enabled_settings()).await;
     let (_, secret) = registered(&h, "hello").await;
-    let (_, raw, _) = {
-        let (status, headers, bytes) = call_raw(
-            &h.app,
-            "GET",
-            "/api/v1/admin/plugins",
-            Some(&h.admin_token),
-            &[],
-            None,
-        )
-        .await;
-        (status, String::from_utf8(bytes).unwrap(), headers)
-    };
+    let (status, _headers, bytes) = call_raw(
+        &h.app,
+        "GET",
+        "/api/v1/admin/plugins",
+        Some(&h.admin_token),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("list response must be valid JSON");
+    let list = parsed
+        .as_array()
+        .expect("list response must be a JSON array");
+    assert!(
+        list.iter()
+            .any(|p| p.get("id").and_then(|id| id.as_str()) == Some("hello")),
+        "list response must contain the registered plugin 'hello'"
+    );
+    let raw = std::str::from_utf8(&bytes).expect("list response must be valid UTF-8");
     assert!(
         !raw.contains(&secret),
         "list response must not leak the derived secret"
