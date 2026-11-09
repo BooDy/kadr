@@ -76,6 +76,8 @@ impl PluginService {
             cache.remove(&key);
         }
 
+        self.sync_client_timeout().await;
+
         let request = ResolveRequest {
             remote_id: pref.remote_id,
             user_id: user_id.to_string(),

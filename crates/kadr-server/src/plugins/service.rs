@@ -2,6 +2,7 @@ use crate::config::{AppConfig, PluginSettings};
 use crate::events::EventBus;
 use crate::plugins::auth::{derive_plugin_secret, PluginAuth, PluginTokenService};
 use crate::plugins::client::{PluginClient, PluginError};
+use crate::plugins::settings::PluginSettingsUpdate;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -10,7 +11,9 @@ use axum::{
 use kadr_core::plugin::{
     ClientCapabilities, PlaybackDescriptor, PluginPermission, PluginRecord, PluginStatus,
 };
-use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PluginRepository};
+use kadr_storage::repos::{
+    LibraryRepository, MediaItemRepository, PluginRepository, SettingsRepository,
+};
 use kadr_storage::{StorageError, StoragePool};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -75,6 +78,7 @@ pub(crate) struct CachedDescriptor {
 struct Inner {
     repo: PluginRepository,
     libs: LibraryRepository,
+    settings_repo: SettingsRepository,
     media: MediaItemRepository,
     tokens: PluginTokenService,
     server_secret: Vec<u8>,
@@ -125,6 +129,7 @@ impl PluginService {
             inner: Arc::new(Inner {
                 repo: PluginRepository::new(pool.clone()),
                 libs: LibraryRepository::new(pool.clone()),
+                settings_repo: SettingsRepository::new(pool.clone()),
                 media: MediaItemRepository::new(pool),
                 tokens: PluginTokenService::new(server_secret),
                 server_secret: server_secret.to_vec(),
@@ -183,6 +188,40 @@ impl PluginService {
         }
     }
 
+    pub async fn get_settings(&self) -> PluginSettings {
+        self.settings().await
+    }
+
+    /// Persists the supplied keys first, then applies them to the live config. A failed
+    /// write leaves the in-memory config unchanged.
+    pub async fn update_settings(
+        &self,
+        update: PluginSettingsUpdate,
+    ) -> Result<PluginSettings, ServiceError> {
+        update.validate().map_err(ServiceError::Invalid)?;
+        self.inner.settings_repo.set_many(&update.entries()).await?;
+        let applied = {
+            let mut cfg = self.inner.config.write().await;
+            update.apply_to(&mut cfg.plugins);
+            cfg.plugins.clone()
+        };
+        self.apply_timeout(&applied);
+        Ok(applied)
+    }
+
+    fn apply_timeout(&self, settings: &PluginSettings) {
+        self.inner
+            .client
+            .set_timeout(Duration::from_secs(settings.resolve_timeout_secs.max(1)));
+    }
+
+    /// Re-reads `resolve_timeout_secs` from the live config and pushes it into the client.
+    /// Called before every outbound plugin call so every service instance stays current.
+    pub(crate) async fn sync_client_timeout(&self) {
+        let settings = self.settings().await;
+        self.apply_timeout(&settings);
+    }
+
     pub async fn list(&self) -> Result<Vec<PluginRecord>, ServiceError> {
         self.ensure_enabled().await?;
         Ok(self.inner.repo.list().await?)
@@ -200,6 +239,7 @@ impl PluginService {
     /// Returns the record and the derived server-to-plugin secret.
     pub async fn register(&self, base_url: &str) -> Result<(PluginRecord, String), ServiceError> {
         self.ensure_enabled().await?;
+        self.sync_client_timeout().await;
         let base_url = normalize_base_url(base_url)?;
         let manifest = self.inner.client.fetch_manifest(&base_url).await?;
         manifest.validate().map_err(ServiceError::Invalid)?;

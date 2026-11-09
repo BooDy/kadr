@@ -5,6 +5,7 @@ pub mod health;
 pub mod playback;
 pub mod publish_routes;
 pub mod service;
+pub mod settings;
 pub mod url_guard;
 
 pub use service::{PluginService, ServiceError};

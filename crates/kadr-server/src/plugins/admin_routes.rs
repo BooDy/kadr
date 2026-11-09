@@ -1,5 +1,7 @@
 use crate::auth::jwt::RequireAdmin;
+use crate::config::PluginSettings;
 use crate::plugins::service::{PluginService, ServiceError};
+use crate::plugins::settings::PluginSettingsUpdate;
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
@@ -28,6 +30,10 @@ pub struct RemoveQuery {
 
 pub fn admin_routes() -> Router {
     Router::new()
+        .route(
+            "/api/v1/admin/plugins/settings",
+            get(get_plugin_settings).put(put_plugin_settings),
+        )
         .route(
             "/api/v1/admin/plugins",
             get(list_plugins).post(register_plugin),
@@ -92,4 +98,19 @@ async fn remove_plugin(
 ) -> Result<StatusCode, ServiceError> {
     svc.remove(&id, q.purge).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_plugin_settings(
+    _admin: RequireAdmin,
+    Extension(svc): Extension<PluginService>,
+) -> Json<PluginSettings> {
+    Json(svc.get_settings().await)
+}
+
+async fn put_plugin_settings(
+    _admin: RequireAdmin,
+    Extension(svc): Extension<PluginService>,
+    Json(update): Json<PluginSettingsUpdate>,
+) -> Result<Json<PluginSettings>, ServiceError> {
+    Ok(Json(svc.update_settings(update).await?))
 }

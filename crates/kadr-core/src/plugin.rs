@@ -86,6 +86,9 @@ impl PluginManifest {
         if !id_ok {
             return Err("manifest id must match [a-z0-9-]{1,32}".to_string());
         }
+        if self.id == "settings" {
+            return Err("manifest id 'settings' is reserved".to_string());
+        }
         if self.name.trim().is_empty() {
             return Err("manifest name must not be empty".to_string());
         }

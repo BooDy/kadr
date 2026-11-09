@@ -95,3 +95,17 @@ fn descriptor_and_manifest_json_shapes() {
     assert!(d.headers.is_empty());
     assert_eq!(d.expires_in_secs, None);
 }
+
+#[test]
+fn manifest_id_settings_is_reserved() {
+    let manifest = PluginManifest {
+        id: "settings".into(),
+        name: "Settings".into(),
+        version: "0.1.0".into(),
+        api_version: 1,
+        permissions: vec![],
+        capabilities: Default::default(),
+    };
+    assert!(manifest.validate().unwrap_err().contains("reserved"));
+}
+

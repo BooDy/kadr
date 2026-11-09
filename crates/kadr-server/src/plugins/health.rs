@@ -18,6 +18,7 @@ impl PluginService {
         if self.ensure_enabled().await.is_err() {
             return Ok(());
         }
+        self.sync_client_timeout().await;
         for record in self.repo().list().await? {
             if !matches!(
                 record.status,

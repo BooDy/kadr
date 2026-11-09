@@ -2,6 +2,7 @@ use axum::http::StatusCode;
 use kadr_core::plugin::{PlaybackDescriptor, PluginManifest, ResolveRequest};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -97,7 +98,7 @@ fn map_reqwest(e: reqwest::Error) -> PluginError {
 #[derive(Clone)]
 pub struct PluginClient {
     http: reqwest::Client,
-    timeout: Duration,
+    timeout_ms: Arc<AtomicU64>,
     breakers: Arc<Mutex<HashMap<String, CircuitBreaker>>>,
 }
 
@@ -110,16 +111,26 @@ impl PluginClient {
             .expect("reqwest client builds with static configuration");
         Self {
             http,
-            timeout,
+            timeout_ms: Arc::new(AtomicU64::new(timeout.as_millis() as u64)),
             breakers: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Updates the request timeout used by every clone of this client from now on.
+    pub fn set_timeout(&self, timeout: Duration) {
+        self.timeout_ms
+            .store(timeout.as_millis().max(1) as u64, Ordering::Relaxed);
+    }
+
+    fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_ms.load(Ordering::Relaxed))
     }
 
     async fn send_json<T: DeserializeOwned>(
         &self,
         rb: reqwest::RequestBuilder,
     ) -> Result<T, PluginError> {
-        let resp = rb.timeout(self.timeout).send().await.map_err(map_reqwest)?;
+        let resp = rb.timeout(self.timeout()).send().await.map_err(map_reqwest)?;
         let status = resp.status();
         if status.is_server_error() {
             return Err(PluginError::Unavailable(format!(
@@ -153,7 +164,7 @@ impl PluginClient {
             .http
             .get(url)
             .bearer_auth(secret)
-            .timeout(self.timeout)
+            .timeout(self.timeout())
             .send()
             .await
             .map_err(map_reqwest)?;
