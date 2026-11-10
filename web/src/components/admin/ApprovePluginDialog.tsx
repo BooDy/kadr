@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { PluginPermission, PluginRecord } from '../../types';
 
@@ -29,6 +29,20 @@ export const ApprovePluginDialog: React.FC<ApprovePluginDialogProps> = ({
   const requested = plugin.manifest.permissions;
   const [selected, setSelected] = useState<PluginPermission[]>(requested);
 
+  useEffect(() => {
+    setSelected(plugin.manifest.permissions);
+  }, [plugin.id, plugin.manifest.permissions]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel, busy]);
+
   const toggle = (permission: PluginPermission) => {
     setSelected((current) =>
       current.includes(permission)
@@ -39,12 +53,22 @@ export const ApprovePluginDialog: React.FC<ApprovePluginDialogProps> = ({
 
   const confirm = () => onConfirm(requested.filter((p) => selected.includes(p)));
 
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && !busy) {
+      onCancel();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Approve ${plugin.name}`}
+        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-lg bg-panel border border-border-subtle rounded-xl p-6 shadow-xl space-y-4"
       >
         <div className="flex items-start justify-between gap-4">

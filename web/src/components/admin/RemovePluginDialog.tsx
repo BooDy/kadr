@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { PluginRecord } from '../../types';
 
@@ -17,12 +17,36 @@ export const RemovePluginDialog: React.FC<RemovePluginDialogProps> = ({
 }) => {
   const [purge, setPurge] = useState(false);
 
+  useEffect(() => {
+    setPurge(false);
+  }, [plugin.id]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel, busy]);
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && !busy) {
+      onCancel();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Remove ${plugin.name}`}
+        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md bg-panel border border-border-subtle rounded-xl p-6 shadow-xl space-y-4"
       >
         <div className="flex items-start justify-between gap-4">

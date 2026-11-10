@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Copy, X } from 'lucide-react';
 import { api, describeApiError } from '../../api/client';
 import type { PluginConnection, PluginRecord } from '../../types';
@@ -20,15 +20,46 @@ export const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ plugin, onCl
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
+  const pluginIdRef = useRef(plugin.id);
+  pluginIdRef.current = plugin.id;
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   useEffect(() => {
     let cancelled = false;
+    setConnection(null);
+    setToken(null);
+    setError(null);
+    setCopied(null);
+    setGenerating(false);
+
     api
       .getPluginConnection(plugin.id)
       .then((c) => {
-        if (!cancelled) setConnection(c);
+        if (!cancelled && isMountedRef.current && pluginIdRef.current === plugin.id) {
+          setConnection(c);
+        }
       })
       .catch((err) => {
-        if (!cancelled) setError(describeApiError(err));
+        if (!cancelled && isMountedRef.current && pluginIdRef.current === plugin.id) {
+          setError(describeApiError(err));
+        }
       });
     return () => {
       cancelled = true;
@@ -36,24 +67,44 @@ export const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ plugin, onCl
   }, [plugin.id]);
 
   const generateToken = async () => {
+    const currentId = plugin.id;
     setGenerating(true);
     setError(null);
     try {
-      const res = await api.issuePluginToken(plugin.id);
-      setToken(res.token);
+      const res = await api.issuePluginToken(currentId);
+      if (isMountedRef.current && pluginIdRef.current === currentId) {
+        setToken(res.token);
+      }
     } catch (err) {
-      setError(describeApiError(err));
+      if (isMountedRef.current && pluginIdRef.current === currentId) {
+        setError(describeApiError(err));
+      }
     } finally {
-      setGenerating(false);
+      if (isMountedRef.current && pluginIdRef.current === currentId) {
+        setGenerating(false);
+      }
     }
   };
 
   const copy = async (label: string, text: string) => {
+    const currentId = plugin.id;
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(label);
+      if (isMountedRef.current && pluginIdRef.current === currentId) {
+        setCopied(label);
+        setError(null);
+      }
     } catch {
-      setError('Copy failed. Select the text and copy it manually.');
+      if (isMountedRef.current && pluginIdRef.current === currentId) {
+        setCopied(null);
+        setError('Copy failed. Select the text and copy it manually.');
+      }
+    }
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onClose();
     }
   };
 
@@ -66,11 +117,15 @@ export const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ plugin, onCl
     : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Connection details for ${plugin.name}`}
+        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-2xl bg-panel border border-border-subtle rounded-xl p-6 shadow-xl space-y-4"
       >
         <div className="flex items-start justify-between gap-4">
