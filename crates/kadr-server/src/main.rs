@@ -201,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             for item in items {
-                if item.technical.duration_seconds > 0 && item.plugin_ref().is_none() {
+                if kadr_server::storyboard::has_video_stream(&item) {
                     let sb = sb_for_upsert.clone();
                     tokio::spawn(async move {
                         let _ = sb

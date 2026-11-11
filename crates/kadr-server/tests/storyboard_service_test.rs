@@ -295,3 +295,226 @@ async fn ingest_worker_pregenerates_on_scan_and_purges_on_delete() {
         "storyboard cache should be deleted when item is removed"
     );
 }
+
+#[test]
+fn has_video_stream_rejects_audio_and_accepts_video() {
+    use kadr_server::storyboard::has_video_stream;
+
+    // Reject music
+    let music_item = MediaItem {
+        id: Some(1),
+        item_type: MediaType::Music,
+        file_path: std::path::PathBuf::from("/music/song.mp3"),
+        technical: TechnicalInfo {
+            duration_seconds: 180,
+            container: Some("mp3".to_string()),
+            video_codec: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(!has_video_stream(&music_item));
+
+    // Reject audiobook
+    let audiobook_item = MediaItem {
+        id: Some(2),
+        item_type: MediaType::Audiobook,
+        file_path: std::path::PathBuf::from("/audiobooks/book.m4b"),
+        technical: TechnicalInfo {
+            duration_seconds: 3600,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(!has_video_stream(&audiobook_item));
+
+    // Reject audio-only file disguised as movie without video codec
+    let flac_movie = MediaItem {
+        id: Some(3),
+        item_type: MediaType::Movie,
+        file_path: std::path::PathBuf::from("/movies/track.flac"),
+        technical: TechnicalInfo {
+            duration_seconds: 240,
+            container: Some("flac".to_string()),
+            video_codec: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(!has_video_stream(&flac_movie));
+
+    // Reject zero duration
+    let zero_duration = MediaItem {
+        id: Some(4),
+        item_type: MediaType::Movie,
+        file_path: std::path::PathBuf::from("/movies/zero.mp4"),
+        technical: TechnicalInfo {
+            duration_seconds: 0,
+            video_codec: Some("h264".to_string()),
+            container: Some("mp4".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(!has_video_stream(&zero_duration));
+
+    // Accept valid movie with video codec
+    let valid_movie = MediaItem {
+        id: Some(5),
+        item_type: MediaType::Movie,
+        file_path: std::path::PathBuf::from("/movies/film.mkv"),
+        technical: TechnicalInfo {
+            duration_seconds: 7200,
+            video_codec: Some("hevc".to_string()),
+            container: Some("matroska".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(has_video_stream(&valid_movie));
+
+    // Accept valid episode
+    let valid_episode = MediaItem {
+        id: Some(6),
+        item_type: MediaType::Episode,
+        file_path: std::path::PathBuf::from("/tv/show/s01e01.mp4"),
+        technical: TechnicalInfo {
+            duration_seconds: 2400,
+            video_codec: Some("h264".to_string()),
+            container: Some("mp4".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(has_video_stream(&valid_episode));
+}
+
+#[tokio::test]
+async fn file_modification_invalidates_cache_and_prunes_stale_frames() {
+    let dir = tempdir().unwrap();
+    let video_path = dir.path().join("clip.mp4");
+    if !generate_test_video(&video_path, 8, 640, 360) {
+        eprintln!("ffmpeg not available; skipping test");
+        return;
+    }
+
+    let svc = StoryboardService::new(
+        dir.path().join("storyboards"),
+        StoryboardSettings::default(),
+        "ffmpeg".to_string(),
+    );
+
+    // 1. Generate single frame first
+    let frame_res = svc
+        .extract_or_get_frame(&video_path, 8, 2, 320)
+        .await
+        .unwrap();
+    let old_frame_path = match frame_res {
+        FrameStatus::Ready { path, .. } => {
+            assert!(path.exists());
+            path
+        }
+        other => panic!("expected Ready frame, got {other:?}"),
+    };
+
+    // 2. Generate storyboard manifest
+    let first = svc
+        .get_or_enqueue_manifest(1, &video_path, 8)
+        .await
+        .unwrap();
+    assert!(matches!(first, StoryboardStatus::Generating));
+
+    // Poll until ready
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if let StoryboardStatus::Ready(_) = svc
+            .get_or_enqueue_manifest(1, &video_path, 8)
+            .await
+            .unwrap()
+        {
+            break;
+        }
+    }
+
+    let path_hash = StoryboardService::path_hash(&video_path);
+    let item_dir = dir
+        .path()
+        .join("storyboards")
+        .join("items")
+        .join(&path_hash);
+    let frames_dir = dir
+        .path()
+        .join("storyboards")
+        .join("frames")
+        .join(&path_hash);
+
+    assert!(frames_dir.exists(), "frames_dir should exist");
+    assert!(old_frame_path.exists(), "old frame file should exist");
+
+    // Count source hash directories under item_dir before modification
+    let mut old_hashes = Vec::new();
+    let mut entries = tokio::fs::read_dir(&item_dir).await.unwrap();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(".tmp.") {
+            old_hashes.push(name);
+        }
+    }
+    assert_eq!(
+        old_hashes.len(),
+        1,
+        "should have exactly one source_hash directory"
+    );
+    let old_source_hash_dir = item_dir.join(&old_hashes[0]);
+    assert!(old_source_hash_dir.exists());
+
+    // 3. Sleep briefly to ensure mtime changes, then overwrite video with different duration
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert!(generate_test_video(&video_path, 14, 640, 360));
+
+    // 4. Enqueue storyboard for the modified file (duration 14)
+    let mod_first = svc
+        .get_or_enqueue_manifest(1, &video_path, 14)
+        .await
+        .unwrap();
+    assert!(matches!(mod_first, StoryboardStatus::Generating));
+
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if let StoryboardStatus::Ready(_) = svc
+            .get_or_enqueue_manifest(1, &video_path, 14)
+            .await
+            .unwrap()
+        {
+            break;
+        }
+    }
+
+    // 5. Verify:
+    // - old source_hash directory was pruned
+    // - stale frames_dir was pruned
+    // - new source_hash directory exists
+    assert!(
+        !old_source_hash_dir.exists(),
+        "old source_hash dir should be pruned"
+    );
+    assert!(!old_frame_path.exists(), "stale frame should be pruned");
+
+    let mut new_hashes = Vec::new();
+    let mut new_entries = tokio::fs::read_dir(&item_dir).await.unwrap();
+    while let Ok(Some(entry)) = new_entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(".tmp.") {
+            new_hashes.push(name);
+        }
+    }
+    assert_eq!(
+        new_hashes.len(),
+        1,
+        "should have exactly one new source_hash directory"
+    );
+    assert_ne!(
+        new_hashes[0], old_hashes[0],
+        "new source_hash must differ from old"
+    );
+}

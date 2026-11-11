@@ -6,7 +6,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use kadr_core::models::{MediaItem, MediaType};
+use kadr_core::models::MediaItem;
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -16,52 +16,14 @@ use tokio_util::io::ReaderStream;
 use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
 use crate::storyboard::{
-    clamp_tile_width, snap_frame_time, FrameStatus, SheetStatus, StoryboardService,
-    StoryboardStatus,
+    clamp_tile_width, has_video_stream, snap_frame_time, FrameStatus, SheetStatus,
+    StoryboardService, StoryboardStatus,
 };
 
 #[derive(Debug, Default, Deserialize)]
 pub struct FrameQuery {
     pub t: Option<f64>,
     pub w: Option<u32>,
-}
-
-fn has_video_stream(item: &MediaItem) -> bool {
-    if item.plugin_ref().is_some() {
-        return false;
-    }
-    if item.technical.duration_seconds <= 0 {
-        return false;
-    }
-    if matches!(
-        item.item_type,
-        MediaType::Music
-            | MediaType::Audiobook
-            | MediaType::Show
-            | MediaType::Season
-            | MediaType::LiveChannel
-    ) {
-        return false;
-    }
-    if let Some(ref container) = item.technical.container {
-        if matches!(
-            container.to_ascii_lowercase().as_str(),
-            "mp3" | "flac" | "aac" | "ogg" | "wav" | "m4a" | "opus"
-        ) && item.technical.video_codec.is_none()
-        {
-            return false;
-        }
-    }
-    if let Some(ext) = item.file_path.extension().and_then(|e| e.to_str()) {
-        if matches!(
-            ext.to_ascii_lowercase().as_str(),
-            "mp3" | "flac" | "aac" | "ogg" | "wav" | "m4a" | "opus"
-        ) && item.technical.video_codec.is_none()
-        {
-            return false;
-        }
-    }
-    true
 }
 
 async fn load_and_authorize_item(
@@ -146,7 +108,12 @@ fn generating_response() -> Response {
         .into_response()
 }
 
-async fn serve_cached_jpeg(path: &std::path::Path, etag: &str, headers: &HeaderMap) -> Response {
+async fn serve_cached_jpeg(
+    path: &std::path::Path,
+    etag: &str,
+    headers: &HeaderMap,
+    not_found_msg: &'static str,
+) -> Response {
     if let Some(if_none_match) = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
@@ -169,7 +136,7 @@ async fn serve_cached_jpeg(path: &std::path::Path, etag: &str, headers: &HeaderM
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "Storyboard sheet not found" })),
+                Json(serde_json::json!({ "error": not_found_msg })),
             )
                 .into_response();
         }
@@ -278,7 +245,9 @@ pub async fn get_storyboard_sheet(
         )
         .await
     {
-        Ok(SheetStatus::Ready { path, etag }) => serve_cached_jpeg(&path, &etag, &headers).await,
+        Ok(SheetStatus::Ready { path, etag }) => {
+            serve_cached_jpeg(&path, &etag, &headers, "Storyboard sheet not found").await
+        }
         Ok(SheetStatus::Generating) => generating_response(),
         Ok(SheetStatus::OutOfRange) => (
             StatusCode::NOT_FOUND,
@@ -344,7 +313,9 @@ pub async fn get_single_frame(
         )
         .await
     {
-        Ok(FrameStatus::Ready { path, etag }) => serve_cached_jpeg(&path, &etag, &headers).await,
+        Ok(FrameStatus::Ready { path, etag }) => {
+            serve_cached_jpeg(&path, &etag, &headers, "Frame not found").await
+        }
         Ok(FrameStatus::NoVideoStream) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": "Media item has no video stream" })),

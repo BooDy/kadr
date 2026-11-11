@@ -8,9 +8,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Semaphore;
 use tracing::{debug, warn};
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -55,6 +55,21 @@ struct StoryboardInner {
     in_flight: Mutex<HashSet<String>>,
     storyboard_generations: AtomicU64,
     frame_generations: AtomicU64,
+}
+
+struct InFlightGuard {
+    inner: Arc<StoryboardInner>,
+    source_hash: String,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let mut guard = match self.inner.in_flight.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.remove(&self.source_hash);
+    }
 }
 
 impl StoryboardService {
@@ -106,6 +121,10 @@ impl StoryboardService {
     pub fn path_hash(file_path: &Path) -> String {
         let canonical =
             std::fs::canonicalize(file_path).unwrap_or_else(|_| file_path.to_path_buf());
+        Self::path_hash_from_canonical(&canonical)
+    }
+
+    pub fn path_hash_from_canonical(canonical: &Path) -> String {
         let mut hasher = Sha256::new();
         hasher.update(canonical.to_string_lossy().as_bytes());
         format!("{:x}", hasher.finalize())
@@ -179,10 +198,12 @@ impl StoryboardService {
 
     pub async fn purge_for_path(&self, file_path: &Path) -> std::io::Result<()> {
         let mut hashes = HashSet::new();
-        let mut raw_hasher = Sha256::new();
-        raw_hasher.update(file_path.to_string_lossy().as_bytes());
-        hashes.insert(format!("{:x}", raw_hasher.finalize()));
-        hashes.insert(Self::path_hash(file_path));
+        hashes.insert(Self::path_hash_from_canonical(file_path));
+
+        let canonical = tokio::fs::canonicalize(file_path)
+            .await
+            .unwrap_or_else(|_| file_path.to_path_buf());
+        hashes.insert(Self::path_hash_from_canonical(&canonical));
 
         for h in hashes {
             let item_dir = self.item_dir(&h);
@@ -216,7 +237,7 @@ impl StoryboardService {
 
         let (canonical, mtime_secs, mtime_nanos, file_size) =
             Self::file_fingerprint(file_path).await?;
-        let path_hash = Self::path_hash(&canonical);
+        let path_hash = Self::path_hash_from_canonical(&canonical);
         let source_hash = Self::compute_source_hash(
             &canonical,
             mtime_secs,
@@ -269,7 +290,7 @@ impl StoryboardService {
 
         let (canonical, mtime_secs, mtime_nanos, file_size) =
             Self::file_fingerprint(file_path).await?;
-        let path_hash = Self::path_hash(&canonical);
+        let path_hash = Self::path_hash_from_canonical(&canonical);
         let source_hash = Self::compute_source_hash(
             &canonical,
             mtime_secs,
@@ -331,7 +352,7 @@ impl StoryboardService {
 
         let (canonical, mtime_secs, mtime_nanos, file_size) =
             Self::file_fingerprint(file_path).await?;
-        let path_hash = Self::path_hash(&canonical);
+        let path_hash = Self::path_hash_from_canonical(&canonical);
         let frame_hash = Self::compute_frame_hash(
             &canonical,
             mtime_secs,
@@ -411,7 +432,10 @@ impl StoryboardService {
         plan: StoryboardPlan,
     ) {
         {
-            let mut guard = self.inner.in_flight.lock().await;
+            let mut guard = match self.inner.in_flight.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             if !guard.insert(source_hash.clone()) {
                 return;
             }
@@ -419,7 +443,22 @@ impl StoryboardService {
 
         let svc = self.clone();
         tokio::spawn(async move {
-            let _permit = svc.inner.storyboard_semaphore.acquire().await;
+            let _guard = InFlightGuard {
+                inner: svc.inner.clone(),
+                source_hash: source_hash.clone(),
+            };
+
+            let _permit = match svc.inner.storyboard_semaphore.acquire().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    warn!(
+                        path = ?canonical_path,
+                        "Storyboard semaphore closed; aborting generation job"
+                    );
+                    return;
+                }
+            };
+
             if let Err(e) = svc
                 .generate_storyboard_job(&canonical_path, &path_hash, &source_hash, &plan)
                 .await
@@ -430,8 +469,6 @@ impl StoryboardService {
                     "Storyboard generation job failed"
                 );
             }
-            let mut guard = svc.inner.in_flight.lock().await;
-            guard.remove(&source_hash);
         });
     }
 
@@ -465,62 +502,74 @@ impl StoryboardService {
             .storyboard_generations
             .fetch_add(1, Ordering::SeqCst);
 
-        let mut produced = self
-            .run_storyboard_ffmpeg(canonical_path, &tmp_dir, plan, true)
-            .await;
-        if produced == 0 {
-            debug!(
-                path = ?canonical_path,
-                "Keyframe-only pass produced 0 sheets; retrying without -skip_frame nokey"
-            );
-            produced = self
-                .run_storyboard_ffmpeg(canonical_path, &tmp_dir, plan, false)
+        let work = async {
+            let mut produced = self
+                .run_storyboard_ffmpeg(canonical_path, &tmp_dir, plan, true)
                 .await;
-        }
+            if produced == 0 {
+                debug!(
+                    path = ?canonical_path,
+                    "Keyframe-only pass produced 0 sheets; retrying without -skip_frame nokey"
+                );
+                produced = self
+                    .run_storyboard_ffmpeg(canonical_path, &tmp_dir, plan, false)
+                    .await;
+            }
 
-        if produced == 0 {
-            let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-            tokio::fs::create_dir_all(&final_dir).await?;
-            tokio::fs::write(final_dir.join(".novideo"), b"").await?;
-            return Ok(());
-        }
+            if produced == 0 {
+                let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+                tokio::fs::create_dir_all(&final_dir).await?;
+                tokio::fs::write(final_dir.join(".novideo"), b"").await?;
+                return Ok(());
+            }
 
-        let first_sheet_tmp = tmp_dir.join("sheet_001.jpg");
-        let first_bytes = tokio::fs::read(&first_sheet_tmp).await?;
-        let (_, sheet_height) = parse_jpeg_dimensions(&first_bytes).unwrap_or((
-            plan.tile_width * plan.columns,
-            ((plan.tile_width * 9 / 16) & !1) * STORYBOARD_ROWS,
-        ));
-        let tile_height = ((sheet_height / STORYBOARD_ROWS).max(2)) & !1;
+            let first_sheet_tmp = tmp_dir.join("sheet_001.jpg");
+            let first_bytes = tokio::fs::read(&first_sheet_tmp).await?;
+            let (_, sheet_height) = parse_jpeg_dimensions(&first_bytes).unwrap_or((
+                plan.tile_width * plan.columns,
+                ((plan.tile_width * 9 / 16) & !1) * STORYBOARD_ROWS,
+            ));
+            let tile_height = ((sheet_height / STORYBOARD_ROWS).max(2)) & !1;
 
-        for idx in 0..produced {
-            let src = tmp_dir.join(format!("sheet_{:03}.jpg", idx + 1));
-            let dst = tmp_dir.join(format!("{idx}.jpg"));
-            tokio::fs::rename(&src, &dst).await?;
-        }
+            for idx in 0..produced {
+                let src = tmp_dir.join(format!("sheet_{:03}.jpg", idx + 1));
+                let dst = tmp_dir.join(format!("{idx}.jpg"));
+                tokio::fs::rename(&src, &dst).await?;
+            }
 
-        let manifest = build_manifest(0, plan, tile_height, Some(produced));
-        let manifest_bytes = serde_json::to_vec_pretty(&manifest)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        tokio::fs::write(tmp_dir.join("manifest.json"), manifest_bytes).await?;
+            let manifest = build_manifest(0, plan, tile_height, Some(produced));
+            let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            tokio::fs::write(tmp_dir.join("manifest.json"), manifest_bytes).await?;
 
-        if tokio::fs::try_exists(&final_dir).await.unwrap_or(false) {
-            let _ = tokio::fs::remove_dir_all(&final_dir).await;
-        }
-        if let Err(e) = tokio::fs::rename(&tmp_dir, &final_dir).await {
+            if tokio::fs::try_exists(&final_dir).await.unwrap_or(false) {
+                let _ = tokio::fs::remove_dir_all(&final_dir).await;
+            }
+            tokio::fs::rename(&tmp_dir, &final_dir).await?;
+
+            Ok(())
+        };
+
+        if let Err(e) = work.await {
             let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
             return Err(e);
         }
 
         // Prune older sibling source_hash directories for this file path
+        let mut pruned_any = false;
         if let Ok(mut entries) = tokio::fs::read_dir(&item_dir).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
                 if name_str != source_hash && !name_str.starts_with(".tmp.") {
                     let _ = tokio::fs::remove_dir_all(entry.path()).await;
+                    pruned_any = true;
                 }
             }
+        }
+        if pruned_any {
+            let frames_dir = self.frames_dir(path_hash);
+            let _ = tokio::fs::remove_dir_all(&frames_dir).await;
         }
 
         Ok(())
