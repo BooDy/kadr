@@ -80,6 +80,45 @@ impl Default for PluginSettings {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoryboardSettings {
+    #[serde(default = "default_storyboard_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_storyboard_max_concurrent")]
+    pub max_concurrent: usize,
+    #[serde(default = "default_storyboard_interval_secs")]
+    pub interval_secs: u64,
+    #[serde(default = "default_storyboard_tile_width")]
+    pub tile_width: u32,
+    #[serde(default)]
+    pub generate_on_scan: bool,
+}
+
+fn default_storyboard_enabled() -> bool {
+    true
+}
+fn default_storyboard_max_concurrent() -> usize {
+    1
+}
+fn default_storyboard_interval_secs() -> u64 {
+    10
+}
+fn default_storyboard_tile_width() -> u32 {
+    320
+}
+
+impl Default for StoryboardSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_storyboard_enabled(),
+            max_concurrent: default_storyboard_max_concurrent(),
+            interval_secs: default_storyboard_interval_secs(),
+            tile_width: default_storyboard_tile_width(),
+            generate_on_scan: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -94,6 +133,8 @@ pub struct AppConfig {
     pub transcoding: TranscodingSettings,
     #[serde(default)]
     pub plugins: PluginSettings,
+    #[serde(default)]
+    pub storyboard: StoryboardSettings,
 }
 
 fn default_server_name() -> String {

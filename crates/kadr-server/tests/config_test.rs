@@ -60,6 +60,11 @@ fn test_config_defaults() {
     assert_eq!(config.scanner.debounce_millis, 500);
     assert!(config.scanner.use_ffprobe);
     assert!(config.libraries.is_empty());
+    assert!(config.storyboard.enabled);
+    assert_eq!(config.storyboard.max_concurrent, 1);
+    assert_eq!(config.storyboard.interval_secs, 10);
+    assert_eq!(config.storyboard.tile_width, 320);
+    assert!(!config.storyboard.generate_on_scan);
 }
 
 #[test]
@@ -71,6 +76,11 @@ fn test_empty_toml_uses_defaults() {
     assert_eq!(config.storage.max_readers, 4);
     assert!(config.scanner.use_ffprobe);
     assert!(config.libraries.is_empty());
+    assert!(config.storyboard.enabled);
+    assert_eq!(config.storyboard.max_concurrent, 1);
+    assert_eq!(config.storyboard.interval_secs, 10);
+    assert_eq!(config.storyboard.tile_width, 320);
+    assert!(!config.storyboard.generate_on_scan);
 }
 
 #[test]
@@ -96,6 +106,11 @@ fn test_load_from_file_and_root_kadr_toml() {
     assert_eq!(config.storage.max_readers, 4);
     assert_eq!(config.scanner.debounce_millis, 500);
     assert!(config.scanner.use_ffprobe);
+    assert!(config.storyboard.enabled);
+    assert_eq!(config.storyboard.max_concurrent, 1);
+    assert_eq!(config.storyboard.interval_secs, 10);
+    assert_eq!(config.storyboard.tile_width, 320);
+    assert!(!config.storyboard.generate_on_scan);
 }
 
 #[test]
@@ -158,4 +173,25 @@ fn test_plugin_settings_defaults_and_parsing() {
     assert!(cfg.plugins.enabled);
     assert_eq!(cfg.plugins.resolve_timeout_secs, 9);
     assert!(cfg.plugins.allow_private_proxy);
+}
+
+#[test]
+fn test_storyboard_settings_defaults_and_parsing() {
+    let cfg: AppConfig = toml::from_str(
+        r#"
+        [storyboard]
+        enabled = false
+        max_concurrent = 4
+        interval_secs = 15
+        tile_width = 480
+        generate_on_scan = true
+        "#,
+    )
+    .unwrap();
+
+    assert!(!cfg.storyboard.enabled);
+    assert_eq!(cfg.storyboard.max_concurrent, 4);
+    assert_eq!(cfg.storyboard.interval_secs, 15);
+    assert_eq!(cfg.storyboard.tile_width, 480);
+    assert!(cfg.storyboard.generate_on_scan);
 }

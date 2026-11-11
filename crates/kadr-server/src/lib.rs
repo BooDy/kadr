@@ -8,6 +8,7 @@ pub mod playback;
 pub mod plugins;
 pub mod resolver;
 pub mod streaming;
+pub mod storyboard;
 pub mod subtitles;
 pub mod telemetry;
 

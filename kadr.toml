@@ -16,3 +16,11 @@ use_ffprobe = true
 enabled = false
 resolve_timeout_secs = 5
 allow_private_proxy = false
+
+[storyboard]
+enabled = true
+max_concurrent = 1
+interval_secs = 10
+tile_width = 320
+generate_on_scan = false
+
