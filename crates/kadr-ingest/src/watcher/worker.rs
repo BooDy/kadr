@@ -22,6 +22,8 @@ pub struct IngestWorker {
     repo: MediaItemRepository,
     subtitle_repo: Option<SubtitleRepository>,
     event_callback: Option<Arc<dyn Fn(kadr_core::events::SystemEvent) + Send + Sync>>,
+    delete_callback: Option<Arc<dyn Fn(PathBuf) + Send + Sync>>,
+    upsert_callback: Option<Arc<dyn Fn(Vec<MediaItem>) + Send + Sync>>,
 }
 
 impl IngestWorker {
@@ -31,6 +33,8 @@ impl IngestWorker {
             repo,
             subtitle_repo: None,
             event_callback: None,
+            delete_callback: None,
+            upsert_callback: None,
         }
     }
 
@@ -47,6 +51,22 @@ impl IngestWorker {
         self
     }
 
+    pub fn with_delete_callback<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(PathBuf) + Send + Sync + 'static,
+    {
+        self.delete_callback = Some(Arc::new(callback));
+        self
+    }
+
+    pub fn with_upsert_callback<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(Vec<MediaItem>) + Send + Sync + 'static,
+    {
+        self.upsert_callback = Some(Arc::new(callback));
+        self
+    }
+
     pub fn new_with_subtitles(
         rx: mpsc::Receiver<IngestMessage>,
         repo: MediaItemRepository,
@@ -57,6 +77,8 @@ impl IngestWorker {
             repo,
             subtitle_repo: Some(subtitle_repo),
             event_callback: None,
+            delete_callback: None,
+            upsert_callback: None,
         }
     }
 
@@ -77,6 +99,9 @@ impl IngestWorker {
                             batch.retain(|(item, _)| item.file_path != path);
                             if let Err(e) = self.repo.delete_by_path(&path).await {
                                 error!(path = ?path, error = ?e, "Failed to delete removed media file");
+                            }
+                            if let Some(ref cb) = self.delete_callback {
+                                cb(path);
                             }
                         }
                         None => {
@@ -181,6 +206,9 @@ impl IngestWorker {
         match self.repo.upsert_batch(&items).await {
             Ok(count) => {
                 info!(count = count, "Successfully ingested media batch");
+                if let Some(ref upsert_cb) = self.upsert_callback {
+                    upsert_cb(items.clone());
+                }
                 if let Some(ref cb) = self.event_callback {
                     let now = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)

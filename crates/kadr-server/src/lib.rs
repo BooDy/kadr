@@ -7,8 +7,8 @@ pub mod layout;
 pub mod playback;
 pub mod plugins;
 pub mod resolver;
-pub mod streaming;
 pub mod storyboard;
+pub mod streaming;
 pub mod subtitles;
 pub mod telemetry;
 

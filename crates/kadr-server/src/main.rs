@@ -175,12 +175,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let event_bus = Arc::new(EventBus::default_bus());
 
+    let storyboard_service = Arc::new(kadr_server::storyboard::StoryboardService::new(
+        config.server.data_dir.join("storyboards"),
+        config.storyboard.clone(),
+        config.transcoding.ffmpeg_path.clone(),
+    ));
+
     let (ingest_tx, ingest_rx) = tokio::sync::mpsc::channel(200);
     let bus_for_worker = event_bus.clone();
+    let sb_for_delete = storyboard_service.clone();
+    let sb_for_upsert = storyboard_service.clone();
     let worker = IngestWorker::new(ingest_rx, media_repo.clone())
         .with_subtitles(subtitle_repo.clone())
         .with_event_callback(move |ev| {
             bus_for_worker.publish(ev);
+        })
+        .with_delete_callback(move |path| {
+            let sb = sb_for_delete.clone();
+            tokio::spawn(async move {
+                let _ = sb.purge_for_path(&path).await;
+            });
+        })
+        .with_upsert_callback(move |items| {
+            if !sb_for_upsert.settings().generate_on_scan || !sb_for_upsert.is_available() {
+                return;
+            }
+            for item in items {
+                if item.technical.duration_seconds > 0 && item.plugin_ref().is_none() {
+                    let sb = sb_for_upsert.clone();
+                    tokio::spawn(async move {
+                        let _ = sb
+                            .get_or_enqueue_manifest(
+                                item.id.unwrap_or(0),
+                                &item.file_path,
+                                item.technical.duration_seconds,
+                            )
+                            .await;
+                    });
+                }
+            }
         });
     let worker_handle = tokio::spawn(worker.run());
 
@@ -394,7 +427,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pipeline.clone(),
         shared_config,
         server_identity,
-    );
+    )
+    .layer(axum::Extension(storyboard_service));
 
     // Mount static web SPA serving if assets exist
     let env_web = std::env::var("KADR_WEB_DIR")

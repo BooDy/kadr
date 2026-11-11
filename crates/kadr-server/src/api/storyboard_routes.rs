@@ -202,18 +202,13 @@ pub async fn get_storyboard_manifest(
     Extension(lib_repo): Extension<LibraryRepository>,
     Extension(storyboard_svc): Extension<Arc<StoryboardService>>,
 ) -> Response {
-    let item = match load_and_authorize_item(
-        item_id,
-        &unlocked,
-        &media_repo,
-        &lib_repo,
-        &storyboard_svc,
-    )
-    .await
-    {
-        Ok(i) => i,
-        Err(resp) => return resp,
-    };
+    let item =
+        match load_and_authorize_item(item_id, &unlocked, &media_repo, &lib_repo, &storyboard_svc)
+            .await
+        {
+            Ok(i) => i,
+            Err(resp) => return resp,
+        };
 
     match storyboard_svc
         .get_or_enqueue_manifest(item_id, &item.file_path, item.technical.duration_seconds)
@@ -266,18 +261,13 @@ pub async fn get_storyboard_sheet(
             .into_response();
     };
 
-    let item = match load_and_authorize_item(
-        item_id,
-        &unlocked,
-        &media_repo,
-        &lib_repo,
-        &storyboard_svc,
-    )
-    .await
-    {
-        Ok(i) => i,
-        Err(resp) => return resp,
-    };
+    let item =
+        match load_and_authorize_item(item_id, &unlocked, &media_repo, &lib_repo, &storyboard_svc)
+            .await
+        {
+            Ok(i) => i,
+            Err(resp) => return resp,
+        };
 
     match storyboard_svc
         .get_or_enqueue_sheet(
@@ -327,18 +317,13 @@ pub async fn get_single_frame(
     Extension(lib_repo): Extension<LibraryRepository>,
     Extension(storyboard_svc): Extension<Arc<StoryboardService>>,
 ) -> Response {
-    let item = match load_and_authorize_item(
-        item_id,
-        &unlocked,
-        &media_repo,
-        &lib_repo,
-        &storyboard_svc,
-    )
-    .await
-    {
-        Ok(i) => i,
-        Err(resp) => return resp,
-    };
+    let item =
+        match load_and_authorize_item(item_id, &unlocked, &media_repo, &lib_repo, &storyboard_svc)
+            .await
+        {
+            Ok(i) => i,
+            Err(resp) => return resp,
+        };
 
     let raw_t = query.t.unwrap_or(0.0);
     let Some(snapped_t) = snap_frame_time(raw_t, item.technical.duration_seconds) else {

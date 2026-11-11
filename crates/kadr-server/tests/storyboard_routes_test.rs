@@ -343,7 +343,10 @@ async fn storyboard_202_then_200_flow_and_cache_reuse() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(res.headers().get(header::CONTENT_TYPE).unwrap(), "image/jpeg");
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
     assert_eq!(
         res.headers().get(header::CACHE_CONTROL).unwrap(),
         "public, max-age=604800"
@@ -436,7 +439,10 @@ async fn storyboard_error_statuses_404_and_503() {
 
     // Nonexistent item -> 404 Media item not found
     let req = Request::builder()
-        .uri(format!("/api/v1/media/999999/storyboard?token={}", ctx.token))
+        .uri(format!(
+            "/api/v1/media/999999/storyboard?token={}",
+            ctx.token
+        ))
         .body(Body::empty())
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -504,7 +510,10 @@ async fn single_frame_fallback_endpoint_extracts_and_caches() {
         .unwrap();
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(res.headers().get(header::CONTENT_TYPE).unwrap(), "image/jpeg");
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
     assert_eq!(
         res.headers().get(header::CACHE_CONTROL).unwrap(),
         "public, max-age=604800"

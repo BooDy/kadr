@@ -228,7 +228,10 @@ impl StoryboardService {
 
         let source_dir = self.item_dir(&path_hash).join(&source_hash);
         let no_video_marker = source_dir.join(".novideo");
-        if tokio::fs::try_exists(&no_video_marker).await.unwrap_or(false) {
+        if tokio::fs::try_exists(&no_video_marker)
+            .await
+            .unwrap_or(false)
+        {
             return Ok(StoryboardStatus::NoVideoStream);
         }
 
@@ -278,7 +281,10 @@ impl StoryboardService {
 
         let source_dir = self.item_dir(&path_hash).join(&source_hash);
         let no_video_marker = source_dir.join(".novideo");
-        if tokio::fs::try_exists(&no_video_marker).await.unwrap_or(false) {
+        if tokio::fs::try_exists(&no_video_marker)
+            .await
+            .unwrap_or(false)
+        {
             return Ok(SheetStatus::NoVideoStream);
         }
 

@@ -64,9 +64,7 @@ pub fn compute_storyboard_plan(
     let interval_secs = initial_secs.max(min_secs_for_cap);
     let interval_ms = interval_secs * 1000;
 
-    let total_tiles = (duration_u64 * 1000)
-        .div_ceil(interval_ms)
-        .max(1) as u32;
+    let total_tiles = (duration_u64 * 1000).div_ceil(interval_ms).max(1) as u32;
     let sheet_count = total_tiles.div_ceil(TILES_PER_SHEET).max(1);
     let tile_width = clamp_tile_width(raw_tile_width);
 
@@ -312,7 +310,10 @@ mod tests {
         assert_eq!(manifest.sheets[0].url, "/api/v1/media/1/storyboard/0.jpg");
 
         let rewritten = rewrite_manifest_urls(manifest, 999);
-        assert_eq!(rewritten.sheets[0].url, "/api/v1/media/999/storyboard/0.jpg");
+        assert_eq!(
+            rewritten.sheets[0].url,
+            "/api/v1/media/999/storyboard/0.jpg"
+        );
     }
 
     #[test]
@@ -338,8 +339,7 @@ mod tests {
 
         // Truncated segment
         let truncated: Vec<u8> = vec![
-            0xFF, 0xD8,
-            0xFF, 0xC0, 0x00, 0x20, // claims 32 bytes but file ends
+            0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x20, // claims 32 bytes but file ends
             0x08,
         ];
         assert_eq!(parse_jpeg_dimensions(&truncated), None);
