@@ -108,4 +108,3 @@ fn manifest_id_settings_is_reserved() {
     };
     assert!(manifest.validate().unwrap_err().contains("reserved"));
 }
-

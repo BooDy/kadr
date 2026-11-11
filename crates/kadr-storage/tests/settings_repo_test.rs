@@ -18,9 +18,15 @@ async fn get_returns_none_for_missing_keys() {
 async fn set_inserts_then_overwrites() {
     let repo = repo().await;
     repo.set("plugins.enabled", "true").await.unwrap();
-    assert_eq!(repo.get("plugins.enabled").await.unwrap().as_deref(), Some("true"));
+    assert_eq!(
+        repo.get("plugins.enabled").await.unwrap().as_deref(),
+        Some("true")
+    );
     repo.set("plugins.enabled", "false").await.unwrap();
-    assert_eq!(repo.get("plugins.enabled").await.unwrap().as_deref(), Some("false"));
+    assert_eq!(
+        repo.get("plugins.enabled").await.unwrap().as_deref(),
+        Some("false")
+    );
 }
 
 #[tokio::test]
@@ -46,6 +52,8 @@ async fn set_many_writes_all_entries_and_get_all_returns_them() {
 async fn set_many_upserts_existing_keys() {
     let repo = repo().await;
     repo.set("a", "old").await.unwrap();
-    repo.set_many(&[("a".to_string(), "new".to_string())]).await.unwrap();
+    repo.set_many(&[("a".to_string(), "new".to_string())])
+        .await
+        .unwrap();
     assert_eq!(repo.get("a").await.unwrap().as_deref(), Some("new"));
 }

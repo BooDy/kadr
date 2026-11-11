@@ -83,7 +83,9 @@ pub async fn load_plugin_settings(
     if let Some(raw) = stored.get(KEY_ENABLED) {
         match parse_bool(raw) {
             Some(v) => settings.enabled = v,
-            None => tracing::warn!(key = KEY_ENABLED, value = %raw, "Ignoring invalid stored setting"),
+            None => {
+                tracing::warn!(key = KEY_ENABLED, value = %raw, "Ignoring invalid stored setting")
+            }
         }
     }
     if let Some(raw) = stored.get(KEY_RESOLVE_TIMEOUT_SECS) {

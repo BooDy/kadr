@@ -39,7 +39,10 @@ pub fn admin_routes() -> Router {
             get(list_plugins).post(register_plugin),
         )
         .route("/api/v1/admin/plugins/{id}/approve", post(approve_plugin))
-        .route("/api/v1/admin/plugins/{id}/connection", get(plugin_connection))
+        .route(
+            "/api/v1/admin/plugins/{id}/connection",
+            get(plugin_connection),
+        )
         .route("/api/v1/admin/plugins/{id}/token", post(issue_plugin_token))
         .route("/api/v1/admin/plugins/{id}/enable", post(enable_plugin))
         .route("/api/v1/admin/plugins/{id}/disable", post(disable_plugin))
@@ -82,7 +85,9 @@ async fn plugin_connection(
     Extension(svc): Extension<PluginService>,
 ) -> Result<Json<Value>, ServiceError> {
     let (record, secret) = svc.connection(&id).await?;
-    Ok(Json(json!({ "base_url": record.base_url, "secret": secret })))
+    Ok(Json(
+        json!({ "base_url": record.base_url, "secret": secret }),
+    ))
 }
 
 async fn issue_plugin_token(

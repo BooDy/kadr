@@ -130,10 +130,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     initialize_database(&pool).await?;
 
     let settings_repo = kadr_storage::repos::SettingsRepository::new(pool.clone());
-    config.plugins =
-        kadr_server::plugins::settings::load_plugin_settings(&settings_repo, config.plugins.clone())
-            .await;
-    info!(plugins_enabled = config.plugins.enabled, "Plugin settings loaded");
+    config.plugins = kadr_server::plugins::settings::load_plugin_settings(
+        &settings_repo,
+        config.plugins.clone(),
+    )
+    .await;
+    info!(
+        plugins_enabled = config.plugins.enabled,
+        "Plugin settings loaded"
+    );
 
     let lib_repo = LibraryRepository::new(pool.clone());
     let media_repo = MediaItemRepository::new(pool.clone());

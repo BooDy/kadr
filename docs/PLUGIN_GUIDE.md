@@ -9,12 +9,32 @@ The server never starts or stops plugins. API version: `1`.
 
 ## Enabling plugins
 
+The easiest way is the web UI: open **Administration, Plugins** and turn on **Enable plugins**. The
+setting is stored in Kadr's database, takes effect immediately (no restart) and survives restarts.
+
+`kadr.toml` still works and provides the **default** for a fresh install. A value saved from the web
+UI takes precedence over `kadr.toml`.
+
 ```toml
 [plugins]
 enabled = true              # default false
-resolve_timeout_secs = 5    # default 5
-allow_private_proxy = false # default false; see "Security"
+resolve_timeout_secs = 5    # default 5, allowed range 1-60
+allow_private_proxy = false # default false; see "Security notes"
 ```
+
+## Managing plugins in the web UI
+
+The **Plugins** tab lets an admin:
+
+1. enable or disable plugin support and change the settings above;
+2. **register** a plugin by URL (Kadr fetches its public manifest; the plugin appears as *pending*);
+3. **review and approve** the permissions the plugin requested (you can approve a subset);
+4. **enable / disable** an approved plugin, or **remove** it (optionally deleting its libraries and items);
+5. open **Connection details** to copy the plugin's secret, generate a token, and copy ready-made
+   `KADR_URL`, `KADR_PLUGIN_SECRET` and `KADR_PLUGIN_TOKEN` lines for the plugin's environment.
+   *(Note: `KADR_URL` is built from the address you opened Kadr at in your browser (`window.location.origin`); plugins running elsewhere may need a different URL.)*
+
+Plugin statuses refresh every 15 seconds while the tab is open, and the server-side health monitor probes every 30 seconds.
 
 ## Manifest
 
@@ -37,13 +57,17 @@ Serve `GET <base_url>/manifest.json` (public):
 
 | Call | Result |
 |---|---|
+| `GET /api/v1/admin/plugins/settings` | `{ enabled, resolve_timeout_secs, allow_private_proxy }`; works while plugins are disabled |
+| `PUT /api/v1/admin/plugins/settings` | partial body; validates `resolve_timeout_secs` (1-60); persists and applies immediately; works while plugins are disabled |
 | `POST /api/v1/admin/plugins` `{"base_url": "http://host:port"}` | `201 { plugin, secret }`; plugin is `pending` |
 | `POST /api/v1/admin/plugins/{id}/approve` `{"permissions": [...]}` (body optional) | `{ plugin, token }`; grants the requested permissions (or a subset) and enables it |
+| `GET /api/v1/admin/plugins/{id}/connection` | `{ base_url, secret }` for configuring the plugin process |
+| `POST /api/v1/admin/plugins/{id}/token` | `{ token }`: issues a fresh plugin-to-server token (approved plugins only) |
 | `POST /api/v1/admin/plugins/{id}/enable` / `disable` | toggles a previously approved plugin |
 | `DELETE /api/v1/admin/plugins/{id}?purge=true` | removes the plugin; `purge` also deletes its libraries and items |
 | `GET /api/v1/admin/plugins` | lists plugins |
 
-- `secret` is what **Kadr sends to the plugin**: `Authorization: Bearer <secret>` on `/health` and `/playback/resolve`. The plugin must reject calls without it. It is derived from the server secret, so it is never stored.
+- `secret` is what **Kadr sends to the plugin**: `Authorization: Bearer <secret>` on `/health` and `/playback/resolve`. The plugin must reject calls without it. `secret` is derived from the server secret, never stored, and can be viewed again at any time by an admin (web UI: Connection details, or `GET .../connection`).
 - `token` is what **the plugin sends to Kadr** on `/api/v1/plugin/*` calls. It is not a user token and cannot be used on any other route.
 
 ## Publishing (plugin to Kadr)
@@ -96,6 +120,8 @@ Three consecutive failures open a per-plugin circuit for 30 seconds; in the circ
 - Known limitations: DNS is resolved again when Kadr or ffmpeg connects, and ffmpeg follows redirects internally. Only register plugins you trust, and keep `allow_private_proxy = false` unless a plugin must reach your LAN.
 - Private (PIN-locked) libraries are checked before any resolve call, so a plugin is never asked about an item the user has not unlocked.
 - Plugins never receive user credentials, only an opaque user id.
+- The plugin secret is derived from Kadr's server secret. If it leaks, rotate the server secret: stop Kadr, delete the `jwt.secret` file in the data directory (`server.data_dir`, default `./data`; find the exact path in the startup log line "Generated and saved new JWT secret"), and start Kadr again. This invalidates every user session, plugin token and derived plugin secret, so users must sign in again and plugins must be given their new secret and a fresh token from **Connection details**.
+- The plugin id `settings` is reserved.
 
 ## Example
 

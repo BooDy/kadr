@@ -11,6 +11,7 @@ max_readers = 4
 debounce_millis = 500
 use_ffprobe = true
 
+# Defaults only: values saved from the web UI (Administration > Plugins) take precedence.
 [plugins]
 enabled = false
 resolve_timeout_secs = 5

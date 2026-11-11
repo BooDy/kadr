@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Plugin framework (HTTP)**: out-of-process plugins can publish virtual media items into plugin-owned libraries and resolve playback (`direct`, `proxy`, `transcode`) for them. Includes admin registration and approval (`/api/v1/admin/plugins`), scoped plugin tokens, a derived server-to-plugin secret, a circuit-breaker client, health monitoring with `plugin:error` events, SSRF protection for stream URLs, and live-item handling. Disabled by default; enable with `[plugins] enabled = true`. See `docs/PLUGIN_GUIDE.md` and `examples/plugin-hello`.
 - `MediaType::LiveChannel` and `HlsSessionManager::get_or_create_session_for_source` / `build_ffmpeg_hls_args_for_source` for transcoding from a URL.
+- **Plugin management from the web UI**: new Plugins admin tab to enable plugin support, change plugin settings, register plugins by URL, approve their permissions, enable/disable/remove them, and copy connection details. Plugin settings are now stored in the database (new `settings` table) and override `kadr.toml`; new admin endpoints `GET/PUT /api/v1/admin/plugins/settings`, `GET /api/v1/admin/plugins/{id}/connection` and `POST /api/v1/admin/plugins/{id}/token`. The plugin id `settings` is reserved. `kadr.toml` `[plugins]` still provides the defaults.
 
 ## [v0.1.3-alpha] - 2026-11-07
 

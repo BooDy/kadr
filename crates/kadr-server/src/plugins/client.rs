@@ -130,7 +130,11 @@ impl PluginClient {
         &self,
         rb: reqwest::RequestBuilder,
     ) -> Result<T, PluginError> {
-        let resp = rb.timeout(self.timeout()).send().await.map_err(map_reqwest)?;
+        let resp = rb
+            .timeout(self.timeout())
+            .send()
+            .await
+            .map_err(map_reqwest)?;
         let status = resp.status();
         if status.is_server_error() {
             return Err(PluginError::Unavailable(format!(
