@@ -19,14 +19,16 @@ import {
   Folder,
   Layout,
   Activity,
+  Puzzle,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import type { Library, MediaType, SystemConfig, User } from '../../types';
 import { FolderPickerModal } from './FolderPickerModal';
 import { LayoutStudio } from '../studio/LayoutStudio';
 import { TelemetryDashboard } from '../telemetry/TelemetryDashboard';
+import { PluginsPanel } from './PluginsPanel';
 
-export type AdminTab = 'libraries' | 'users' | 'studio' | 'telemetry' | 'config';
+export type AdminTab = 'libraries' | 'users' | 'studio' | 'telemetry' | 'config' | 'plugins';
 
 export interface AdminDashboardProps {
   onClose?: () => void;
@@ -426,6 +428,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <Server className="w-4 h-4" />
           Server Configuration
         </button>
+        <button
+          onClick={() => setActiveTab('plugins')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
+            activeTab === 'plugins'
+              ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
+              : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
+          }`}
+        >
+          <Puzzle className="w-4 h-4" />
+          Plugins
+        </button>
       </div>
 
       {/* Tab 1: Libraries Management */}
@@ -684,6 +697,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* Tab 5: Server Configuration */}
+      {activeTab === 'plugins' && <PluginsPanel />}
+
       {activeTab === 'config' && (
         <div className="mt-8 max-w-3xl space-y-6">
           <div>

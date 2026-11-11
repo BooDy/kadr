@@ -568,5 +568,22 @@ describe('AdminDashboard Component', () => {
       });
     });
   });
+
+  it('shows the Plugins tab and renders the plugins panel', async () => {
+    vi.spyOn(api, 'getPluginSettings').mockResolvedValue({
+      enabled: false,
+      resolve_timeout_secs: 5,
+      allow_private_proxy: false,
+    });
+    render(<AdminDashboard />);
+    await waitFor(() => expect(screen.getByText('Featured Movies')).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /^Plugins$/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: /Enable plugins/i })).toBeDefined()
+    );
+    expect(api.getPluginSettings).toHaveBeenCalled();
+  });
 });
+
 
