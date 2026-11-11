@@ -8,6 +8,7 @@ pub mod item_routes;
 pub mod library_routes;
 pub mod playback;
 pub mod screen_routes;
+pub mod storyboard_routes;
 pub mod streaming;
 pub mod subtitle_routes;
 pub mod system_routes;
@@ -67,6 +68,28 @@ pub fn create_router_with_ingest(
         hls_manager.clone().start_reaper();
     }
 
+    let (storyboard_settings, storyboard_dir, ffmpeg_path) = config
+        .try_read()
+        .map(|c| {
+            (
+                c.storyboard.clone(),
+                c.server.data_dir.join("storyboards"),
+                c.transcoding.ffmpeg_path.clone(),
+            )
+        })
+        .unwrap_or_else(|_| {
+            (
+                crate::config::StoryboardSettings::default(),
+                std::path::PathBuf::from("./data/storyboards"),
+                "ffmpeg".to_string(),
+            )
+        });
+    let storyboard_service = Arc::new(crate::storyboard::StoryboardService::new(
+        storyboard_dir,
+        storyboard_settings,
+        ffmpeg_path,
+    ));
+
     let plugin_service = crate::plugins::PluginService::new(
         media_repo.pool().clone(),
         jwt_svc.secret(),
@@ -77,6 +100,7 @@ pub fn create_router_with_ingest(
 
     let router = Router::new()
         .merge(hls_routes::hls_routes())
+        .merge(storyboard_routes::storyboard_routes())
         .merge(crate::plugins::plugin_routes())
         // Public discovery route
         .route("/api/v1/discovery", get(discovery_routes::get_discovery))
@@ -240,6 +264,7 @@ pub fn create_router_with_ingest(
         .layer(axum::middleware::from_fn(
             move |mut req: axum::extract::Request, next: axum::middleware::Next| {
                 let default_mgr = hls_manager.clone();
+                let default_sb = storyboard_service.clone();
                 async move {
                     if req
                         .extensions()
@@ -247,6 +272,13 @@ pub fn create_router_with_ingest(
                         .is_none()
                     {
                         req.extensions_mut().insert(default_mgr);
+                    }
+                    if req
+                        .extensions()
+                        .get::<Arc<crate::storyboard::StoryboardService>>()
+                        .is_none()
+                    {
+                        req.extensions_mut().insert(default_sb);
                     }
                     next.run(req).await
                 }
