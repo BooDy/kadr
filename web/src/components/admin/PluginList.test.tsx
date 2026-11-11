@@ -136,4 +136,16 @@ describe('RegisterPluginForm', () => {
     expect(screen.getByRole('button', { name: /Register plugin/i })).toBeDisabled();
     expect(screen.getByLabelText(/Plugin base URL/i)).toBeDisabled();
   });
+
+  it('keeps the field and does not throw when registration rejects', async () => {
+    const onRegister = vi.fn().mockRejectedValue(new Error('boom'));
+    render(<RegisterPluginForm onRegister={onRegister} />);
+    const input = screen.getByLabelText(/Plugin base URL/i) as HTMLInputElement;
+    const button = screen.getByRole('button', { name: /Register plugin/i });
+    fireEvent.change(input, { target: { value: 'http://crash' } });
+    fireEvent.click(button);
+    await waitFor(() => expect(onRegister).toHaveBeenCalledWith('http://crash'));
+    expect(input.value).toBe('http://crash');
+    expect(button).toBeEnabled();
+  });
 });
