@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Puzzle } from 'lucide-react';
 import { api, describeApiError } from '../../api/client';
 import type { PluginPermission, PluginRecord, PluginSettings } from '../../types';
@@ -23,45 +23,64 @@ export const PluginsPanel: React.FC = () => {
   const [approving, setApproving] = useState<PluginRecord | null>(null);
   const [removing, setRemoving] = useState<PluginRecord | null>(null);
   const [connecting, setConnecting] = useState<PluginRecord | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  const isMountedRef = useRef(true);
+  const refreshSeqRef = useRef(0);
+  const enabledRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const enabled = settings?.enabled ?? false;
 
   const applySettings = useCallback((s: PluginSettings) => {
     setSettings(s);
+    enabledRef.current = s.enabled;
     setTimeoutInput(String(s.resolve_timeout_secs));
     setAllowPrivate(s.allow_private_proxy);
   }, []);
 
-  const refresh = useCallback(async (silent = false) => {
+  const refresh = useCallback(async (silent = false): Promise<boolean> => {
+    const seq = ++refreshSeqRef.current;
     try {
-      setPlugins(await api.listPlugins());
+      const data = await api.listPlugins();
+      if (!isMountedRef.current || seq !== refreshSeqRef.current || !enabledRef.current) {
+        return false;
+      }
+      setPlugins(data);
+      return true;
     } catch (err) {
+      if (!isMountedRef.current || seq !== refreshSeqRef.current || !enabledRef.current) {
+        return false;
+      }
       setBanner(
         silent
           ? { type: 'warning', text: 'Could not refresh plugin status; showing the last known state.' }
           : { type: 'error', text: describeApiError(err) }
       );
+      return false;
     }
   }, []);
 
   // Initial load: settings first, the plugin list only when plugins are enabled.
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         const s = await api.getPluginSettings();
-        if (cancelled) return;
+        if (!isMountedRef.current) return;
         applySettings(s);
         if (s.enabled) await refresh();
       } catch (err) {
-        if (!cancelled) setBanner({ type: 'error', text: describeApiError(err) });
+        if (isMountedRef.current) setBanner({ type: 'error', text: describeApiError(err) });
       } finally {
-        if (!cancelled) setLoading(false);
+        if (isMountedRef.current) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [applySettings, refresh]);
 
   // Keep statuses fresh (health changes) while plugins are enabled.
@@ -77,21 +96,36 @@ export const PluginsPanel: React.FC = () => {
     setBusy(true);
     try {
       const message = await action();
-      if (message) setBanner({ type: 'success', text: message });
+      if (isMountedRef.current && message) {
+        setBanner({ type: 'success', text: message });
+      }
     } catch (err) {
-      setBanner({ type: 'error', text: describeApiError(err) });
+      if (isMountedRef.current) {
+        setBanner({ type: 'error', text: describeApiError(err) });
+      }
     } finally {
-      setBusy(false);
+      if (isMountedRef.current) {
+        setBusy(false);
+      }
     }
   };
 
   const toggleEnabled = () =>
     run(async () => {
-      const updated = await api.updatePluginSettings({ enabled: !enabled });
+      const nextEnabled = !enabled;
+      if (!nextEnabled) {
+        refreshSeqRef.current++;
+        enabledRef.current = false;
+        setPlugins([]);
+      }
+      const updated = await api.updatePluginSettings({ enabled: nextEnabled });
+      if (!isMountedRef.current) return;
       applySettings(updated);
       if (updated.enabled) {
         await refresh();
       } else {
+        refreshSeqRef.current++;
+        enabledRef.current = false;
         setPlugins([]);
       }
       return updated.enabled ? 'Plugins enabled.' : 'Plugins disabled.';
@@ -112,7 +146,9 @@ export const PluginsPanel: React.FC = () => {
         resolve_timeout_secs: secs,
         allow_private_proxy: allowPrivate,
       });
-      applySettings(updated);
+      if (isMountedRef.current) {
+        applySettings(updated);
+      }
       return 'Plugin settings saved.';
     });
   };
@@ -122,8 +158,13 @@ export const PluginsPanel: React.FC = () => {
     await run(async () => {
       const res = await api.registerPlugin(baseUrl);
       ok = true;
-      await refresh();
-      return `Registered "${res.plugin.name}". Review and approve its permissions to enable it.`;
+      if (isMountedRef.current) {
+        setBanner({
+          type: 'success',
+          text: `Registered "${res.plugin.name}". Review and approve its permissions to enable it.`,
+        });
+      }
+      await refresh(true);
     });
     return ok;
   };
@@ -131,12 +172,27 @@ export const PluginsPanel: React.FC = () => {
   const confirmApprove = (permissions: PluginPermission[]) => {
     const target = approving;
     if (!target) return;
-    void run(async () => {
-      const res = await api.approvePlugin(target.id, permissions);
-      setApproving(null);
-      await refresh();
-      return `"${res.plugin.name}" approved and enabled.`;
-    });
+    setDialogError(null);
+    setBusy(true);
+    (async () => {
+      try {
+        const res = await api.approvePlugin(target.id, permissions);
+        if (!isMountedRef.current) return;
+        setApproving(null);
+        setDialogError(null);
+        await refresh();
+        if (isMountedRef.current) {
+          setBanner({ type: 'success', text: `"${res.plugin.name}" approved and enabled.` });
+        }
+      } catch (err) {
+        if (!isMountedRef.current) return;
+        setDialogError(describeApiError(err));
+      } finally {
+        if (isMountedRef.current) {
+          setBusy(false);
+        }
+      }
+    })();
   };
 
   const setPluginEnabled = (plugin: PluginRecord, value: boolean) =>
@@ -149,12 +205,55 @@ export const PluginsPanel: React.FC = () => {
   const confirmRemove = (purge: boolean) => {
     const target = removing;
     if (!target) return;
-    void run(async () => {
-      await api.removePlugin(target.id, purge);
-      setRemoving(null);
-      await refresh();
-      return `Removed "${target.name}".`;
-    });
+    setDialogError(null);
+    setBusy(true);
+    (async () => {
+      try {
+        await api.removePlugin(target.id, purge);
+        if (!isMountedRef.current) return;
+        setRemoving(null);
+        setDialogError(null);
+        await refresh();
+        if (isMountedRef.current) {
+          setBanner({ type: 'success', text: `Removed "${target.name}".` });
+        }
+      } catch (err) {
+        if (!isMountedRef.current) return;
+        setDialogError(describeApiError(err));
+      } finally {
+        if (isMountedRef.current) {
+          setBusy(false);
+        }
+      }
+    })();
+  };
+
+  const openApprove = (p: PluginRecord) => {
+    setDialogError(null);
+    setApproving(p);
+  };
+
+  const closeApprove = () => {
+    setDialogError(null);
+    setApproving(null);
+  };
+
+  const openRemove = (p: PluginRecord) => {
+    setDialogError(null);
+    setRemoving(p);
+  };
+
+  const closeRemove = () => {
+    setDialogError(null);
+    setRemoving(null);
+  };
+
+  const openConnecting = (p: PluginRecord) => {
+    setConnecting(p);
+  };
+
+  const closeConnecting = () => {
+    setConnecting(null);
   };
 
   return (
@@ -293,11 +392,11 @@ export const PluginsPanel: React.FC = () => {
               <PluginList
                 plugins={plugins}
                 busy={busy}
-                onApprove={setApproving}
+                onApprove={openApprove}
                 onEnable={(p) => void setPluginEnabled(p, true)}
                 onDisable={(p) => void setPluginEnabled(p, false)}
-                onConnection={setConnecting}
-                onRemove={setRemoving}
+                onConnection={openConnecting}
+                onRemove={openRemove}
               />
             </div>
           </div>
@@ -308,20 +407,22 @@ export const PluginsPanel: React.FC = () => {
         <ApprovePluginDialog
           plugin={approving}
           busy={busy}
+          error={dialogError}
           onConfirm={confirmApprove}
-          onCancel={() => setApproving(null)}
+          onCancel={closeApprove}
         />
       )}
       {removing && (
         <RemovePluginDialog
           plugin={removing}
           busy={busy}
+          error={dialogError}
           onConfirm={confirmRemove}
-          onCancel={() => setRemoving(null)}
+          onCancel={closeRemove}
         />
       )}
       {connecting && (
-        <ConnectionDialog plugin={connecting} onClose={() => setConnecting(null)} />
+        <ConnectionDialog plugin={connecting} onClose={closeConnecting} />
       )}
     </div>
   );

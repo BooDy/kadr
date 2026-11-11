@@ -5,6 +5,7 @@ import type { PluginRecord } from '../../types';
 export interface RemovePluginDialogProps {
   plugin: PluginRecord;
   busy?: boolean;
+  error?: string | null;
   onConfirm: (purge: boolean) => void;
   onCancel: () => void;
 }
@@ -12,6 +13,7 @@ export interface RemovePluginDialogProps {
 export const RemovePluginDialog: React.FC<RemovePluginDialogProps> = ({
   plugin,
   busy = false,
+  error = null,
   onConfirm,
   onCancel,
 }) => {
@@ -60,6 +62,12 @@ export const RemovePluginDialog: React.FC<RemovePluginDialogProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {error && (
+          <div role="alert" className="text-sm text-cta bg-cta/15 border border-cta/30 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
 
         <p className="text-sm text-muted">
           Kadr will stop talking to this plugin. Items it published stay in your libraries but cannot

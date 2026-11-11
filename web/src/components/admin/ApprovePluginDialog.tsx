@@ -16,6 +16,7 @@ const PERMISSION_INFO: Record<PluginPermission, { title: string; description: st
 export interface ApprovePluginDialogProps {
   plugin: PluginRecord;
   busy?: boolean;
+  error?: string | null;
   onConfirm: (permissions: PluginPermission[]) => void;
   onCancel: () => void;
 }
@@ -23,6 +24,7 @@ export interface ApprovePluginDialogProps {
 export const ApprovePluginDialog: React.FC<ApprovePluginDialogProps> = ({
   plugin,
   busy = false,
+  error = null,
   onConfirm,
   onCancel,
 }) => {
@@ -87,6 +89,12 @@ export const ApprovePluginDialog: React.FC<ApprovePluginDialogProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {error && (
+          <div role="alert" className="text-sm text-cta bg-cta/15 border border-cta/30 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
 
         <p className="text-sm text-muted">
           This plugin asks for the permissions below. Nothing is granted until you confirm.

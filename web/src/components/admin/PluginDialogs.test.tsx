@@ -117,6 +117,23 @@ describe('ApprovePluginDialog', () => {
     expect(screen.getByLabelText(/Publish items/i)).toBeChecked();
     expect(screen.queryByLabelText(/Resolve playback/i)).not.toBeInTheDocument();
   });
+
+  it('renders the error prop in a role="alert" element and renders nothing when absent', () => {
+    const { rerender } = render(
+      <ApprovePluginDialog plugin={plugin} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    rerender(
+      <ApprovePluginDialog
+        plugin={plugin}
+        error="Permission denied by server"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Permission denied by server');
+  });
 });
 
 describe('RemovePluginDialog', () => {
@@ -183,6 +200,23 @@ describe('RemovePluginDialog', () => {
       />
     );
     expect(screen.getByLabelText(/Also delete this plugin's libraries and items/i)).not.toBeChecked();
+  });
+
+  it('renders the error prop in a role="alert" element and renders nothing when absent', () => {
+    const { rerender } = render(
+      <RemovePluginDialog plugin={plugin} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    rerender(
+      <RemovePluginDialog
+        plugin={plugin}
+        error="Cannot remove active plugin"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Cannot remove active plugin');
   });
 });
 
