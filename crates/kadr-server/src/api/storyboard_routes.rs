@@ -26,76 +26,57 @@ pub struct FrameQuery {
     pub w: Option<u32>,
 }
 
+type ApiErr = (StatusCode, &'static str);
+
+fn err_response((status, msg): ApiErr) -> Response {
+    (status, Json(serde_json::json!({ "error": msg }))).into_response()
+}
+
 async fn load_and_authorize_item(
     item_id: i64,
     unlocked: &UnlockedLibraries,
     media_repo: &MediaItemRepository,
     lib_repo: &LibraryRepository,
     storyboard_svc: &StoryboardService,
-) -> Result<MediaItem, Response> {
+) -> Result<MediaItem, ApiErr> {
     let item = match media_repo.get_by_id(item_id).await {
         Ok(Some(i)) => i,
         Ok(None) => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "Media item not found" })),
-            )
-                .into_response());
+            return Err((StatusCode::NOT_FOUND, "Media item not found"));
         }
         Err(err) => {
             tracing::error!("Failed to fetch media item {item_id}: {err}");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Database error" })),
-            )
-                .into_response());
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Database error"));
         }
     };
 
     match lib_repo.get_by_id(&item.library_id).await {
         Ok(Some(library)) => {
             if library.is_private && !unlocked.is_unlocked(&item.library_id) {
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
-                )
-                    .into_response());
+                return Err((StatusCode::FORBIDDEN, "LIBRARY_LOCKED"));
             }
         }
         Ok(None) => {}
         Err(err) => {
             tracing::error!("Failed to fetch library for media item {item_id}: {err}");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Database error" })),
-            )
-                .into_response());
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Database error"));
         }
     }
 
     if !storyboard_svc.is_available() {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({ "error": "Storyboard generation unavailable" })),
-        )
-            .into_response());
+            "Storyboard generation unavailable",
+        ));
     }
 
     if !has_video_stream(&item) {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Media item has no video stream" })),
-        )
-            .into_response());
+        return Err((StatusCode::NOT_FOUND, "Media item has no video stream"));
     }
 
     match tokio::fs::metadata(&item.file_path).await {
         Ok(meta) if meta.is_file() => Ok(item),
-        _ => Err((
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Media file missing from disk" })),
-        )
-            .into_response()),
+        _ => Err((StatusCode::NOT_FOUND, "Media file missing from disk")),
     }
 }
 
@@ -174,7 +155,7 @@ pub async fn get_storyboard_manifest(
             .await
         {
             Ok(i) => i,
-            Err(resp) => return resp,
+            Err(err) => return err_response(err),
         };
 
     match storyboard_svc
@@ -233,7 +214,7 @@ pub async fn get_storyboard_sheet(
             .await
         {
             Ok(i) => i,
-            Err(resp) => return resp,
+            Err(err) => return err_response(err),
         };
 
     match storyboard_svc
@@ -291,7 +272,7 @@ pub async fn get_single_frame(
             .await
         {
             Ok(i) => i,
-            Err(resp) => return resp,
+            Err(err) => return err_response(err),
         };
 
     let raw_t = query.t.unwrap_or(0.0);
@@ -348,4 +329,46 @@ pub fn storyboard_routes() -> Router {
             get(get_storyboard_sheet),
         )
         .route("/api/v1/media/{item_id}/frame", get(get_single_frame))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Rust 1.99+ `clippy::result_large_err` lints `fn` and `async fn` returning `Result<T, E>`
+    /// when `size_of::<E>() >= 128`. Guard every workspace `Result` error type so regressions
+    /// are caught even on older local toolchains.
+    #[test]
+    fn result_error_types_stay_below_clippy_large_err_threshold() {
+        const THRESHOLD: usize = 128;
+
+        fn check<E>(name: &str) {
+            let size = std::mem::size_of::<E>();
+            println!("size_of::<{name}>() = {size}");
+            assert!(
+                size < THRESHOLD,
+                "{name} is {size} bytes (>= {THRESHOLD}-byte clippy::result_large_err threshold)"
+            );
+        }
+
+        check::<ApiErr>("storyboard_routes::ApiErr");
+        check::<(StatusCode, Json<serde_json::Value>)>("(StatusCode, Json<serde_json::Value>)");
+        check::<StatusCode>("StatusCode");
+        check::<&'static str>("&'static str");
+        check::<String>("String");
+        check::<Box<dyn std::error::Error>>("Box<dyn std::error::Error>");
+        check::<std::io::Error>("std::io::Error");
+        check::<jsonwebtoken::errors::Error>("jsonwebtoken::errors::Error");
+        check::<reqwest::Error>("reqwest::Error");
+        check::<crate::auth::pin::PinError>("PinError");
+        check::<crate::api::unlock_token::UnlockTokenError>("UnlockTokenError");
+        check::<crate::layout::LayoutError>("LayoutError");
+        check::<crate::streaming::hls::HlsError>("HlsError");
+        check::<crate::plugins::client::PluginError>("PluginError");
+        check::<crate::plugins::service::ServiceError>("ServiceError");
+        check::<crate::subtitles::SubtitleServiceError>("SubtitleServiceError");
+        check::<crate::subtitles::OpenSubtitlesError>("OpenSubtitlesError");
+        check::<kadr_storage::StorageError>("kadr_storage::StorageError");
+        check::<kadr_ingest::error::IngestError>("kadr_ingest::IngestError");
+    }
 }
