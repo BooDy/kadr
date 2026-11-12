@@ -200,29 +200,27 @@ async fn setup_env() -> TestEnv {
         .await
         .unwrap();
 
-    let mk_item = |lib: &str,
-                   kind: MediaType,
-                   title: &str,
-                   path: PathBuf,
-                   dur: i64,
-                   meta: MediaMetadata| MediaItem {
-        id: None,
-        library_id: lib.to_string(),
-        item_type: kind,
-        title: title.to_string(),
-        original_title: None,
-        release_year: Some(2024),
-        added_at: 2000,
-        file_path: path.clone(),
-        file_name: path.file_name().unwrap().to_string_lossy().to_string(),
-        file_size: 1024,
-        technical: TechnicalInfo {
-            duration_seconds: dur,
-            resolution: Some("4K".to_string()),
-            ..Default::default()
-        },
-        metadata: meta,
-    };
+    let mk_item =
+        |lib: &str, kind: MediaType, title: &str, path: PathBuf, dur: i64, meta: MediaMetadata| {
+            MediaItem {
+                id: None,
+                library_id: lib.to_string(),
+                item_type: kind,
+                title: title.to_string(),
+                original_title: None,
+                release_year: Some(2024),
+                added_at: 2000,
+                file_path: path.clone(),
+                file_name: path.file_name().unwrap().to_string_lossy().to_string(),
+                file_size: 1024,
+                technical: TechnicalInfo {
+                    duration_seconds: dur,
+                    resolution: Some("4K".to_string()),
+                    ..Default::default()
+                },
+                metadata: meta,
+            }
+        };
 
     let movie_a_id = insert_item(
         &media_repo,
@@ -405,7 +403,10 @@ async fn setup_env() -> TestEnv {
     let limiter = RateLimiter::new(5, Duration::from_secs(60), Duration::from_secs(60));
     let session_registry = Arc::new(SessionRegistry::new());
     let layout_registry = LayoutRegistry::new();
-    let widget_resolver = Arc::new(WidgetResolver::new(media_repo.clone(), playback_repo.clone()));
+    let widget_resolver = Arc::new(WidgetResolver::new(
+        media_repo.clone(),
+        playback_repo.clone(),
+    ));
     let subtitle_service = Arc::new(SubtitleDeliveryService::new(
         temp_dir.path().join("subs"),
         subtitle_repo,
@@ -518,7 +519,9 @@ async fn multi_user_permissions_validation_sharing_and_sse_events() {
     assert!(created["items"][0].get("resume_position_seconds").is_none());
 
     // Verify SSE created event has zero metadata leakage
-    let ev = rx.try_recv().expect("expected PlaylistUpdated created event");
+    let ev = rx
+        .try_recv()
+        .expect("expected PlaylistUpdated created event");
     let ev_json = serde_json::to_string(&ev).unwrap();
     assert!(!ev_json.contains("Alice Sci-Fi"));
     assert!(!ev_json.contains("Director cuts"));
@@ -572,7 +575,9 @@ async fn multi_user_permissions_validation_sharing_and_sse_events() {
     assert_eq!(pub_sum["is_public"], true);
     assert!(pub_sum.get("description").is_none());
 
-    let ev_upd = rx.try_recv().expect("expected PlaylistUpdated updated event");
+    let ev_upd = rx
+        .try_recv()
+        .expect("expected PlaylistUpdated updated event");
     assert!(matches!(
         ev_upd,
         SystemEvent::PlaylistUpdated { ref action, .. } if action == "updated"
@@ -591,7 +596,9 @@ async fn multi_user_permissions_validation_sharing_and_sse_events() {
     assert_eq!(s_bob, StatusCode::OK);
     assert_eq!(bob_detail["summary"]["is_editable"], false);
     assert_eq!(bob_detail["items"][0]["resume_position_seconds"], 1400);
-    assert!(bob_detail["items"][1].get("resume_position_seconds").is_none());
+    assert!(bob_detail["items"][1]
+        .get("resume_position_seconds")
+        .is_none());
 
     // Bob cannot mutate public playlist -> 403 Forbidden
     for (method, suffix, payload) in [
@@ -618,7 +625,11 @@ async fn multi_user_permissions_validation_sharing_and_sse_events() {
             payload,
         )
         .await;
-        assert_eq!(st, StatusCode::FORBIDDEN, "expected 403 on {method} {suffix}");
+        assert_eq!(
+            st,
+            StatusCode::FORBIDDEN,
+            "expected 403 on {method} {suffix}"
+        );
         assert_eq!(err["error"], "Forbidden");
     }
 
@@ -645,7 +656,9 @@ async fn multi_user_permissions_validation_sharing_and_sse_events() {
     .await;
     assert_eq!(s_adm_del, StatusCode::NO_CONTENT);
 
-    let ev_del = rx.try_recv().expect("expected PlaylistUpdated deleted event");
+    let ev_del = rx
+        .try_recv()
+        .expect("expected PlaylistUpdated deleted event");
     assert!(matches!(
         ev_del,
         SystemEvent::PlaylistUpdated { ref action, .. } if action == "deleted"

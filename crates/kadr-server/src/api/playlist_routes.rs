@@ -673,8 +673,7 @@ async fn expand_items_request(
 
     // 3. Expand folder spec
     if let Some(ref folder_spec) = req.folder {
-        let folder_ids =
-            expand_folder_items(folder_spec, &libs_map, unlocked, media_repo).await?;
+        let folder_ids = expand_folder_items(folder_spec, &libs_map, unlocked, media_repo).await?;
         candidates.extend(folder_ids);
     }
 

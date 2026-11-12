@@ -590,9 +590,7 @@ fn build_summary_in_conn(
             visible_item_count += 1;
             total_duration_seconds += dur.max(0);
             if cover_poster_urls.len() < 4
-                && poster_path
-                    .as_deref()
-                    .is_some_and(|p| !p.trim().is_empty())
+                && poster_path.as_deref().is_some_and(|p| !p.trim().is_empty())
             {
                 cover_poster_urls.push(format!("/api/v1/artwork/{media_id}/poster"));
             }
@@ -1006,10 +1004,7 @@ mod tests {
         );
 
         // Deleting a media item cascades from playlist_items
-        media_repo
-            .delete_by_path("/movies/m1.mkv")
-            .await
-            .unwrap();
+        media_repo.delete_by_path("/movies/m1.mkv").await.unwrap();
         let summary_after_media_del = playlist_repo
             .get_playlist_summary_for_user("pl-c", "u-cascade", false, &[], None)
             .await
