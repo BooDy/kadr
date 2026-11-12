@@ -2331,5 +2331,5 @@ try {
 
 ---
 
-*Document Version: 1.3.0 (Kadr 0.1.3-alpha with Storyboard Trickplay, Plugin Playback, Playlists & Universal HLS Fallback)*  
+*Document Version: 1.3.0 (Kadr 0.2.0-alpha with Storyboard Trickplay, Plugin Playback, Playlists & Universal HLS Fallback)*  
 *Maintained by the Kadr Core Engineering Team.*

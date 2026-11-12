@@ -5,7 +5,7 @@ All notable changes to the Kadr media server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.2.0-alpha] - 2026-11-12
 
 ### Added
 - **Manual Ordered Playlists & Privacy-Isolated Storage**: Added SQLite migration `009_playlists.sql` (`playlists` and `playlist_items` tables with cascading deletes) and `PlaylistRepository` supporting per-user playlist ownership, server-wide public sharing (`is_public`), and fail-closed PIN-locked library isolation (`PlaylistSummary.locked_item_count` without leaking locked metadata or artwork, anti-probing `contains_queried_item: false` on `GET /api/v1/playlists?contains_item_id={id}`, tail-preserving `reorder_visible_items`, and `403 Forbidden` `LIBRARY_LOCKED` on locked item removal).
@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded Server-Sent Events (SSE) bus for system telemetry and realtime updates.
 - Profile-based PIN authentication and JWT session management.
 
+[v0.2.0-alpha]: https://github.com/BooDy/kadr/compare/v0.1.3-alpha...v0.2.0-alpha
 [v0.1.3-alpha]: https://github.com/BooDy/kadr/compare/v0.1.2-alpha...v0.1.3-alpha
 [v0.1.2-alpha]: https://github.com/BooDy/kadr/compare/v0.1.1-alpha...v0.1.2-alpha
 [v0.1.1-alpha]: https://github.com/BooDy/kadr/compare/v0.1.0-alpha.2...v0.1.1-alpha
