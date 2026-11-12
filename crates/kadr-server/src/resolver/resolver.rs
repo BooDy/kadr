@@ -646,6 +646,7 @@ impl WidgetResolver {
                     Ok((Vec::new(), None, None))
                 }
             }
+            QueryMacro::PlaylistItems { .. } => Ok((Vec::new(), None, Some(0))),
         }
     }
 

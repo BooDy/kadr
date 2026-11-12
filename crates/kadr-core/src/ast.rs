@@ -143,6 +143,7 @@ pub enum QueryMacro {
     GenreShelf { genre: String },
     SpotlightItem { item_id: Option<i64> },
     ItemDetails { item_id: i64 },
+    PlaylistItems { playlist_id: String },
 }
 
 /// Configuration for filtering items returned by a widget query.

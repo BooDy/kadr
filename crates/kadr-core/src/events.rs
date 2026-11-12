@@ -43,6 +43,13 @@ pub enum SystemEvent {
         message: String,
         timestamp: i64,
     },
+    #[serde(rename = "playlist:updated")]
+    PlaylistUpdated {
+        playlist_id: String,
+        user_id: String,
+        action: String,
+        timestamp: i64,
+    },
 }
 
 impl SystemEvent {
@@ -54,6 +61,7 @@ impl SystemEvent {
             Self::SessionSynced { .. } => "session:synced",
             Self::SystemTelemetry(_) => "system:telemetry",
             Self::PluginError { .. } => "plugin:error",
+            Self::PlaylistUpdated { .. } => "playlist:updated",
         }
     }
 }
