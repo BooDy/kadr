@@ -525,5 +525,153 @@ describe('App Shell', () => {
       expect(getFoldersSpy).toHaveBeenCalledWith('lib-vault', 'Classified/2026');
     });
   });
+
+  it('shows Playlists tab for standard users, launches queue playback, and returns to playlist detail on close', async () => {
+    api.setUser({ id: 'u-std', username: 'viewer', role: 'standard' });
+    api.setToken('test-jwt');
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue([]);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({ id: 'home', title: 'Home', widgets: [] });
+    vi.spyOn(api, 'getPlaylists').mockResolvedValue({
+      playlists: [
+        {
+          id: 'pl-99',
+          name: 'Road Trip Queue',
+          owner_user_id: 'u-std',
+          owner_username: 'viewer',
+          is_public: false,
+          is_editable: true,
+          visible_item_count: 2,
+          locked_item_count: 0,
+          total_duration_seconds: 7200,
+          cover_poster_urls: [],
+          created_at: 100,
+          updated_at: 200,
+        },
+      ],
+    });
+    vi.spyOn(api, 'getPlaylist').mockResolvedValue({
+      summary: {
+        id: 'pl-99',
+        name: 'Road Trip Queue',
+        owner_user_id: 'u-std',
+        owner_username: 'viewer',
+        is_public: false,
+        is_editable: true,
+        visible_item_count: 2,
+        locked_item_count: 0,
+        total_duration_seconds: 7200,
+        cover_poster_urls: [],
+        created_at: 100,
+        updated_at: 200,
+      },
+      items: [
+        {
+          position: 0,
+          added_at: 101,
+          duration_seconds: 3600,
+          card: { id: 501, title: 'First Movie', media_type: 'movie' },
+        },
+        {
+          position: 1,
+          added_at: 102,
+          duration_seconds: 3600,
+          card: { id: 502, title: 'Second Movie', media_type: 'movie' },
+        },
+      ],
+    });
+    vi.spyOn(api, 'createPlaybackSession').mockResolvedValue({
+      session_id: 'sess-501',
+      media_item_id: 501,
+      duration_seconds: 3600,
+      resume_position_seconds: 0,
+    });
+    vi.spyOn(api, 'closePlaybackSession').mockResolvedValue();
+    vi.spyOn(api, 'getPlaybackState').mockResolvedValue({
+      user_id: 'u-std',
+      media_item_id: 501,
+      playback_position_seconds: 0,
+      watch_state: 'unwatched',
+      last_watched_at: 0,
+      play_count: 0,
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue({
+      card: { id: 501, title: 'First Movie', media_type: 'movie' },
+      genres: [],
+      stream_url: '/api/v1/stream/501',
+    });
+
+    render(<App />);
+
+    const playlistsTab = screen.getByRole('button', { name: /^Playlists$/i });
+    expect(playlistsTab).toBeInTheDocument();
+    fireEvent.click(playlistsTab);
+
+    await waitFor(() => expect(screen.getByText('Road Trip Queue')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Road Trip Queue'));
+
+    await waitFor(() => expect(screen.getByText('First Movie')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Play All/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Cinema Player/i)).toBeInTheDocument();
+      expect(screen.getByText('1 / 2')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Playlist/i }));
+
+    // Restores exact PlaylistDetailView instead of resetting to Home
+    await waitFor(() => {
+      expect(screen.getByText('First Movie')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /All Playlists/i })).toBeInTheDocument();
+    });
+  });
+
+  it('restores the previous library view when closing CinemaPlayer launched from a library screen', async () => {
+    api.setUser({ id: 'u-std', username: 'viewer', role: 'standard' });
+    api.setToken('test-jwt');
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue([
+      {
+        id: 'lib-scifi',
+        name: 'Sci-Fi Vault',
+        path: '/media/scifi',
+        media_type: 'movie',
+        is_private: false,
+        created_at: 1700000000,
+      },
+    ] as any);
+    vi.spyOn(api, 'getScreen').mockImplementation(async (screenId: string) => {
+      if (screenId === 'lib-scifi') {
+        return {
+          id: 'lib-scifi',
+          title: 'Sci-Fi Vault',
+          widgets: [
+            {
+              type: 'hero_banner',
+              id: 'lib-hero',
+              binding: { macro_type: 'spotlight_item', limit: 1 },
+              data: { id: 777, title: 'Dune: Part Two', media_type: 'movie' },
+            },
+          ],
+        };
+      }
+      return { id: 'home', title: 'Home', widgets: [] };
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Sci-Fi Vault/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Sci-Fi Vault/i }));
+
+    await waitFor(() => expect(screen.getByText('Dune: Part Two')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Play Now/i }));
+
+    await waitFor(() => expect(screen.getByText(/Cinema Player/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Back to Browse/i }));
+
+    await waitFor(() => expect(screen.getByText('Dune: Part Two')).toBeInTheDocument());
+  });
 });
 

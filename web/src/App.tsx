@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type FC } from 'react';
 import {
   Film,
   Home,
+  ListVideo,
   Tv,
   Sparkles,
   Music,
@@ -15,14 +16,15 @@ import {
   Unlock,
 } from 'lucide-react';
 import { api } from './api/client';
-import type { Library, MediaType, User } from './types';
+import type { Library, MediaType, PlaylistItemView, User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
 import { PinKeypad } from './components/auth/PinKeypad';
 import { BrowseScreen } from './components/browse/BrowseScreen';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
 import { AdminDashboard } from './components/admin/AdminDashboard';
+import { PlaylistsScreen } from './components/playlists/PlaylistsScreen';
 
-export type NavView = 'home' | 'movies' | 'shows' | 'studio' | 'telemetry' | 'admin' | 'player' | string;
+export type NavView = 'home' | `library-${string}` | 'playlists' | 'player' | 'admin';
 
 const getLibraryIcon = (mediaType: MediaType | string) => {
   switch (mediaType) {
@@ -51,9 +53,13 @@ const getLibraryIcon = (mediaType: MediaType | string) => {
 
 export const App: FC = () => {
   const [currentView, setCurrentView] = useState<NavView>('home');
+  const [previousView, setPreviousView] = useState<Exclude<NavView, 'player'>>('home');
+  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(() => api.getUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [activePlayingItemId, setActivePlayingItemId] = useState<number | null>(null);
+  const [playerQueue, setPlayerQueue] = useState<PlaylistItemView[] | null>(null);
+  const [playerQueueIndex, setPlayerQueueIndex] = useState<number>(0);
 
   // Library and unlock state
   const [libraries, setLibraries] = useState<Library[]>([]);
@@ -83,6 +89,12 @@ export const App: FC = () => {
     setLibraryToUnlock(null);
     setPendingFolderNav(null);
     setActiveFolderNav(null);
+    setActivePlaylistId(null);
+    setActivePlayingItemId(null);
+    setPlayerQueue(null);
+    setPlayerQueueIndex(0);
+    setPreviousView('home');
+    setCurrentView('home');
     api.setToken(token);
     api.setUser(user);
     setCurrentUser(user);
@@ -98,6 +110,12 @@ export const App: FC = () => {
     setLibraryToUnlock(null);
     setPendingFolderNav(null);
     setActiveFolderNav(null);
+    setActivePlaylistId(null);
+    setActivePlayingItemId(null);
+    setPlayerQueue(null);
+    setPlayerQueueIndex(0);
+    setPreviousView('home');
+    setCurrentView('home');
     setIsAuthModalOpen(false);
   };
 
@@ -146,7 +164,24 @@ export const App: FC = () => {
   };
 
   const handlePlayItem = (itemId: number) => {
+    if (currentView !== 'player') {
+      setPreviousView(currentView);
+    }
+    setPlayerQueue(null);
+    setPlayerQueueIndex(0);
     setActivePlayingItemId(itemId);
+    setCurrentView('player');
+  };
+
+  const handlePlayQueue = (items: PlaylistItemView[], startIndex = 0) => {
+    if (items.length === 0) return;
+    const clamped = Math.max(0, Math.min(startIndex, items.length - 1));
+    if (currentView !== 'player') {
+      setPreviousView(currentView);
+    }
+    setPlayerQueue(items);
+    setPlayerQueueIndex(clamped);
+    setActivePlayingItemId(items[clamped].card.id);
     setCurrentView('player');
   };
 
@@ -187,6 +222,19 @@ export const App: FC = () => {
                 <Home className="h-4 w-4" />
                 Home
               </button>
+
+              {currentUser && (
+                <button
+                  onClick={() => {
+                    setActivePlaylistId(null);
+                    handleNavigate('playlists');
+                  }}
+                  className={navItemClass(currentView === 'playlists')}
+                >
+                  <ListVideo className="h-4 w-4" />
+                  Playlists
+                </button>
+              )}
 
               {/* Dynamic Library Navigation Tabs */}
               {libraries.map((lib) => {
@@ -306,12 +354,34 @@ export const App: FC = () => {
               />
             )}
 
+            {currentView === 'playlists' && (
+              <PlaylistsScreen
+                currentUser={currentUser}
+                activePlaylistId={activePlaylistId}
+                onSelectPlaylist={setActivePlaylistId}
+                onPlayItem={handlePlayItem}
+                onPlayQueue={handlePlayQueue}
+                onNavigateToFolder={handleNavigateToFolder}
+              />
+            )}
+
             {currentView === 'player' && activePlayingItemId !== null && (
               <CinemaPlayer
                 itemId={activePlayingItemId}
+                returnLabel={previousView === 'playlists' ? 'Back to Playlist' : 'Back to Browse'}
+                queue={playerQueue ?? undefined}
+                currentIndex={playerQueue ? playerQueueIndex : undefined}
+                onSelectQueueIndex={(idx) => {
+                  if (playerQueue && playerQueue[idx]) {
+                    setPlayerQueueIndex(idx);
+                    setActivePlayingItemId(playerQueue[idx].card.id);
+                  }
+                }}
                 onClose={() => {
                   setActivePlayingItemId(null);
-                  setCurrentView('home');
+                  setPlayerQueue(null);
+                  setPlayerQueueIndex(0);
+                  setCurrentView(previousView);
                 }}
               />
             )}

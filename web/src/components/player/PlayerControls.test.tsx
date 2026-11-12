@@ -222,4 +222,54 @@ describe('PlayerControls Component', () => {
 
     expect(await screen.findByText(/Failed to download subtitle/i)).toBeInTheDocument();
   });
+
+  it('renders Previous/Next track controls, track counter, and Queue popover drawer when queue has >1 items', () => {
+    const queue = [
+      {
+        position: 0,
+        added_at: 100,
+        duration_seconds: 7200,
+        card: { id: 10, title: 'Arrival', media_type: 'movie' },
+      },
+      {
+        position: 1,
+        added_at: 200,
+        duration_seconds: 9800,
+        card: { id: 14, title: 'Blade Runner 2049', media_type: 'movie' },
+      },
+    ];
+    const onSelectQueueIndex = vi.fn();
+    const onPrevTrack = vi.fn();
+    const onNextTrack = vi.fn();
+    const onQueueMenuToggle = vi.fn();
+
+    render(
+      <PlayerControls
+        {...defaultProps}
+        returnLabel="Back to Playlist"
+        queue={queue}
+        currentIndex={0}
+        onSelectQueueIndex={onSelectQueueIndex}
+        onPrevTrack={onPrevTrack}
+        onNextTrack={onNextTrack}
+        onQueueMenuToggle={onQueueMenuToggle}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Back to Playlist' })).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next track' }));
+    expect(onNextTrack).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous track' }));
+    expect(onPrevTrack).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playback Queue' }));
+    expect(onQueueMenuToggle).toHaveBeenCalledWith(true);
+    expect(screen.getByText('Blade Runner 2049')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Blade Runner 2049/i }));
+    expect(onSelectQueueIndex).toHaveBeenCalledWith(1);
+  });
 });

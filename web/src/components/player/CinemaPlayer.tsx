@@ -1,14 +1,30 @@
 import { useState, useEffect, useRef, useCallback, type FC } from 'react';
 import { api } from '../../api/client';
-import type { SubtitleTrack, SubtitleSearchResult, ItemDetailsPayload } from '../../types';
+import type {
+  SubtitleTrack,
+  SubtitleSearchResult,
+  ItemDetailsPayload,
+  PlaylistItemView,
+} from '../../types';
 import { PlayerControls, formatPlaybackTime } from './PlayerControls';
 
 export interface CinemaPlayerProps {
   itemId: number;
   onClose: () => void;
+  returnLabel?: string;
+  queue?: PlaylistItemView[];
+  currentIndex?: number;
+  onSelectQueueIndex?: (index: number) => void;
 }
 
-export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
+export const CinemaPlayer: FC<CinemaPlayerProps> = ({
+  itemId,
+  onClose,
+  returnLabel,
+  queue,
+  currentIndex,
+  onSelectQueueIndex,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -17,6 +33,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
   const [activeSubtitleId, setActiveSubtitleId] = useState<number | null>(null);
   const [recentlyDownloadedId, setRecentlyDownloadedId] = useState<number | null>(null);
   const [isSubtitlesMenuOpen, setIsSubtitlesMenuOpen] = useState(false);
+  const [isQueueMenuOpen, setIsQueueMenuOpen] = useState(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,12 +45,14 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
 
+  const sessionIdRef = useRef<string | null>(null);
   const resumePositionRef = useRef<number | null>(null);
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMetadataLoadedRef = useRef(false);
   const hasSeekedResumeRef = useRef(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSubtitlesMenuOpenRef = useRef(false);
+  const isQueueMenuOpenRef = useRef(false);
 
   const streamUrl = api.getStreamUrl(itemId);
 
@@ -43,7 +62,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
       clearTimeout(hideTimeoutRef.current);
       hideTimeoutRef.current = null;
     }
-    if (!isSubtitlesMenuOpenRef.current) {
+    if (!isSubtitlesMenuOpenRef.current && !isQueueMenuOpenRef.current) {
       hideTimeoutRef.current = setTimeout(() => {
         setIsControlsVisible(false);
       }, 3000);
@@ -52,7 +71,8 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
 
   useEffect(() => {
     isSubtitlesMenuOpenRef.current = isSubtitlesMenuOpen;
-    if (isSubtitlesMenuOpen) {
+    isQueueMenuOpenRef.current = isQueueMenuOpen;
+    if (isSubtitlesMenuOpen || isQueueMenuOpen) {
       setIsControlsVisible(true);
       if (hideTimeoutRef.current) {
         clearTimeout(hideTimeoutRef.current);
@@ -61,7 +81,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     } else {
       showControls();
     }
-  }, [isSubtitlesMenuOpen, showControls]);
+  }, [isSubtitlesMenuOpen, isQueueMenuOpen, showControls]);
 
   const handleSearchSubtitles = useCallback(
     async (language: string): Promise<SubtitleSearchResult[]> => {
@@ -117,11 +137,34 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     };
   }, []);
 
-  // Initialize playback session, heartbeat interval, and close on unmount
+  // Reset per-item playback refs and state whenever itemId changes
+  useEffect(() => {
+    isMetadataLoadedRef.current = false;
+    hasSeekedResumeRef.current = false;
+    resumePositionRef.current = null;
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+    setResumePosition(null);
+    setCurrentTime(0);
+    setDuration(0);
+    setActiveSubtitleId(null);
+    setSubtitles([]);
+    setItemDetails(null);
+    setRecentlyDownloadedId(null);
+    setIsLoading(false);
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+    }
+  }, [itemId]);
+
+  // Initialize playback session, heartbeat interval, and close on unmount / itemId change
   useEffect(() => {
     let isDisposed = false;
     let sessionId: string | null = null;
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    sessionIdRef.current = null;
 
     api.createPlaybackSession(itemId)
       .then((session) => {
@@ -130,6 +173,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
           return;
         }
         sessionId = session.session_id;
+        sessionIdRef.current = session.session_id;
         heartbeatInterval = setInterval(() => {
           if (sessionId && videoRef.current) {
             api.sendPlaybackHeartbeat(sessionId, Math.floor(videoRef.current.currentTime)).catch(() => {});
@@ -140,6 +184,9 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
 
     return () => {
       isDisposed = true;
+      if (sessionIdRef.current === sessionId) {
+        sessionIdRef.current = null;
+      }
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
       }
@@ -149,11 +196,17 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     };
   }, [itemId]);
 
-  // Fetch initial resume playback state
+  // Fetch initial resume playback state (only resume in_progress items; completed items start at 0s)
   useEffect(() => {
+    let isCancelled = false;
     api.getPlaybackState(itemId)
       .then((state) => {
-        if (state?.playback_position_seconds && state.playback_position_seconds > 0) {
+        if (isCancelled) return;
+        if (
+          state?.watch_state === 'in_progress' &&
+          state.playback_position_seconds &&
+          state.playback_position_seconds > 0
+        ) {
           resumePositionRef.current = state.playback_position_seconds;
           setResumePosition(state.playback_position_seconds);
           if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
@@ -169,14 +222,17 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
       .catch(() => {});
 
     return () => {
+      isCancelled = true;
       if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
     };
   }, [itemId]);
 
   // Fetch subtitles and item details
   useEffect(() => {
+    let isCancelled = false;
     api.getSubtitles(itemId)
       .then((tracks) => {
+        if (isCancelled) return;
         setSubtitles(tracks);
         const def = tracks.find((t) => t.is_default);
         if (def) {
@@ -187,9 +243,14 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
 
     api.getItemDetails(itemId)
       .then((details) => {
+        if (isCancelled) return;
         setItemDetails(details);
       })
       .catch(() => {});
+
+    return () => {
+      isCancelled = true;
+    };
   }, [itemId]);
 
   // Sync subtitle tracks mode with activeSubtitleId
@@ -219,12 +280,56 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     }
   }, []);
 
+  const handleSeek = useCallback((seconds: number) => {
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = seconds;
+    setCurrentTime(seconds);
+  }, []);
+
+  const handlePrevTrack = useCallback(() => {
+    if ((videoRef.current?.currentTime ?? currentTime) > 5) {
+      handleSeek(0);
+    } else if (queue && currentIndex !== undefined && currentIndex > 0) {
+      onSelectQueueIndex?.(currentIndex - 1);
+    }
+  }, [currentTime, queue, currentIndex, onSelectQueueIndex, handleSeek]);
+
+  const handleNextTrack = useCallback(() => {
+    if (queue && currentIndex !== undefined && currentIndex + 1 < queue.length) {
+      onSelectQueueIndex?.(currentIndex + 1);
+    }
+  }, [queue, currentIndex, onSelectQueueIndex]);
+
   // Keyboard shortcut handler
   useEffect(() => {
     showControls();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       showControls();
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable) &&
+        target.getAttribute('type') !== 'range'
+      ) {
+        return;
+      }
+
+      if ((e.shiftKey && (e.key === 'N' || e.key === 'n')) || e.key === 'MediaTrackNext') {
+        e.preventDefault();
+        handleNextTrack();
+        return;
+      }
+
+      if ((e.shiftKey && (e.key === 'P' || e.key === 'p')) || e.key === 'MediaTrackPrevious') {
+        e.preventDefault();
+        handlePrevTrack();
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) return;
 
@@ -279,7 +384,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         clearTimeout(hideTimeoutRef.current);
       }
     };
-  }, [onClose, safePlay, showControls, toggleFullscreen]);
+  }, [onClose, safePlay, showControls, toggleFullscreen, handleNextTrack, handlePrevTrack]);
 
   // Video event handlers
   const handleLoadedMetadata = () => {
@@ -292,6 +397,18 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
       }
       // Autoplay
       safePlay(videoRef.current);
+    }
+  };
+
+  const handleVideoEnded = async () => {
+    const finalSec = Math.floor(videoRef.current?.duration || duration || 0);
+    if (sessionIdRef.current && finalSec > 0) {
+      await api.sendPlaybackHeartbeat(sessionIdRef.current, finalSec).catch(() => {});
+    }
+    if (queue && currentIndex !== undefined && currentIndex + 1 < queue.length) {
+      onSelectQueueIndex?.(currentIndex + 1);
+    } else {
+      setIsPlaying(false);
     }
   };
 
@@ -320,12 +437,6 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     }
   };
 
-  const handleSeek = (seconds: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = seconds;
-    setCurrentTime(seconds);
-  };
-
   const handleVolumeChange = (vol: number) => {
     if (!videoRef.current) return;
     videoRef.current.volume = vol;
@@ -341,9 +452,12 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
     setIsMuted(videoRef.current.muted);
   };
 
-  const displayTitle = itemDetails?.card?.title || `Now playing item #${itemId}`;
-  const displaySubtitle = itemDetails?.card?.subtitle;
-  const displayYear = itemDetails?.card?.release_year;
+  const activeQueueCard =
+    currentIndex !== undefined && queue ? queue[currentIndex]?.card : undefined;
+  const displayTitle =
+    itemDetails?.card?.title || activeQueueCard?.title || `Now playing item #${itemId}`;
+  const displaySubtitle = itemDetails?.card?.subtitle ?? activeQueueCard?.subtitle;
+  const displayYear = itemDetails?.card?.release_year ?? activeQueueCard?.release_year;
 
   return (
     <div
@@ -364,6 +478,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         onTimeUpdate={handleTimeUpdate}
         onPlay={handlePlay}
         onPause={handlePause}
+        onEnded={handleVideoEnded}
         onWaiting={() => setIsLoading(true)}
         onPlaying={() => setIsLoading(false)}
         onCanPlay={() => setIsLoading(false)}
@@ -419,6 +534,20 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({ itemId, onClose }) => {
         title={displayTitle}
         subtitle={displaySubtitle}
         releaseYear={displayYear}
+        returnLabel={returnLabel}
+        queue={queue}
+        currentIndex={currentIndex}
+        onSelectQueueIndex={onSelectQueueIndex}
+        onPrevTrack={handlePrevTrack}
+        onNextTrack={handleNextTrack}
+        onQueueMenuToggle={(isOpen) => {
+          setIsQueueMenuOpen(isOpen);
+          isQueueMenuOpenRef.current = isOpen;
+          if (isOpen && hideTimeoutRef.current) {
+            clearTimeout(hideTimeoutRef.current);
+            hideTimeoutRef.current = null;
+          }
+        }}
         isPlaying={isPlaying}
         currentTime={currentTime}
         duration={duration}

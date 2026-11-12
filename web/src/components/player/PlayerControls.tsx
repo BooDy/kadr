@@ -3,6 +3,10 @@ import {
   ArrowLeft,
   Play,
   Pause,
+  SkipBack,
+  SkipForward,
+  ListVideo,
+  Film,
   Volume2,
   VolumeX,
   Subtitles,
@@ -13,7 +17,8 @@ import {
   Download,
   Loader2,
 } from 'lucide-react';
-import type { SubtitleTrack, SubtitleSearchResult } from '../../types';
+import { api } from '../../api/client';
+import type { SubtitleTrack, SubtitleSearchResult, PlaylistItemView } from '../../types';
 
 export type { SubtitleSearchResult };
 
@@ -21,6 +26,13 @@ export interface PlayerControlsProps {
   title: string;
   subtitle?: string;
   releaseYear?: number;
+  returnLabel?: string;
+  queue?: PlaylistItemView[];
+  currentIndex?: number;
+  onSelectQueueIndex?: (index: number) => void;
+  onPrevTrack?: () => void;
+  onNextTrack?: () => void;
+  onQueueMenuToggle?: (isOpen: boolean) => void;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -61,6 +73,13 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   title,
   subtitle,
   releaseYear,
+  returnLabel = 'Back to Browse',
+  queue,
+  currentIndex,
+  onSelectQueueIndex,
+  onPrevTrack,
+  onNextTrack,
+  onQueueMenuToggle,
   isPlaying,
   currentTime,
   duration,
@@ -83,6 +102,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onSubtitlesMenuToggle,
 }) => {
   const [isSubtitlesMenuOpen, setIsSubtitlesMenuOpen] = useState(false);
+  const [isQueueMenuOpen, setIsQueueMenuOpen] = useState(false);
+  const [failedThumbIds, setFailedThumbIds] = useState<Record<number, boolean>>({});
   const [popoverView, setPopoverView] = useState<'list' | 'search'>('list');
   const [searchLang, setSearchLang] = useState('en');
   const [searchResults, setSearchResults] = useState<SubtitleSearchResult[]>([]);
@@ -92,6 +113,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
+  const hasQueue = Boolean(queue && queue.length > 1 && currentIndex !== undefined);
+
   const subtitleMeta = [subtitle, releaseYear ? `${releaseYear}` : null]
     .filter(Boolean)
     .join(' • ');
@@ -100,10 +123,24 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   const currentVolume = isMuted ? 0 : volume;
   const volumePercent = Math.min(100, Math.max(0, currentVolume * 100));
 
+  const handleToggleQueueMenu = () => {
+    const nextState = !isQueueMenuOpen;
+    setIsQueueMenuOpen(nextState);
+    if (nextState && isSubtitlesMenuOpen) {
+      setIsSubtitlesMenuOpen(false);
+      onSubtitlesMenuToggle?.(false);
+    }
+    onQueueMenuToggle?.(nextState);
+  };
+
   const handleToggleSubtitlesMenu = () => {
     const nextState = !isSubtitlesMenuOpen;
     setIsSubtitlesMenuOpen(nextState);
     if (nextState) {
+      if (isQueueMenuOpen) {
+        setIsQueueMenuOpen(false);
+        onQueueMenuToggle?.(false);
+      }
       setPopoverView('list');
       setSearchError(null);
       setDownloadError(null);
@@ -164,17 +201,25 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       >
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={onClose}
-            aria-label="Back to Browse"
+            aria-label={returnLabel}
             className="group flex items-center gap-2 px-3.5 py-2 rounded-xl bg-canvas/90 hover:bg-panel text-sm font-medium text-text-main hover:text-white border border-border-subtle backdrop-blur-md transition-all cursor-pointer shadow-lg focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
           >
             <ArrowLeft className="w-4 h-4 text-muted group-hover:text-accent transition-colors" />
-            <span>Back to Browse</span>
+            <span>{returnLabel}</span>
           </button>
           <div className="flex flex-col">
-            <h1 className="text-base sm:text-lg font-bold text-text-main tracking-tight drop-shadow-md">
-              {title}
-            </h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-base sm:text-lg font-bold text-text-main tracking-tight drop-shadow-md">
+                {title}
+              </h1>
+              {hasQueue && (
+                <span className="px-2 py-0.5 rounded-lg bg-panel/90 border border-border-subtle font-mono text-xs text-accent shadow-sm">
+                  {currentIndex! + 1} / {queue!.length}
+                </span>
+              )}
+            </div>
             {subtitleMeta && (
               <span className="text-xs text-muted drop-shadow-sm">
                 {subtitleMeta}
@@ -226,8 +271,22 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         {/* Buttons Row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* Previous Track Button */}
+            {hasQueue && (
+              <button
+                type="button"
+                onClick={onPrevTrack}
+                disabled={currentIndex === 0 && currentTime <= 5}
+                aria-label="Previous track"
+                className="p-2 rounded-lg text-muted hover:text-accent hover:bg-panel-hover/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+              >
+                <SkipBack className="w-5 h-5" />
+              </button>
+            )}
+
             {/* Play/Pause Button */}
             <button
+              type="button"
               onClick={onPlayPause}
               aria-label={isPlaying ? 'Pause' : 'Play'}
               className="p-2.5 rounded-full bg-cta hover:bg-cta-hover text-white transition-all transform hover:scale-105 active:scale-95 cursor-pointer shadow-lg shadow-cta/30 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
@@ -238,6 +297,19 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                 <Play className="w-5 h-5 fill-white ml-0.5" />
               )}
             </button>
+
+            {/* Next Track Button */}
+            {hasQueue && (
+              <button
+                type="button"
+                onClick={onNextTrack}
+                disabled={currentIndex! >= queue!.length - 1}
+                aria-label="Next track"
+                className="p-2 rounded-lg text-muted hover:text-accent hover:bg-panel-hover/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+              >
+                <SkipForward className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Volume Controls */}
             <div className="flex items-center gap-2 group/vol">
@@ -276,6 +348,101 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           </div>
 
           <div className="flex items-center gap-2 relative">
+            {/* Playback Queue Popover Toggle */}
+            {hasQueue && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={handleToggleQueueMenu}
+                  aria-label="Playback Queue"
+                  className={`p-2 rounded-lg border transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                    isQueueMenuOpen
+                      ? 'text-accent bg-accent/15 border-accent/40'
+                      : 'text-muted hover:text-accent hover:bg-panel-hover/60 border-transparent'
+                  }`}
+                >
+                  <ListVideo className="w-5 h-5" />
+                </button>
+
+                {isQueueMenuOpen && (
+                  <div className="absolute right-0 bottom-full mb-2 w-80 sm:w-96 max-w-[calc(100vw-3rem)] max-h-80 overflow-y-auto bg-panel/95 border border-border-subtle rounded-xl p-3 shadow-2xl text-text-main backdrop-blur-md z-50">
+                    <div className="flex items-center justify-between px-1 py-1 text-xs font-semibold text-muted uppercase tracking-wider border-b border-border-subtle mb-2">
+                      <span>Playback Queue</span>
+                      <span className="font-mono text-[11px] text-accent">
+                        {currentIndex! + 1} / {queue!.length}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {queue!.map((item, idx) => {
+                        const isCurrent = idx === currentIndex;
+                        const thumbUrl =
+                          item.card.poster_url ||
+                          item.card.backdrop_url ||
+                          api.getArtworkUrl(item.card.id, 'poster');
+                        const showThumb = Boolean(thumbUrl) && !failedThumbIds[item.card.id];
+                        return (
+                          <button
+                            key={`${item.card.id}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              onSelectQueueIndex?.(idx);
+                              setIsQueueMenuOpen(false);
+                              onQueueMenuToggle?.(false);
+                            }}
+                            className={`w-full flex items-center gap-3 p-2 rounded-xl border text-left transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                              isCurrent
+                                ? 'bg-accent/20 border-accent text-text-main'
+                                : 'bg-canvas/40 border-transparent hover:bg-panel-hover text-text-main'
+                            }`}
+                          >
+                            <span className="w-5 text-center font-mono text-xs text-muted shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="w-8 h-11 rounded-md bg-canvas border border-border-subtle overflow-hidden flex items-center justify-center shrink-0">
+                              {showThumb ? (
+                                <img
+                                  src={thumbUrl}
+                                  alt=""
+                                  onError={() =>
+                                    setFailedThumbIds((prev) => ({
+                                      ...prev,
+                                      [item.card.id]: true,
+                                    }))
+                                  }
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Film className="w-3.5 h-3.5 text-muted" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div
+                                className={`text-xs font-semibold truncate ${
+                                  isCurrent ? 'text-accent' : 'text-text-main'
+                                }`}
+                              >
+                                {item.card.title}
+                              </div>
+                              {item.card.subtitle && (
+                                <div className="text-[11px] text-muted truncate">
+                                  {item.card.subtitle}
+                                </div>
+                              )}
+                            </div>
+                            {item.duration_seconds !== undefined && item.duration_seconds > 0 && (
+                              <span className="font-mono text-[11px] text-muted shrink-0">
+                                {formatPlaybackTime(item.duration_seconds)}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Subtitles Popover Toggle */}
             <div className="relative">
               <button

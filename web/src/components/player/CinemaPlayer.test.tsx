@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CinemaPlayer } from './CinemaPlayer';
 import { api } from '../../api/client';
@@ -466,5 +467,144 @@ describe('CinemaPlayer Component', () => {
 
     // Controls should now be hidden
     expect(controlsContainer?.className).toContain('opacity-0');
+  });
+
+  it('scrobbles final position, resets per-item state, supports Shift+N/Shift+P, and auto-advances queue on video ended', async () => {
+    const queue = [
+      {
+        position: 0,
+        added_at: 100,
+        duration_seconds: 3600,
+        card: { id: 10, title: 'Track One', media_type: 'movie' },
+      },
+      {
+        position: 1,
+        added_at: 200,
+        duration_seconds: 4000,
+        card: { id: 20, title: 'Track Two', media_type: 'movie' },
+      },
+    ];
+
+    const createSessionSpy = vi
+      .spyOn(api, 'createPlaybackSession')
+      .mockImplementation(async (id) => ({
+        session_id: `sess-${id}`,
+        media_item_id: id,
+        duration_seconds: 3600,
+        resume_position_seconds: 0,
+      }));
+    const heartbeatSpy = vi.spyOn(api, 'sendPlaybackHeartbeat').mockResolvedValue();
+    const closeSessionSpy = vi.spyOn(api, 'closePlaybackSession').mockResolvedValue();
+    vi.spyOn(api, 'getPlaybackState').mockResolvedValue({
+      user_id: 'u-1',
+      media_item_id: 10,
+      playback_position_seconds: 3500,
+      watch_state: 'completed',
+      last_watched_at: 100,
+      play_count: 1,
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+    vi.spyOn(api, 'getItemDetails').mockImplementation(async (id) => ({
+      card: { id, title: id === 10 ? 'Track One' : 'Track Two', media_type: 'movie' },
+      genres: [],
+      stream_url: `/api/v1/stream/${id}`,
+    }));
+
+    const onSelectQueueIndex = vi.fn();
+    const { container, rerender } = render(
+      <CinemaPlayer
+        itemId={10}
+        onClose={mockOnClose}
+        returnLabel="Back to Playlist"
+        queue={queue}
+        currentIndex={0}
+        onSelectQueueIndex={onSelectQueueIndex}
+      />
+    );
+
+    await waitFor(() => expect(createSessionSpy).toHaveBeenCalledWith(10));
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { value: 3600, configurable: true });
+    fireEvent.loadedMetadata(video);
+
+    // Completed item starts at 0s rather than seeking to old position
+    expect(video.currentTime).toBe(0);
+
+    // Shift+N advances track
+    act(() => {
+      fireEvent.keyDown(window, { key: 'N', shiftKey: true });
+    });
+    expect(onSelectQueueIndex).toHaveBeenCalledWith(1);
+    onSelectQueueIndex.mockClear();
+
+    await act(async () => {
+      fireEvent.ended(video);
+    });
+
+    await waitFor(() => {
+      expect(heartbeatSpy).toHaveBeenCalledWith('sess-10', 3600);
+      expect(onSelectQueueIndex).toHaveBeenCalledWith(1);
+    });
+
+    // Advance parent to item 20 -> closes sess-10 and opens sess-20
+    rerender(
+      <CinemaPlayer
+        itemId={20}
+        onClose={mockOnClose}
+        returnLabel="Back to Playlist"
+        queue={queue}
+        currentIndex={1}
+        onSelectQueueIndex={onSelectQueueIndex}
+      />
+    );
+
+    await waitFor(() => {
+      expect(closeSessionSpy).toHaveBeenCalledWith('sess-10');
+      expect(createSessionSpy).toHaveBeenCalledWith(20);
+    });
+
+    // Shift+P from currentTime <= 5 goes back to index 0
+    onSelectQueueIndex.mockClear();
+    act(() => {
+      fireEvent.keyDown(window, { key: 'P', shiftKey: true });
+    });
+    expect(onSelectQueueIndex).toHaveBeenCalledWith(0);
+  });
+
+  it('pauses the 3s control auto-hide timer while Playback Queue popover is open', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(api, 'createPlaybackSession').mockResolvedValue(mockSession);
+    vi.spyOn(api, 'getPlaybackState').mockResolvedValue(mockPlaybackState);
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue(mockDetails);
+
+    const queue = [
+      { position: 0, added_at: 1, duration_seconds: 100, card: { id: 10, title: 'A', media_type: 'movie' } },
+      { position: 1, added_at: 2, duration_seconds: 100, card: { id: 11, title: 'B', media_type: 'movie' } },
+    ];
+
+    render(
+      <CinemaPlayer
+        itemId={10}
+        onClose={mockOnClose}
+        queue={queue}
+        currentIndex={0}
+        onSelectQueueIndex={vi.fn()}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Playback Queue' }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByTestId('player-controls')).toHaveClass('opacity-100');
+    vi.useRealTimers();
   });
 });
