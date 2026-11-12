@@ -5,7 +5,9 @@ use kadr_core::ast::{
 };
 use kadr_core::models::{MediaItem, MediaType};
 use kadr_storage::error::Result;
-use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
+use kadr_storage::repos::{
+    LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
+};
 
 use super::card::to_card_view_model;
 
@@ -15,16 +17,19 @@ pub struct WidgetResolver {
     media_repo: MediaItemRepository,
     playback_repo: PlaybackRepository,
     lib_repo: LibraryRepository,
+    playlist_repo: PlaylistRepository,
 }
 
 impl WidgetResolver {
     /// Creates a new `WidgetResolver` with the provided storage repositories.
     pub fn new(media_repo: MediaItemRepository, playback_repo: PlaybackRepository) -> Self {
         let lib_repo = LibraryRepository::new(media_repo.pool().clone());
+        let playlist_repo = PlaylistRepository::new(media_repo.pool().clone());
         Self {
             media_repo,
             playback_repo,
             lib_repo,
+            playlist_repo,
         }
     }
 
@@ -92,6 +97,8 @@ impl WidgetResolver {
             Some(lib_id)
         } else if let QueryMacro::LibraryItems { ref library_id } = binding.macro_type {
             Some(library_id.as_str())
+        } else if matches!(binding.macro_type, QueryMacro::PlaylistItems { .. }) {
+            None
         } else {
             default_library_id
         }
@@ -646,7 +653,54 @@ impl WidgetResolver {
                     Ok((Vec::new(), None, None))
                 }
             }
-            QueryMacro::PlaylistItems { .. } => Ok((Vec::new(), None, Some(0))),
+            QueryMacro::PlaylistItems { playlist_id } => {
+                let Some((playlist, _owner_username)) =
+                    self.playlist_repo.get_playlist_raw(playlist_id).await?
+                else {
+                    return Ok((Vec::new(), None, Some(0)));
+                };
+
+                if playlist.owner_user_id != user_id && !playlist.is_public {
+                    return Ok((Vec::new(), None, Some(0)));
+                }
+
+                let (visible_pairs, _locked_count) = self
+                    .playlist_repo
+                    .get_playlist_items_with_privacy(playlist_id, unlocked_ids)
+                    .await?;
+
+                let mut filtered_items = Vec::with_capacity(visible_pairs.len());
+                for (_added_at, item) in visible_pairs {
+                    if self
+                        .is_item_matching_filters(
+                            &item,
+                            binding.filters.as_ref(),
+                            unlocked_ids,
+                            effective_library_id,
+                        )
+                        .await
+                    {
+                        filtered_items.push(item);
+                    }
+                }
+
+                let total = filtered_items.len() as u64;
+                let page_items: Vec<MediaItem> = filtered_items
+                    .into_iter()
+                    .skip(offset as usize)
+                    .take(binding.limit as usize)
+                    .collect();
+
+                let count = page_items.len() as u32;
+                let cards = self.hydrate_items_to_cards(page_items, user_id).await;
+                let next_cursor = if (offset as u64 + count as u64) < total {
+                    Some((offset + count).to_string())
+                } else {
+                    None
+                };
+
+                Ok((cards, next_cursor, Some(total)))
+            }
         }
     }
 

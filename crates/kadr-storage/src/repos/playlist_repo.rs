@@ -239,7 +239,7 @@ impl PlaylistRepository {
                 return Ok(None);
             };
 
-            if pl.owner_user_id != user_id && !pl.is_public {
+            if pl.owner_user_id != user_id && !pl.is_public && !is_admin {
                 return Ok(None);
             }
 
