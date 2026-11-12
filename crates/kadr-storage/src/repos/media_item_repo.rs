@@ -466,7 +466,28 @@ impl MediaItemRepository {
             }
 
             let tx = c.transaction()?;
+            let mut affected_playlists = std::collections::BTreeSet::new();
             for (del_id, keep_id) in &duplicates_to_delete {
+                {
+                    let mut pl_stmt = tx.prepare(
+                        "SELECT playlist_id FROM playlist_items WHERE media_item_id = ?1",
+                    )?;
+                    let pl_rows = pl_stmt.query_map(rusqlite::params![del_id], |r| {
+                        r.get::<_, String>(0)
+                    })?;
+                    for pl_id in pl_rows {
+                        affected_playlists.insert(pl_id?);
+                    }
+                }
+                tx.execute(
+                    "UPDATE OR IGNORE playlist_items SET media_item_id = ?1 WHERE media_item_id = ?2",
+                    rusqlite::params![keep_id, del_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM playlist_items WHERE media_item_id = ?1",
+                    rusqlite::params![del_id],
+                )?;
+
                 let _ = tx.execute(
                     "UPDATE OR IGNORE user_playback_states SET media_item_id = ?1 WHERE media_item_id = ?2",
                     rusqlite::params![keep_id, del_id],
@@ -485,6 +506,27 @@ impl MediaItemRepository {
                 )?;
             }
 
+            for pl_id in affected_playlists {
+                let ordered_ids: Vec<i64> = {
+                    let mut stmt = tx.prepare(
+                        "SELECT media_item_id FROM playlist_items \
+                         WHERE playlist_id = ?1 ORDER BY position ASC, added_at ASC",
+                    )?;
+                    let rows = stmt.query_map(rusqlite::params![&pl_id], |r| r.get::<_, i64>(0))?;
+                    let mut ids = Vec::new();
+                    for r in rows {
+                        ids.push(r?);
+                    }
+                    ids
+                };
+                for (idx, media_id) in ordered_ids.into_iter().enumerate() {
+                    tx.execute(
+                        "UPDATE playlist_items SET position = ?1 WHERE playlist_id = ?2 AND media_item_id = ?3",
+                        rusqlite::params![idx as i64, &pl_id, media_id],
+                    )?;
+                }
+            }
+
             for (id, canon_str) in updates {
                 let _ = tx.execute(
                     "UPDATE OR IGNORE media_items SET file_path = ?1 WHERE id = ?2",
@@ -499,11 +541,12 @@ impl MediaItemRepository {
     }
 }
 
-const SELECT_COLUMNS: &str = "id, library_id, item_type, title, original_title, release_year, \
+pub(crate) const SELECT_COLUMNS: &str =
+    "id, library_id, item_type, title, original_title, release_year, \
  duration_seconds, added_at, file_path, file_name, file_size, \
  resolution, video_codec, audio_codec, audio_channels, container, metadata";
 
-fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
+pub(crate) fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
     let id: i64 = row.get(0)?;
     let library_id: String = row.get(1)?;
     let item_type_str: String = row.get(2)?;
