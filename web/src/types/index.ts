@@ -61,7 +61,8 @@ export type QueryMacro =
   | { library_items: { library_id: string } }
   | { genre_shelf: { genre: string } }
   | { spotlight_item: { item_id?: number } }
-  | { item_details: { item_id: number } };
+  | { item_details: { item_id: number } }
+  | { playlist_items: { playlist_id: string } };
 
 export interface WidgetFilterConfig {
   exclude_private?: boolean;
@@ -257,6 +258,15 @@ export type SystemEvent =
   | {
       type: 'system:telemetry';
       payload: TelemetrySnapshot;
+    }
+  | {
+      type: 'playlist:updated';
+      payload: {
+        playlist_id: string;
+        user_id: string;
+        action: string;
+        timestamp: number;
+      };
     };
 
 // Filesystem Browsing Types
@@ -429,4 +439,79 @@ export interface ApprovePluginResponse {
   plugin: PluginRecord;
   token: string;
 }
+
+// Playlists & Playback Queue Types
+export interface PlaylistSummary {
+  id: string;
+  name: string;
+  description?: string;
+  owner_user_id: string;
+  owner_username: string;
+  is_public: boolean;
+  is_editable: boolean;
+  visible_item_count: number;
+  locked_item_count: number;
+  total_duration_seconds: number;
+  cover_poster_urls: string[];
+  created_at: number;
+  updated_at: number;
+  contains_queried_item?: boolean;
+}
+
+export interface PlaylistItemView {
+  position: number;
+  added_at: number;
+  duration_seconds: number;
+  resume_position_seconds?: number;
+  card: CardViewModel;
+}
+
+export type QueueItem = PlaylistItemView;
+
+export interface PlaylistDetail {
+  summary: PlaylistSummary;
+  items: PlaylistItemView[];
+}
+
+export interface AddShowItemsSpec {
+  show_id: number;
+  season_number?: number;
+}
+
+export interface AddFolderItemsSpec {
+  library_id: string;
+  path: string;
+  recursive?: boolean;
+}
+
+export interface AddPlaylistItemsPayload {
+  item_ids?: number[];
+  show?: AddShowItemsSpec;
+  folder?: AddFolderItemsSpec;
+}
+
+export interface CreatePlaylistPayload {
+  name: string;
+  description?: string;
+  is_public?: boolean;
+  items?: AddPlaylistItemsPayload;
+}
+
+export interface UpdatePlaylistPayload {
+  name?: string;
+  description?: string;
+  is_public?: boolean;
+}
+
+export interface AddPlaylistItemsResponse {
+  added_count: number;
+  skipped_duplicate_count: number;
+  summary: PlaylistSummary;
+}
+
+export type PlaylistAddTarget =
+  | { kind: 'item'; itemId: number; title: string }
+  | { kind: 'season'; showId: number; seasonNumber: number; title: string }
+  | { kind: 'folder'; libraryId: string; path: string; recursive: boolean; title: string };
+
 

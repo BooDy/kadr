@@ -1,7 +1,10 @@
 import type {
+  AddPlaylistItemsPayload,
+  AddPlaylistItemsResponse,
   ApprovePluginResponse,
   CardViewModel,
   CreateLibraryPayload,
+  CreatePlaylistPayload,
   CreateScreenPayload,
   CreateUserPayload,
   DiscoveryResponse,
@@ -13,6 +16,8 @@ import type {
   OnlineSubtitleSearchResponse,
   PlaybackSessionResponse,
   PlaybackState,
+  PlaylistDetail,
+  PlaylistSummary,
   PluginConnection,
   PluginPermission,
   PluginRecord,
@@ -27,6 +32,7 @@ import type {
   UnlockLibraryResponse,
   UpdateConfigPayload,
   UpdateLibraryPayload,
+  UpdatePlaylistPayload,
   UpdatePluginSettingsPayload,
   User,
   WidgetDataResponse,
@@ -624,6 +630,89 @@ export class ApiClient {
     return this.request<{ token: string }>(
       `/api/v1/admin/plugins/${encodeURIComponent(id)}/token`,
       { method: 'POST' }
+    );
+  }
+
+  // Playlists
+  public async getPlaylists(
+    containsItemId?: number
+  ): Promise<{ playlists: PlaylistSummary[] }> {
+    const query =
+      containsItemId !== undefined
+        ? `?contains_item_id=${encodeURIComponent(String(containsItemId))}`
+        : '';
+    return this.request<{ playlists: PlaylistSummary[] }>(`/api/v1/playlists${query}`);
+  }
+
+  public async createPlaylist(
+    payload: CreatePlaylistPayload
+  ): Promise<PlaylistDetail> {
+    return this.request<PlaylistDetail>('/api/v1/playlists', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getPlaylist(id: string): Promise<PlaylistDetail> {
+    return this.request<PlaylistDetail>(
+      `/api/v1/playlists/${encodeURIComponent(id)}`
+    );
+  }
+
+  public async updatePlaylist(
+    id: string,
+    payload: UpdatePlaylistPayload
+  ): Promise<PlaylistSummary> {
+    return this.request<PlaylistSummary>(
+      `/api/v1/playlists/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  public async deletePlaylist(id: string): Promise<void> {
+    await this.request<void>(`/api/v1/playlists/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async addPlaylistItems(
+    id: string,
+    payload: AddPlaylistItemsPayload
+  ): Promise<AddPlaylistItemsResponse> {
+    return this.request<AddPlaylistItemsResponse>(
+      `/api/v1/playlists/${encodeURIComponent(id)}/items`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  public async removePlaylistItem(
+    id: string,
+    mediaItemId: number
+  ): Promise<PlaylistSummary> {
+    return this.request<PlaylistSummary>(
+      `/api/v1/playlists/${encodeURIComponent(id)}/items/${encodeURIComponent(String(mediaItemId))}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  public async reorderPlaylistItems(
+    id: string,
+    itemIds: number[]
+  ): Promise<PlaylistSummary> {
+    return this.request<PlaylistSummary>(
+      `/api/v1/playlists/${encodeURIComponent(id)}/items/order`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ item_ids: itemIds }),
+      }
     );
   }
 }

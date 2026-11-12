@@ -741,5 +741,152 @@ describe('ApiClient plugin management', () => {
   });
 });
 
+describe('Playlists API', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('fetches playlists with optional contains_item_id and forwards auth + unlock headers', async () => {
+    const client = new ApiClient('http://localhost:8492');
+    client.setToken('jwt-abc');
+    client.storeUnlockToken('lib-priv', 'unlock-sig-1');
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ playlists: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+
+    await client.getPlaylists();
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8492/api/v1/playlists',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer jwt-abc',
+          'X-Kadr-Unlocked': 'unlock-sig-1',
+        }),
+      })
+    );
+
+    await client.getPlaylists(42);
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8492/api/v1/playlists?contains_item_id=42',
+      expect.any(Object)
+    );
+  });
+
+  it('calls create, get, update, delete, addItems, removeItem, and reorderItems endpoints', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-abc');
+
+    const mockSummary = {
+      id: 'pl-1',
+      name: 'Sci-Fi',
+      owner_user_id: 'u-1',
+      owner_username: 'alex',
+      is_public: false,
+      is_editable: true,
+      visible_item_count: 2,
+      locked_item_count: 0,
+      total_duration_seconds: 7200,
+      cover_poster_urls: [],
+      created_at: 100,
+      updated_at: 200,
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      if (init?.method === 'DELETE' && String(_url).endsWith('/playlists/pl-1')) {
+        return new Response(null, { status: 204 });
+      }
+      if (String(_url).endsWith('/playlists') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ summary: mockSummary, items: [] }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (String(_url).endsWith('/playlists/pl-1') && (!init?.method || init.method === 'GET')) {
+        return new Response(JSON.stringify({ summary: mockSummary, items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (String(_url).endsWith('/items') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({ added_count: 2, skipped_duplicate_count: 0, summary: mockSummary }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify(mockSummary), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const created = await client.createPlaylist({
+      name: 'Sci-Fi',
+      is_public: false,
+      items: { item_ids: [10, 14] },
+    });
+    expect(created.summary.id).toBe('pl-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/playlists',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ name: 'Sci-Fi', is_public: false, items: { item_ids: [10, 14] } }),
+      })
+    );
+
+    const detail = await client.getPlaylist('pl-1');
+    expect(detail.summary.name).toBe('Sci-Fi');
+    expect(fetchSpy).toHaveBeenCalledWith('/api/v1/playlists/pl-1', expect.any(Object));
+
+    const updated = await client.updatePlaylist('pl-1', { name: 'Updated', is_public: true });
+    expect(updated.id).toBe('pl-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/playlists/pl-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ name: 'Updated', is_public: true }),
+      })
+    );
+
+    const added = await client.addPlaylistItems('pl-1', { show: { show_id: 50, season_number: 1 } });
+    expect(added.added_count).toBe(2);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/playlists/pl-1/items',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ show: { show_id: 50, season_number: 1 } }),
+      })
+    );
+
+    await client.reorderPlaylistItems('pl-1', [14, 10]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/playlists/pl-1/items/order',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ item_ids: [14, 10] }),
+      })
+    );
+
+    await client.removePlaylistItem('pl-1', 10);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/playlists/pl-1/items/10',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+
+    await client.deletePlaylist('pl-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/playlists/pl-1',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+});
+
+
 
 
