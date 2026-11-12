@@ -38,10 +38,11 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Declarative Widget AST Layout Engine**: Single-roundtrip screen hydration (`Home`, `Movies`, `Shows`) powering hero spotlights, horizontal card carousels, and catalog grids with badge computation (`4K`, `NEW`, `RESUME` progress bars).
 - **TV Shows & Seasons Grouping**: Automated TV episode filename and directory cue parsing (`S01E02`), parent series aggregation, season tabs navigation, and 1-click episode playback.
 - **Hierarchical Folder Browser & Slideshow**: Sandboxed directory browsing with breadcrumbs, direct directory jumping from media details, image discovery (`jpg`, `png`, `webp`, `gif`, `avif`, `bmp`), and full-screen auto-advancing slideshows.
+- **Playlists & Queue Playback**: Manual ordered playlists with server-wide multi-user sharing (`is_public`), 1-step Create & Add, batch TV Show / Season / sandboxed Folder expansion, fail-closed PIN-locked library isolation (`locked_item_count`), `playlist_items` Declarative Widget AST rails, and multi-track queue playback (auto-advance, shuffle, and interactive queue drawer) in Cinema Player and native clients.
 - **Multi-Path & Private PIN-Locked Libraries**: Media libraries spanning multiple local filesystem paths with directory picking, 4-digit PIN protection, database query isolation, and HMAC unlock tokens.
 - **Online & Local Subtitles with In-Player Search**: Automatic sidecar discovery (`.srt`, `.vtt`, `.ass`, `.sub`), language tag detection, pure-Rust bounded streaming SRT $\to$ WebVTT transcoder, disk caching, and live in-player OpenSubtitles search and on-the-fly download.
 - **Video Thumbnail Extraction Engine**: Pure-Rust background thumbnail extractor during library scans and on-demand fallback routes (`/api/v1/thumbnails/videos/:id`).
-- **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `session:synced`, `subtitle:downloaded`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
+- **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `session:synced`, `subtitle:downloaded`, `playlist:updated`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
 - **System Telemetry & Health**: Non-blocking collector querying Linux process RSS memory via `/proc/self/statm`, SQLite DB/WAL file sizes, and active playback session counters.
 - **Integrated Cinema Web App & Studio**:
   - **Cinema Player**: Full-screen dark video player with native HTML5 `<track>` WebVTT subtitles, in-player subtitle downloading, direct folder jumping, auto-resume seeking, 10s playback scrobbling heartbeats, and media keyboard shortcuts.
@@ -430,6 +431,16 @@ All protected endpoints require an `Authorization: Bearer <token>` header, acqui
 - `GET /api/v1/playback/states/:item_id` — Fetch user's saved playback position and watch status.
 - `GET /api/v1/playback/continue-watching` — List items currently in progress for Continue Watching carousel.
 
+### Playlists & Queue Playback
+- `GET /api/v1/playlists?contains_item_id=<optional i64>` — List playlists owned by the user plus shared public playlists (`PlaylistSummary[]`, with optional membership flag).
+- `POST /api/v1/playlists` — Create a playlist (`name`, optional `description`, `is_public`, and optional 1-step initial `items`).
+- `GET /api/v1/playlists/{id}` — Retrieve `PlaylistDetail` (`summary` + ordered visible `PlaylistItemView[]` hydrated with viewer playback progress).
+- `PATCH /api/v1/playlists/{id}` — Update playlist metadata (`name`, `description`) or server sharing visibility (`is_public`).
+- `DELETE /api/v1/playlists/{id}` — Delete a playlist and cascade-delete its item entries.
+- `POST /api/v1/playlists/{id}/items` — Expand, deduplicate, and append playable items (`item_ids`, TV `show`/season, or sandboxed library `folder`).
+- `DELETE /api/v1/playlists/{id}/items/{media_item_id}` — Remove an item from a playlist and re-compact positions (`0..N-1`).
+- `PUT /api/v1/playlists/{id}/items/order` — Reorder visible playlist items (`{"item_ids": [...]}`) while preserving any PIN-locked private library items.
+
 ### Subtitle Management
 - `GET /api/v1/items/:item_id/subtitles` — List available subtitle tracks for an item.
 - `GET /api/v1/subtitles/:subtitle_id/stream.vtt` — Public WebVTT stream (on-the-fly SRT $\to$ WebVTT conversion with disk caching).
@@ -438,7 +449,7 @@ All protected endpoints require an `Authorization: Bearer <token>` header, acqui
 - `DELETE /api/v1/subtitles/:subtitle_id` — Delete subtitle track and purge cache.
 
 ### Real-Time Events & Telemetry
-- `GET /api/v1/events` — Public Server-Sent Events (SSE) stream (`library:updated`, `session:synced`, `subtitle:downloaded`, `system:telemetry`).
+- `GET /api/v1/events` — Public Server-Sent Events (SSE) stream (`library:updated`, `session:synced`, `subtitle:downloaded`, `playlist:updated`, `system:telemetry`).
 - `GET /api/v1/system/telemetry` — Admin-only instantaneous metrics snapshot (`active_sessions`, `rss_memory_bytes`, `db_size_bytes`, `wal_size_bytes`).
 
 ---
