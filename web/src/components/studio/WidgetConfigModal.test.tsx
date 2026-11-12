@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WidgetConfigModal } from './WidgetConfigModal';
+import { api } from '../../api/client';
 import type { Library, WidgetNode } from '../../types';
 
 describe('WidgetConfigModal Component', () => {
@@ -686,5 +687,74 @@ describe('WidgetConfigModal Component', () => {
         expect(saved.binding.filters?.library_id).toBe('lib-2');
       }
     });
+  });
+
+  it('supports playlist_items macro, shows private playlist warning, and saves playlist_id binding', async () => {
+    vi.spyOn(api, 'getPlaylists').mockResolvedValue({
+      playlists: [
+        {
+          id: 'pl-priv',
+          name: 'Secret Cuts',
+          owner_user_id: 'u-1',
+          owner_username: 'alex',
+          is_public: false,
+          is_editable: true,
+          visible_item_count: 3,
+          locked_item_count: 0,
+          total_duration_seconds: 7200,
+          cover_poster_urls: [],
+          created_at: 100,
+          updated_at: 200,
+        },
+        {
+          id: 'pl-pub',
+          name: 'House Favorites',
+          owner_user_id: 'u-1',
+          owner_username: 'alex',
+          is_public: true,
+          is_editable: true,
+          visible_item_count: 5,
+          locked_item_count: 0,
+          total_duration_seconds: 12000,
+          cover_poster_urls: [],
+          created_at: 100,
+          updated_at: 200,
+        },
+      ],
+    });
+
+    const handleSave = vi.fn();
+    render(
+      <WidgetConfigModal
+        isOpen={true}
+        libraries={mockLibraries}
+        onSave={handleSave}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Title/i), { target: { value: 'Curated Picks' } });
+    fireEvent.change(screen.getByLabelText(/Query Macro/i), {
+      target: { value: 'playlist_items' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Target Playlist/i)).toBeInTheDocument();
+      expect(screen.getByText(/This playlist is private/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Target Playlist/i), {
+      target: { value: 'pl-pub' },
+    });
+    expect(screen.queryByText(/This playlist is private/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+    expect(handleSave).toHaveBeenCalledTimes(1);
+    const saved = handleSave.mock.calls[0][0] as WidgetNode;
+    if ('binding' in saved) {
+      expect(saved.binding.macro_type).toEqual({
+        playlist_items: { playlist_id: 'pl-pub' },
+      });
+    }
   });
 });

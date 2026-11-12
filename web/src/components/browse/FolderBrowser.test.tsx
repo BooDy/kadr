@@ -198,7 +198,7 @@ describe('FolderBrowser Component', () => {
     });
 
     // Clicking the play CTA button on the poster calls onPlayItem directly
-    const playButtons = screen.getAllByRole('button', { name: /play/i });
+    const playButtons = screen.getAllByRole('button', { name: /^Play /i });
     expect(playButtons.length).toBeGreaterThan(0);
     fireEvent.click(playButtons[0]);
 
@@ -488,6 +488,24 @@ describe('FolderBrowser Component', () => {
       expect(getFoldersSpy).toHaveBeenCalledWith(mockLibraryId, 'Sci-Fi');
     });
     expect(onNavigateToFolder).not.toHaveBeenCalled();
+  });
+
+  it('opens AddToPlaylistModal when clicking Add Folder to Playlist', async () => {
+    vi.spyOn(api, 'getLibraryFolders').mockResolvedValueOnce(mockSubfolderResponse);
+    const getPlaylistsSpy = vi.spyOn(api, 'getPlaylists').mockResolvedValueOnce({ playlists: [] });
+
+    render(<FolderBrowser libraryId={mockLibraryId} onPlayItem={mockOnPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Blade Runner 2049')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Folder to Playlist/i }));
+
+    await waitFor(() => {
+      expect(getPlaylistsSpy).toHaveBeenCalledWith(undefined);
+      expect(screen.getByRole('dialog', { name: /Add Sci-Fi to playlist/i })).toBeInTheDocument();
+    });
   });
 });
 

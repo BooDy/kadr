@@ -8,11 +8,13 @@ import {
   Loader2,
   AlertCircle,
   Image as ImageIcon,
+  ListPlus,
 } from 'lucide-react';
 import type { CardViewModel, LibraryFolderResponse } from '../../types';
 import { api } from '../../api/client';
 import { ItemDetailsModal } from './ItemDetailsModal';
 import { ImageViewerModal } from '../player/ImageViewerModal';
+import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 
 export interface FolderBrowserProps {
   libraryId: string;
@@ -134,6 +136,7 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [isSlideshowAutoPlay, setIsSlideshowAutoPlay] = useState<boolean>(false);
+  const [isAddFolderOpen, setIsAddFolderOpen] = useState<boolean>(false);
 
   const navigateTo = useCallback(
     async (path: string) => {
@@ -200,17 +203,28 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
           )}
         </nav>
 
-        {/* Up one level navigation button */}
-        {hasParent && (
+        {/* Folder Actions & Up one level navigation button */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => navigateTo(data?.parent_path ?? '')}
+            onClick={() => setIsAddFolderOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-main bg-canvas/60 hover:bg-canvas border border-border-subtle transition-all duration-150 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none cursor-pointer"
           >
-            <ArrowLeft className="w-3.5 h-3.5 text-accent" />
-            <span>← Up one level</span>
+            <ListPlus className="w-3.5 h-3.5 text-accent" />
+            <span>Add Folder to Playlist</span>
           </button>
-        )}
+
+          {hasParent && (
+            <button
+              type="button"
+              onClick={() => navigateTo(data?.parent_path ?? '')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-main bg-canvas/60 hover:bg-canvas border border-border-subtle transition-all duration-150 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-accent" />
+              <span>← Up one level</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Loading state indicator */}
@@ -392,6 +406,18 @@ export const FolderBrowser: FC<FolderBrowserProps> = ({
           onClose={() => setSelectedImageIndex(null)}
         />
       )}
+
+      <AddToPlaylistModal
+        isOpen={isAddFolderOpen}
+        target={{
+          kind: 'folder',
+          libraryId,
+          path: currentPath,
+          recursive: true,
+          title: currentPath || data?.library_name || 'Folder',
+        }}
+        onClose={() => setIsAddFolderOpen(false)}
+      />
     </div>
   );
 };

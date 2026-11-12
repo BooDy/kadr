@@ -1,7 +1,8 @@
 import { useState, type FC } from 'react';
-import { Play, Info, Clapperboard, Sparkles } from 'lucide-react';
+import { Play, Info, Clapperboard, Sparkles, ListPlus } from 'lucide-react';
 import type { CardViewModel } from '../../types';
 import { api } from '../../api/client';
+import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 
 export interface SpotlightWidgetProps {
   item: CardViewModel;
@@ -15,6 +16,7 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
   onMoreInfo,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
+  const [isAddPlaylistOpen, setIsAddPlaylistOpen] = useState(false);
 
   const backdropUrl =
     item.backdrop_url || item.poster_url || api.getArtworkUrl(item.id, 'backdrop');
@@ -110,13 +112,28 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
 
           <button
             onClick={() => onMoreInfo(item.id)}
-            className="group flex items-center gap-2 px-5 py-3 rounded-xl bg-panel/80 hover:bg-panel text-text-main border border-border-subtle font-semibold text-sm backdrop-blur-md focus-visible:ring-3 focus-visible:ring-highlight hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+            className="group flex items-center gap-2 px-5 py-3 rounded-xl bg-panel/80 hover:bg-panel text-text-main border border-border-subtle font-semibold text-sm backdrop-blur-md focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
           >
             <Info className="h-4 w-4 text-muted group-hover:text-text-main" />
             More Info
           </button>
+
+          <button
+            type="button"
+            onClick={() => setIsAddPlaylistOpen(true)}
+            className="group flex items-center gap-2 px-5 py-3 rounded-xl bg-panel/80 hover:bg-panel text-text-main border border-border-subtle font-semibold text-sm backdrop-blur-md focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <ListPlus className="h-4 w-4 text-accent" />
+            Add to Playlist
+          </button>
         </div>
       </div>
+
+      <AddToPlaylistModal
+        isOpen={isAddPlaylistOpen}
+        target={{ kind: 'item', itemId: item.id, title: item.title }}
+        onClose={() => setIsAddPlaylistOpen(false)}
+      />
     </section>
   );
 };

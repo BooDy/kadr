@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sliders, Check, ChevronDown, ChevronRight, Filter } from 'lucide-react';
-import type { Library, WidgetNode, QueryMacro, WidgetQueryBinding, WidgetFilterConfig } from '../../types';
+import { X, Sliders, Check, ChevronDown, ChevronRight, Filter, Lock } from 'lucide-react';
+import type {
+  Library,
+  PlaylistSummary,
+  WidgetNode,
+  QueryMacro,
+  WidgetQueryBinding,
+  WidgetFilterConfig,
+} from '../../types';
+import { api } from '../../api/client';
 
 export interface WidgetConfigModalProps {
   isOpen: boolean;
@@ -16,7 +24,8 @@ type MacroTypeOption =
   | 'continue_watching'
   | 'library_items'
   | 'genre_shelf'
-  | 'spotlight_item';
+  | 'spotlight_item'
+  | 'playlist_items';
 
 const SORT_OPTIONS = [
   { value: '', label: 'Default' },
@@ -52,6 +61,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   const [columns, setColumns] = useState<number>(4);
   const [macroType, setMacroType] = useState<MacroTypeOption>('recently_added');
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>('');
+  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
   const [genre, setGenre] = useState<string>('Action');
   const [itemId, setItemId] = useState<string>('');
   const [limit, setLimit] = useState<number>(20);
@@ -93,7 +104,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             macro === 'continue_watching' ||
             macro === 'library_items' ||
             macro === 'genre_shelf' ||
-            macro === 'spotlight_item'
+            macro === 'spotlight_item' ||
+            macro === 'playlist_items'
           ) {
             setMacroType(macro as MacroTypeOption);
           } else {
@@ -104,6 +116,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
           if ('library_items' in m && m.library_items) {
             setMacroType('library_items');
             setSelectedLibraryId(m.library_items.library_id || libraries[0]?.id || '');
+          } else if ('playlist_items' in m && m.playlist_items) {
+            setMacroType('playlist_items');
+            setSelectedPlaylistId(m.playlist_items.playlist_id || '');
           } else if ('genre_shelf' in m && m.genre_shelf) {
             setMacroType('genre_shelf');
             setGenre(m.genre_shelf.genre || 'Action');
@@ -160,6 +175,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       setColumns(4);
       setMacroType('recently_added');
       setSelectedLibraryId(libraries[0]?.id || '');
+      setSelectedPlaylistId('');
       setGenre('Action');
       setItemId('');
       setLimit(20);
@@ -174,6 +190,27 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       setMaxAgeDays(null);
     }
   }, [isOpen, initialWidget, libraries]);
+
+  useEffect(() => {
+    if (!isOpen || macroType !== 'playlist_items') return;
+    let mounted = true;
+    api
+      .getPlaylists()
+      .then((res) => {
+        if (!mounted) return;
+        const list = res.playlists || [];
+        setPlaylists(list);
+        setSelectedPlaylistId((prev) => prev || list[0]?.id || '');
+      })
+      .catch(() => {
+        if (mounted) {
+          setPlaylists([]);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, macroType]);
 
   const toggleGenreChip = (genreName: string) => {
     const exists = excludeGenres.some((g) => g.toLowerCase() === genreName.toLowerCase());
@@ -255,6 +292,13 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         resolvedMacro = {
           library_items: {
             library_id: selectedLibraryId || libraries[0]?.id || '',
+          },
+        };
+        break;
+      case 'playlist_items':
+        resolvedMacro = {
+          playlist_items: {
+            playlist_id: selectedPlaylistId || playlists[0]?.id || '',
           },
         };
         break;
@@ -452,10 +496,57 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               <option value="top_rated">Top Rated</option>
               <option value="continue_watching">Continue Watching</option>
               <option value="library_items">Library Items</option>
+              <option value="playlist_items">Playlist Items</option>
               <option value="genre_shelf">Genre Shelf</option>
               <option value="spotlight_item">Spotlight Item</option>
             </select>
           </div>
+
+          {/* Target Playlist (when playlist_items) */}
+          {macroType === 'playlist_items' && (
+            <div className="space-y-2">
+              <label
+                htmlFor="widget-playlist"
+                className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+              >
+                Target Playlist
+              </label>
+              <select
+                id="widget-playlist"
+                aria-label="Target Playlist"
+                value={selectedPlaylistId}
+                onChange={(e) => setSelectedPlaylistId(e.target.value)}
+                className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+              >
+                {playlists.length === 0 ? (
+                  <option value="">No playlists available</option>
+                ) : (
+                  playlists.map((pl) => (
+                    <option key={pl.id} value={pl.id}>
+                      {pl.name} ({pl.is_public ? 'Public' : 'Private'})
+                    </option>
+                  ))
+                )}
+              </select>
+
+              {(() => {
+                const selectedPl = playlists.find((p) => p.id === selectedPlaylistId);
+                if (selectedPl && !selectedPl.is_public) {
+                  return (
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-highlight/15 border border-highlight/40 text-xs text-highlight">
+                      <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        This playlist is private. Only its owner (@{selectedPl.owner_username})
+                        will see items in this widget on shared screens; other profiles will see an
+                        empty rail.
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          )}
 
           {/* Target Library (when library_items) */}
           {macroType === 'library_items' && (

@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ItemDetailsModal } from './ItemDetailsModal';
 import { describe, it, expect, vi } from 'vitest';
+import { api } from '../../api/client';
 import type { ItemDetailsPayload } from '../../types';
 
 describe('ItemDetailsModal Seasons & Episodes', () => {
@@ -243,6 +244,44 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
     );
 
     expect(screen.queryByRole('button', { name: /browse folder/i })).not.toBeInTheDocument();
+  });
+
+  it('exposes + Playlist, Add Season, and per-episode Add to playlist actions', async () => {
+    const getPlaylistsSpy = vi.spyOn(api, 'getPlaylists').mockResolvedValue({ playlists: [] });
+
+    render(
+      <ItemDetailsModal
+        itemId={10}
+        initialDetails={mockShowDetails}
+        onClose={vi.fn()}
+        onPlayItem={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Playlist/i }));
+    await waitFor(() => {
+      expect(getPlaylistsSpy).toHaveBeenCalledWith(10);
+      expect(
+        screen.getByRole('dialog', { name: /Add What We Do in the Shadows to playlist/i })
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Close add to playlist modal/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Season/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole('dialog', {
+          name: /Add What We Do in the Shadows — Season 4 to playlist/i,
+        })
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Close add to playlist modal/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Reunited to playlist/i }));
+    await waitFor(() => {
+      expect(getPlaylistsSpy).toHaveBeenCalledWith(101);
+      expect(screen.getByRole('dialog', { name: /Add Reunited to playlist/i })).toBeInTheDocument();
+    });
   });
 });
 

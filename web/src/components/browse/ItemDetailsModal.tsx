@@ -8,14 +8,17 @@ import {
   Check,
   Loader2,
   Folder,
+  ListPlus,
 } from 'lucide-react';
 import type {
   CardViewModel,
   ItemDetailsPayload,
   OnlineSubtitleMatch,
+  PlaylistAddTarget,
   SubtitleTrack,
 } from '../../types';
 import { api } from '../../api/client';
+import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 
 export interface ItemDetailsModalProps {
   itemId: number | null;
@@ -30,10 +33,16 @@ export interface ItemDetailsModalProps {
 interface EpisodeCardProps {
   episode: CardViewModel;
   onPlay: (id: number) => void;
+  onAddToPlaylist: (episode: CardViewModel) => void;
   formatDuration: (seconds?: number) => string | null;
 }
 
-const EpisodeCard: FC<EpisodeCardProps> = ({ episode, onPlay, formatDuration }) => {
+const EpisodeCard: FC<EpisodeCardProps> = ({
+  episode,
+  onPlay,
+  onAddToPlaylist,
+  formatDuration,
+}) => {
   const [thumbFailed, setThumbFailed] = useState(false);
   const thumbUrl =
     episode.backdrop_url ||
@@ -137,8 +146,16 @@ const EpisodeCard: FC<EpisodeCardProps> = ({ episode, onPlay, formatDuration }) 
         )}
       </div>
 
-      {/* 1-Click Play Button */}
-      <div className="self-end sm:self-center flex-shrink-0">
+      {/* 1-Click Play & Add to Playlist Buttons */}
+      <div className="self-end sm:self-center flex items-center gap-2 flex-shrink-0">
+        <button
+          type="button"
+          aria-label={`Add ${episode.title} to playlist`}
+          onClick={() => onAddToPlaylist(episode)}
+          className="p-2 rounded-xl bg-panel hover:bg-panel-hover text-muted hover:text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+        >
+          <ListPlus className="w-4 h-4 text-accent" />
+        </button>
         <button
           type="button"
           aria-label={`Play ${episode.title}`}
@@ -179,6 +196,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   // Artwork error state
   const [backdropFailed, setBackdropFailed] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
+  const [playlistTarget, setPlaylistTarget] = useState<PlaylistAddTarget | null>(null);
 
   useEffect(() => {
     if (!isOpen || itemId === null) {
@@ -191,6 +209,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
       setBackdropFailed(false);
       setPosterFailed(false);
       setSelectedSeason(null);
+      setPlaylistTarget(null);
       return;
     }
 
@@ -225,13 +244,13 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && playlistTarget === null) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, playlistTarget]);
 
   const episodesBySeason = useMemo(() => {
     if (!details?.episodes || details.episodes.length === 0) {
@@ -449,6 +468,20 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                     </button>
                   )}
                   <button
+                    type="button"
+                    onClick={() =>
+                      setPlaylistTarget({
+                        kind: 'item',
+                        itemId,
+                        title: card?.title || `Item #${itemId}`,
+                      })
+                    }
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-panel hover:bg-panel-hover text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                  >
+                    <ListPlus className="w-4 h-4 text-accent" />
+                    <span>+ Playlist</span>
+                  </button>
+                  <button
                     onClick={() => handlePlayItem(itemId)}
                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-lg shadow-cta/25 hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
                   >
@@ -530,24 +563,42 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
 
                       {/* Season Pill Selector Tabs */}
                       {seasons.length > 0 && (
-                        <div className="flex items-center gap-2 overflow-x-auto pb-1" aria-label="Season tabs">
-                          {seasons.map((seasonNum) => {
-                            const isSelected = seasonNum === currentSeason;
-                            return (
-                              <button
-                                key={seasonNum}
-                                type="button"
-                                onClick={() => setSelectedSeason(seasonNum)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
-                                  isSelected
-                                    ? 'bg-accent text-white shadow-md shadow-accent/25'
-                                    : 'bg-canvas/60 text-muted hover:text-text-main hover:bg-panel-hover border border-border-subtle'
-                                }`}
-                              >
-                                Season {seasonNum}
-                              </button>
-                            );
-                          })}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                          <div className="flex items-center gap-2 overflow-x-auto" aria-label="Season tabs">
+                            {seasons.map((seasonNum) => {
+                              const isSelected = seasonNum === currentSeason;
+                              return (
+                                <button
+                                  key={seasonNum}
+                                  type="button"
+                                  onClick={() => setSelectedSeason(seasonNum)}
+                                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                                    isSelected
+                                      ? 'bg-accent text-white shadow-md shadow-accent/25'
+                                      : 'bg-canvas/60 text-muted hover:text-text-main hover:bg-panel-hover border border-border-subtle'
+                                  }`}
+                                >
+                                  Season {seasonNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPlaylistTarget({
+                                kind: 'season',
+                                showId: itemId,
+                                seasonNumber: currentSeason,
+                                title: `${card?.title || 'Show'} — Season ${currentSeason}`,
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-canvas/60 hover:bg-panel-hover border border-border-subtle text-xs font-medium text-text-main transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                          >
+                            <ListPlus className="w-3.5 h-3.5 text-accent" />
+                            <span>Add Season</span>
+                          </button>
                         </div>
                       )}
 
@@ -558,6 +609,13 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                             key={ep.id}
                             episode={ep}
                             onPlay={handlePlayItem}
+                            onAddToPlaylist={(episode) =>
+                              setPlaylistTarget({
+                                kind: 'item',
+                                itemId: episode.id,
+                                title: episode.title,
+                              })
+                            }
                             formatDuration={formatDuration}
                           />
                         ))}
@@ -772,6 +830,12 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
           </>
         )}
       </div>
+
+      <AddToPlaylistModal
+        isOpen={playlistTarget !== null}
+        target={playlistTarget}
+        onClose={() => setPlaylistTarget(null)}
+      />
     </div>
   );
 };
