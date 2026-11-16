@@ -34,15 +34,10 @@ fn scan_directory_recursive_inner(
             let path = entry.path();
             if path.is_dir() {
                 scan_directory_recursive_inner(&path, visited_dirs, seen_files, files);
-            } else if path.is_file() {
-                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                    if ["mkv", "mp4", "webm", "avi"].contains(&ext.to_lowercase().as_str()) {
-                        let canon_file =
-                            std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-                        if seen_files.insert(canon_file.clone()) {
-                            files.push(canon_file);
-                        }
-                    }
+            } else if path.is_file() && kadr_core::is_video_path(&path) {
+                let canon_file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                if seen_files.insert(canon_file.clone()) {
+                    files.push(canon_file);
                 }
             }
         }

@@ -36,6 +36,7 @@ fn is_generic_handler_title(title: &str) -> bool {
         || lower == "subtitlehandler"
         || lower == "gpac streaming text handler"
         || lower == "sbtl"
+        || lower == "core media subtitle"
 }
 
 pub fn parse_embedded_subtitles_from_json(json: &Value) -> Vec<DiscoveredSubtitle> {
@@ -54,7 +55,8 @@ pub fn parse_embedded_subtitles_from_json(json: &Value) -> Vec<DiscoveredSubtitl
         let Some(format) = map_subtitle_codec(codec_name) else {
             continue;
         };
-        let Some(stream_index) = stream["index"].as_u64().and_then(|i| u32::try_from(i).ok()) else {
+        let Some(stream_index) = stream["index"].as_u64().and_then(|i| u32::try_from(i).ok())
+        else {
             continue;
         };
 

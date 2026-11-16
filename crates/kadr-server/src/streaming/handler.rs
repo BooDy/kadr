@@ -17,12 +17,16 @@ use crate::streaming::range::{parse_range_header, RangeResult};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 
 pub fn resolve_mime(ext: &str) -> &'static str {
-    match ext.to_lowercase().as_str() {
-        "mp4" | "m4v" => "video/mp4",
-        "mkv" => "video/x-matroska",
-        "webm" => "video/webm",
-        "avi" => "video/x-msvideo",
-        "mov" => "video/quicktime",
+    let video_mime = kadr_core::video_mime_for_extension(ext);
+    if video_mime != "application/octet-stream" {
+        return video_mime;
+    }
+    match ext
+        .strip_prefix('.')
+        .unwrap_or(ext)
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "mp3" => "audio/mpeg",
         "flac" => "audio/flac",
         "aac" => "audio/aac",
@@ -119,14 +123,17 @@ pub async fn stream_media_item(
         }
     };
 
-    let container = item.technical.container.unwrap_or_else(|| {
-        item.file_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_string()
-    });
-    let mime = resolve_mime(&container);
+    let mut mime = item
+        .technical
+        .container
+        .as_deref()
+        .map(resolve_mime)
+        .unwrap_or("application/octet-stream");
+    if mime == "application/octet-stream" {
+        if let Some(ext) = item.file_path.extension().and_then(|e| e.to_str()) {
+            mime = resolve_mime(ext);
+        }
+    }
 
     let range_result = headers
         .get(header::RANGE)
@@ -191,10 +198,17 @@ mod tests {
         assert_eq!(resolve_mime("mp4"), "video/mp4");
         assert_eq!(resolve_mime("MP4"), "video/mp4");
         assert_eq!(resolve_mime("m4v"), "video/mp4");
+        assert_eq!(resolve_mime("M4V"), "video/mp4");
         assert_eq!(resolve_mime("mkv"), "video/x-matroska");
         assert_eq!(resolve_mime("webm"), "video/webm");
         assert_eq!(resolve_mime("avi"), "video/x-msvideo");
         assert_eq!(resolve_mime("mov"), "video/quicktime");
+        assert_eq!(resolve_mime("MOV"), "video/quicktime");
+        assert_eq!(resolve_mime("ts"), "video/mp2t");
+        assert_eq!(resolve_mime("m2ts"), "video/mp2t");
+        assert_eq!(resolve_mime("mts"), "video/mp2t");
+        assert_eq!(resolve_mime("3gp"), "video/3gpp");
+        assert_eq!(resolve_mime("3g2"), "video/3gpp2");
         assert_eq!(resolve_mime("mp3"), "audio/mpeg");
         assert_eq!(resolve_mime("flac"), "audio/flac");
         assert_eq!(resolve_mime("unknown"), "application/octet-stream");

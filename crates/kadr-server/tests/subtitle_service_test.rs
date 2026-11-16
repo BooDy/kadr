@@ -460,9 +460,12 @@ async fn test_embedded_mkv_extraction_and_caching() {
         setup_test_context().await;
 
     let srt_ar = media_dir.path().join("ar_sub.srt");
-    tokio::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا بالمشاهد!\n")
-        .await
-        .unwrap();
+    tokio::fs::write(
+        &srt_ar,
+        "1\n00:00:00,500 --> 00:00:01,500\nمرحبا بالمشاهد!\n",
+    )
+    .await
+    .unwrap();
 
     let mkv_path = media_dir.path().join("movie_embedded.mkv");
     let status = std::process::Command::new("ffmpeg")
@@ -576,9 +579,12 @@ async fn test_singleflight_concurrent_extractions() {
         setup_test_context().await;
 
     let srt_path = media_dir.path().join("singleflight.srt");
-    tokio::fs::write(&srt_path, "1\n00:00:00,500 --> 00:00:01,500\nConcurrent Test\n")
-        .await
-        .unwrap();
+    tokio::fs::write(
+        &srt_path,
+        "1\n00:00:00,500 --> 00:00:01,500\nConcurrent Test\n",
+    )
+    .await
+    .unwrap();
 
     let mkv_path = media_dir.path().join("singleflight.mkv");
     let status = std::process::Command::new("ffmpeg")
@@ -863,4 +869,154 @@ async fn test_singleflight_concurrent_list_or_probe_subtitles() {
     );
 }
 
+#[tokio::test]
+async fn test_embedded_mov_text_subtitles_probe_and_extract_across_mov_m4v_3gp_and_mts() {
+    let ffmpeg_ok = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .is_ok();
+    let ffprobe_ok = std::process::Command::new("ffprobe")
+        .arg("-version")
+        .output()
+        .is_ok();
+    if !ffmpeg_ok || !ffprobe_ok {
+        return;
+    }
 
+    let (service, _subtitle_repo, media_repo, _media_item_id, _cache_dir, media_dir) =
+        setup_test_context().await;
+
+    let srt_path = media_dir.path().join("dialog.srt");
+    tokio::fs::write(
+        &srt_path,
+        "1\n00:00:00,200 --> 00:00:00,900\nEmbedded Timed Text Works!\n",
+    )
+    .await
+    .unwrap();
+
+    for ext in ["mov", "m4v", "3gp"] {
+        let video_path = media_dir.path().join(format!("sample_tx3g.{ext}"));
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=176x144:d=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=8000:cl=mono:d=1",
+                "-i",
+                srt_path.to_str().unwrap(),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-map",
+                "2:s:0",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-c:s",
+                "mov_text",
+                "-metadata:s:s:0",
+                "language=eng",
+                video_path.to_str().unwrap(),
+            ])
+            .status()
+            .expect("ffmpeg should mux mov_text container");
+        assert!(status.success(), "ffmpeg mux failed for .{ext}");
+
+        media_repo
+            .upsert_batch(&[MediaItem {
+                id: None,
+                library_id: "lib1".to_string(),
+                item_type: MediaType::Movie,
+                title: format!("Sample {ext}"),
+                original_title: None,
+                release_year: Some(2024),
+                added_at: 2000,
+                file_path: video_path.clone(),
+                file_name: format!("sample_tx3g.{ext}"),
+                file_size: 1024,
+                technical: TechnicalInfo::default(),
+                metadata: MediaMetadata::default(),
+            }])
+            .await
+            .unwrap();
+
+        let item = media_repo.find_by_path(&video_path).await.unwrap().unwrap();
+        let tracks = service
+            .list_or_probe_subtitles(&item)
+            .await
+            .expect("list_or_probe_subtitles should succeed");
+        assert_eq!(tracks.len(), 1, "expected 1 embedded track for .{ext}");
+        assert_eq!(tracks[0].source, SubtitleSource::Embedded);
+        assert_eq!(tracks[0].language, "eng");
+
+        let vtt_path = service
+            .get_webvtt_path(tracks[0].id)
+            .await
+            .expect("get_webvtt_path should extract mov_text to WebVTT");
+        let vtt_text = tokio::fs::read_to_string(&vtt_path).await.unwrap();
+        assert!(vtt_text.starts_with("WEBVTT"));
+        assert!(
+            vtt_text.contains("Embedded Timed Text Works!"),
+            "extracted WebVTT for .{ext} missing cue text: {vtt_text}"
+        );
+    }
+
+    // Verify .mts / .m2ts container is recognized as a supported probe target without erroring
+    let mts_path = media_dir.path().join("camcorder.mts");
+    let mts_status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=176x144:d=1",
+            "-c:v",
+            "mpeg2video",
+            "-f",
+            "mpegts",
+            "-mpegts_m2ts_mode",
+            "1",
+            mts_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("ffmpeg should create .mts");
+    assert!(mts_status.success());
+
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Camcorder MTS".to_string(),
+            original_title: None,
+            release_year: Some(2024),
+            added_at: 2005,
+            file_path: mts_path.clone(),
+            file_name: "camcorder.mts".to_string(),
+            file_size: 1024,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        }])
+        .await
+        .unwrap();
+
+    let mts_item = media_repo.find_by_path(&mts_path).await.unwrap().unwrap();
+    let mts_tracks = service
+        .list_or_probe_subtitles(&mts_item)
+        .await
+        .expect("list_or_probe_subtitles should cleanly probe .mts");
+    assert!(mts_tracks.is_empty());
+}

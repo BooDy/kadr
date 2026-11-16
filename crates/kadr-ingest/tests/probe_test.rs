@@ -234,9 +234,7 @@ async fn test_ffprobe_attached_pic_ignored() {
 }
 
 use kadr_core::subtitles::{SubtitleFormat, SubtitleSource};
-use kadr_ingest::probe::{
-    ffprobe::parse_embedded_subtitles_from_json, probe_embedded_subtitles,
-};
+use kadr_ingest::probe::{ffprobe::parse_embedded_subtitles_from_json, probe_embedded_subtitles};
 use serde_json::json;
 
 #[test]
@@ -358,4 +356,203 @@ async fn test_probe_embedded_subtitles_on_real_mkv() {
     assert!(subs[0].is_default);
     assert_eq!(subs[1].language, "eng");
     assert_eq!(subs[1].stream_index, Some(3));
+}
+
+#[tokio::test]
+async fn test_pure_rust_webm_vs_mkv_ebml_detection() {
+    let dir = tempdir().unwrap();
+    let prober = TechnicalProber::new(false);
+
+    let webm_path = dir.path().join("clip.unknown");
+    let mut header = vec![0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x82, 0x84];
+    header.extend_from_slice(b"webm");
+    std::fs::write(&webm_path, &header).unwrap();
+    assert_eq!(
+        prober.probe(&webm_path).await.unwrap().container.as_deref(),
+        Some("webm")
+    );
+
+    let webm_upper = dir.path().join("clip_upper.unknown");
+    let mut upper_header = vec![0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x82, 0x84];
+    upper_header.extend_from_slice(b"WEBM");
+    std::fs::write(&webm_upper, &upper_header).unwrap();
+    assert_eq!(
+        prober
+            .probe(&webm_upper)
+            .await
+            .unwrap()
+            .container
+            .as_deref(),
+        Some("webm")
+    );
+}
+
+#[tokio::test]
+async fn test_pure_rust_iso_bmff_brands_detection() {
+    let dir = tempdir().unwrap();
+    let prober = TechnicalProber::new(false);
+
+    let cases: &[(&[u8; 4], &str)] = &[
+        (b"qt  ", "mov"),
+        (b"M4V ", "m4v"),
+        (b"M4VH", "m4v"),
+        (b"M4VP", "m4v"),
+        (b"3gp4", "3gp"),
+        (b"3gp5", "3gp"),
+        (b"3ge6", "3gp"),
+        (b"3gg6", "3gp"),
+        (b"3g2a", "3g2"),
+        (b"3g2b", "3g2"),
+        (b"isom", "mp4"),
+        (b"mp42", "mp4"),
+    ];
+
+    for (idx, (brand, expected)) in cases.iter().enumerate() {
+        let p = dir.path().join(format!("bmff_{idx}.bin"));
+        let mut buf = vec![0x00, 0x00, 0x00, 0x18, b'f', b't', b'y', b'p'];
+        buf.extend_from_slice(*brand);
+        buf.extend_from_slice(&[0u8; 12]);
+        std::fs::write(&p, &buf).unwrap();
+
+        let info = prober.probe(&p).await.unwrap();
+        assert_eq!(
+            info.container.as_deref(),
+            Some(*expected),
+            "brand {:?} should map to {expected}",
+            std::str::from_utf8(*brand)
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_pure_rust_riff_avi_ts_m2ts_and_extension_fallbacks() {
+    let dir = tempdir().unwrap();
+    let prober = TechnicalProber::new(false);
+
+    // RIFF....AVI  -> "avi"
+    let avi_bin = dir.path().join("raw_avi.bin");
+    let mut avi_bytes = Vec::new();
+    avi_bytes.extend_from_slice(b"RIFF");
+    avi_bytes.extend_from_slice(&[0x24, 0x08, 0x00, 0x00]);
+    avi_bytes.extend_from_slice(b"AVI ");
+    avi_bytes.extend_from_slice(b"LIST");
+    std::fs::write(&avi_bin, &avi_bytes).unwrap();
+    assert_eq!(
+        prober.probe(&avi_bin).await.unwrap().container.as_deref(),
+        Some("avi")
+    );
+
+    // RIFF....WAVE must NOT match "avi", should fall back to extension
+    let wav_file = dir.path().join("audio.wav");
+    let mut wav_bytes = Vec::new();
+    wav_bytes.extend_from_slice(b"RIFF");
+    wav_bytes.extend_from_slice(&[0x24, 0x08, 0x00, 0x00]);
+    wav_bytes.extend_from_slice(b"WAVE");
+    std::fs::write(&wav_file, &wav_bytes).unwrap();
+    assert_eq!(
+        prober.probe(&wav_file).await.unwrap().container.as_deref(),
+        Some("wav")
+    );
+
+    // MPEG-TS: 0x47 at offset 0 and 188 -> "ts"
+    let ts_bin = dir.path().join("capture.bin");
+    let mut ts_bytes = vec![0u8; 220];
+    ts_bytes[0] = 0x47;
+    ts_bytes[188] = 0x47;
+    std::fs::write(&ts_bin, &ts_bytes).unwrap();
+    assert_eq!(
+        prober.probe(&ts_bin).await.unwrap().container.as_deref(),
+        Some("ts")
+    );
+
+    // BDAV M2TS: 0x47 at offset 4 and 196 -> "m2ts"
+    let m2ts_bin = dir.path().join("bdav.bin");
+    let mut m2ts_bytes = vec![0u8; 240];
+    m2ts_bytes[4] = 0x47;
+    m2ts_bytes[196] = 0x47;
+    std::fs::write(&m2ts_bin, &m2ts_bytes).unwrap();
+    assert_eq!(
+        prober.probe(&m2ts_bin).await.unwrap().container.as_deref(),
+        Some("m2ts")
+    );
+
+    // Extension fallbacks when header bytes don't match magic signatures
+    for ext in ["mov", "m4v", "ts", "m2ts", "mts", "3gp", "3g2", "avi"] {
+        let p = dir
+            .path()
+            .join(format!("fallback.{}", ext.to_ascii_uppercase()));
+        std::fs::write(&p, [0x01, 0x02, 0x03]).unwrap();
+        assert_eq!(
+            prober.probe(&p).await.unwrap().container.as_deref(),
+            Some(ext)
+        );
+    }
+}
+
+#[test]
+fn test_parse_embedded_subtitles_mov_text_tx3g_and_ignores_all_bitmap_codecs() {
+    let sample = json!({
+        "streams": [
+            { "index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080 },
+            {
+                "index": 2,
+                "codec_type": "subtitle",
+                "codec_name": "mov_text",
+                "disposition": { "default": 1, "forced": 0, "hearing_impaired": 0 },
+                "tags": { "language": "eng", "title": "Core Media Subtitle" }
+            },
+            {
+                "index": 3,
+                "codec_type": "subtitle",
+                "codec_name": "tx3g",
+                "disposition": { "default": 0, "forced": 1, "hearing_impaired": 0 },
+                "tags": { "language": "ara" }
+            },
+            {
+                "index": 4,
+                "codec_type": "subtitle",
+                "codec_name": "webvtt",
+                "disposition": { "default": 0, "forced": 0, "hearing_impaired": 0 },
+                "tags": { "language": "fra" }
+            },
+            {
+                "index": 5,
+                "codec_type": "subtitle",
+                "codec_name": "dvd_subtitle",
+                "disposition": { "default": 0, "forced": 0 },
+                "tags": { "language": "eng" }
+            },
+            {
+                "index": 6,
+                "codec_type": "subtitle",
+                "codec_name": "dvb_subtitle",
+                "disposition": { "default": 0, "forced": 0 },
+                "tags": { "language": "eng" }
+            },
+            {
+                "index": 7,
+                "codec_type": "subtitle",
+                "codec_name": "hdmv_pgs_subtitle",
+                "disposition": { "default": 0, "forced": 0 },
+                "tags": { "language": "eng" }
+            }
+        ]
+    });
+
+    let subs = parse_embedded_subtitles_from_json(&sample);
+    assert_eq!(subs.len(), 3, "only text subtitle streams should be kept");
+
+    assert_eq!(subs[0].stream_index, Some(2));
+    assert_eq!(subs[0].language, "eng");
+    assert_eq!(subs[0].title.as_deref(), Some("English"));
+    assert_eq!(subs[0].format, SubtitleFormat::Srt);
+
+    assert_eq!(subs[1].stream_index, Some(3));
+    assert_eq!(subs[1].language, "ara");
+    assert_eq!(subs[1].title.as_deref(), Some("Arabic [Forced]"));
+    assert_eq!(subs[1].format, SubtitleFormat::Srt);
+
+    assert_eq!(subs[2].stream_index, Some(4));
+    assert_eq!(subs[2].language, "fre");
+    assert_eq!(subs[2].format, SubtitleFormat::Vtt);
 }

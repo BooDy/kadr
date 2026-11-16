@@ -215,7 +215,7 @@ pub fn find_subtitles_for_media<P: AsRef<Path>>(media_path: P) -> Vec<Discovered
             let path = entry.path();
             if path.is_file() && path != p {
                 if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                    if ["mkv", "mp4", "webm", "avi"].contains(&ext.to_ascii_lowercase().as_str()) {
+                    if kadr_core::is_video_extension(ext) {
                         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                             other_video_stems.push(stem.to_string());
                         }

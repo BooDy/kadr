@@ -729,13 +729,7 @@ pub async fn remove_library_path(
 }
 
 fn is_video_file(path: &std::path::Path) -> bool {
-    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
-        return false;
-    };
-    matches!(
-        ext.to_ascii_lowercase().as_str(),
-        "mkv" | "mp4" | "webm" | "avi" | "mov" | "m4v"
-    )
+    kadr_core::is_video_path(path)
 }
 
 fn is_image_file(path: &std::path::Path) -> bool {

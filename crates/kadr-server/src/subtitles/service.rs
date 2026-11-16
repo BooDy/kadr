@@ -140,16 +140,12 @@ impl SubtitleDeliveryService {
             return Ok(tracks);
         }
 
-        let ext = item
-            .file_path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let is_supported_container = matches!(
-            ext.as_str(),
-            "mkv" | "mp4" | "m4v" | "webm" | "mov" | "avi" | "ts"
-        );
+        let is_supported_container = kadr_core::is_video_path(&item.file_path)
+            || item
+                .technical
+                .container
+                .as_deref()
+                .is_some_and(kadr_core::is_video_extension);
 
         if !is_supported_container
             || !tokio::fs::try_exists(&item.file_path)
@@ -236,9 +232,9 @@ impl SubtitleDeliveryService {
         S: AsRef<std::ffi::OsStr>,
     {
         tokio::fs::create_dir_all(&self.cache_dir).await?;
-        let tmp_path = self
-            .cache_dir
-            .join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
+        let tmp_path =
+            self.cache_dir
+                .join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
 
         let mut cmd = tokio::process::Command::new("ffmpeg");
         cmd.args(args)
@@ -395,9 +391,9 @@ impl SubtitleDeliveryService {
         }
 
         // Subcase 2b: VTT sidecar copied directly, or SRT converted via srt_to_webvtt_stream
-        let tmp_path = self
-            .cache_dir
-            .join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
+        let tmp_path =
+            self.cache_dir
+                .join(format!("{}.vtt.tmp.{}", subtitle_id, uuid::Uuid::new_v4()));
         let source_path_buf = source_path.to_path_buf();
         let tmp_path_clone = tmp_path.clone();
         let format = track.format;

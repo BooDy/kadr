@@ -1012,3 +1012,43 @@ async fn test_browse_and_stream_library_images() {
         .unwrap();
     assert_eq!(&res_bytes[..], b"secret image bytes");
 }
+
+#[tokio::test]
+async fn test_browse_library_folders_lists_all_expanded_video_extensions() {
+    let ctx = setup_test_context().await;
+
+    let cam_dir = ctx.public_lib_root.join("camcorder_and_mobile");
+    std::fs::create_dir_all(&cam_dir).unwrap();
+
+    let exts = [
+        "mov", "m4v", "ts", "m2ts", "mts", "3gp", "3g2", "avi", "webm",
+    ];
+    for ext in exts {
+        std::fs::write(cam_dir.join(format!("clip_{ext}.{ext}")), b"dummy video").unwrap();
+    }
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/libraries/{}/folders?path=camcorder_and_mobile",
+            ctx.public_lib_id
+        ))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", ctx.standard_token),
+        )
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let folder_res: LibraryFolderResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(
+        folder_res.items.len(),
+        exts.len(),
+        "expected folder browser to return all expanded video container files"
+    );
+}

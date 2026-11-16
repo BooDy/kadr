@@ -6,6 +6,7 @@ pub mod playlists;
 pub mod plugin;
 pub mod subtitles;
 pub mod transcoding;
+pub mod video_formats;
 
 pub use ast::*;
 pub use error::CoreError;
@@ -15,3 +16,4 @@ pub use playlists::*;
 pub use plugin::*;
 pub use subtitles::*;
 pub use transcoding::*;
+pub use video_formats::*;

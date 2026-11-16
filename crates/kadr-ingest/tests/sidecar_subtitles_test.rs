@@ -342,3 +342,25 @@ async fn test_ingest_worker_persists_subtitles() {
     drop(tx);
     worker_handle.await.unwrap();
 }
+
+#[test]
+fn test_sidecar_disambiguation_across_expanded_video_extensions() {
+    let dir = tempdir().unwrap();
+    let base_mov = dir.path().join("Holiday.mov");
+    let extended_m2ts = dir.path().join("Holiday.Directors.Cut.m2ts");
+    let sub_base = dir.path().join("Holiday.en.srt");
+    let sub_extended = dir.path().join("Holiday.Directors.Cut.en.srt");
+
+    File::create(&base_mov).unwrap();
+    File::create(&extended_m2ts).unwrap();
+    File::create(&sub_base).unwrap();
+    File::create(&sub_extended).unwrap();
+
+    let subs_for_base = find_subtitles_for_media(&base_mov);
+    assert_eq!(subs_for_base.len(), 1);
+    assert_eq!(subs_for_base[0].file_path.as_ref(), Some(&sub_base));
+
+    let subs_for_extended = find_subtitles_for_media(&extended_m2ts);
+    assert_eq!(subs_for_extended.len(), 1);
+    assert_eq!(subs_for_extended[0].file_path.as_ref(), Some(&sub_extended));
+}

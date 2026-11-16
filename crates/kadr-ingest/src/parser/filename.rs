@@ -48,15 +48,19 @@ impl Default for FilenameParser {
 
 impl FilenameParser {
     pub fn new() -> Self {
+        let ext_pat = kadr_core::VIDEO_EXTENSIONS.join("|");
+
         // Match: Title.Year.Quality.Source.Codec-Group.ext
-        let scene_regex = Regex::new(
-            r"(?i)^(?P<title>.+?)[._ ](?P<year>(?:19|20)\d{2})(?:[._ ](?P<rest>.*))?\.(?P<ext>mkv|mp4|webm|avi)$"
-        ).unwrap();
+        let scene_regex = Regex::new(&format!(
+            r"(?i)^(?P<title>.+?)[._ ](?P<year>(?:19|20)\d{{2}})(?:[._ ](?P<rest>.*))?\.(?P<ext>{ext_pat})$"
+        ))
+        .unwrap();
 
         // Match: Title (Year) [Tags].ext or Title.(Year).Tags.ext
-        let paren_year_regex = Regex::new(
-            r"(?i)^(?P<title>.+?)[._\s]*\((?P<year>(?:19|20)\d{2})\)(?:[._\s]*(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
-        ).unwrap();
+        let paren_year_regex = Regex::new(&format!(
+            r"(?i)^(?P<title>.+?)[._\s]*\((?P<year>(?:19|20)\d{{2}})\)(?:[._\s]*(?P<rest>.*?))?\.(?P<ext>{ext_pat})$"
+        ))
+        .unwrap();
 
         let res_regex = Regex::new(r"(?i)\b(2160p|4k|1080p|1080i|720p|576p|480p)\b").unwrap();
         let source_regex =
@@ -64,13 +68,15 @@ impl FilenameParser {
                 .unwrap();
         let codec_regex = Regex::new(r"(?i)\b(x264|x265|hevc|av1|h\.?264|h\.?265)\b").unwrap();
 
-        let sxx_exx_regex = Regex::new(
-            r"(?i)^(?P<series>.+?)[._\s\-]+[sS](?P<season>\d{1,2})[eE](?P<episode>\d{1,3})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
-        ).unwrap();
+        let sxx_exx_regex = Regex::new(&format!(
+            r"(?i)^(?P<series>.+?)[._\s\-]+[sS](?P<season>\d{{1,2}})[eE](?P<episode>\d{{1,3}})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>{ext_pat})$"
+        ))
+        .unwrap();
 
-        let alt_num_regex = Regex::new(
-            r"(?i)^(?P<series>.+?)[._\s\-]+(?P<season>\d{1,2})x(?P<episode>\d{1,3})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
-        ).unwrap();
+        let alt_num_regex = Regex::new(&format!(
+            r"(?i)^(?P<series>.+?)[._\s\-]+(?P<season>\d{{1,2}})x(?P<episode>\d{{1,3}})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>{ext_pat})$"
+        ))
+        .unwrap();
 
         let tag_start_regex = Regex::new(
             r"(?i)(?:[._\s\-]+(?:\(|\[)?|(?:\(|\[)|\b)(?:(?:19|20)\d{2}|2160p|4k|1080p|1080i|720p|576p|480p|bluray|blu-ray|web-dl|webdl|web-rip|webrip|hdtv|bdrip|dvdrip|x264|x265|hevc|av1|h\.?264|h\.?265)\b"
@@ -82,9 +88,10 @@ impl FilenameParser {
 
         let season_folder_regex = Regex::new(r"(?i)^(?:season[._\s\-]*|s)(\d{1,2})$").unwrap();
 
-        let ep_file_regex = Regex::new(
-            r"(?i)^(?:(?:s\d{1,2}[eE]|e|ep)[._\s\-]*)?(?P<ep>\d{1,3})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>mkv|mp4|webm|avi)$"
-        ).unwrap();
+        let ep_file_regex = Regex::new(&format!(
+            r"(?i)^(?:(?:s\d{{1,2}}[eE]|e|ep)[._\s\-]*)?(?P<ep>\d{{1,3}})(?:[._\s\-]+(?P<rest>.*?))?\.(?P<ext>{ext_pat})$"
+        ))
+        .unwrap();
 
         Self {
             scene_regex,
@@ -102,10 +109,11 @@ impl FilenameParser {
     }
 
     pub fn parse(&self, filename: &str) -> Option<ParsedFilename> {
-        let ext = filename.split('.').next_back()?.to_lowercase();
-        if !["mkv", "mp4", "webm", "avi"].contains(&ext.as_str()) {
+        let (_, raw_ext) = filename.rsplit_once('.')?;
+        if !kadr_core::is_video_extension(raw_ext) {
             return None;
         }
+        let ext = raw_ext.to_ascii_lowercase();
 
         // Try TV episode formats first (SxxExx or #x##)
         if let Some(caps) = self

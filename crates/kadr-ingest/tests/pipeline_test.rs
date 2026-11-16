@@ -347,8 +347,14 @@ fn test_scan_directory_recursive_ignores_symlink_loops_and_avoids_duplicate_file
 
 #[tokio::test]
 async fn test_pipeline_and_worker_embedded_subtitles_ingest_and_deduplication() {
-    let ffmpeg_available = std::process::Command::new("ffmpeg").arg("-version").output().is_ok();
-    let ffprobe_available = std::process::Command::new("ffprobe").arg("-version").output().is_ok();
+    let ffmpeg_available = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .is_ok();
+    let ffprobe_available = std::process::Command::new("ffprobe")
+        .arg("-version")
+        .output()
+        .is_ok();
     if !ffmpeg_available || !ffprobe_available {
         return;
     }
@@ -427,11 +433,21 @@ async fn test_pipeline_and_worker_embedded_subtitles_ingest_and_deduplication() 
         .unwrap()
         .expect("should process mkv with embedded subtitles");
 
-    assert_eq!(subs.len(), 2, "pipeline must discover both embedded subtitle streams");
-    assert_eq!(subs[0].source, kadr_core::subtitles::SubtitleSource::Embedded);
+    assert_eq!(
+        subs.len(),
+        2,
+        "pipeline must discover both embedded subtitle streams"
+    );
+    assert_eq!(
+        subs[0].source,
+        kadr_core::subtitles::SubtitleSource::Embedded
+    );
     assert_eq!(subs[0].stream_index, Some(2));
     assert!(subs[0].file_path.is_none());
-    assert_eq!(subs[1].source, kadr_core::subtitles::SubtitleSource::Embedded);
+    assert_eq!(
+        subs[1].source,
+        kadr_core::subtitles::SubtitleSource::Embedded
+    );
     assert_eq!(subs[1].stream_index, Some(3));
     assert!(subs[1].file_path.is_none());
 
@@ -464,9 +480,17 @@ async fn test_pipeline_and_worker_embedded_subtitles_ingest_and_deduplication() 
     let media_id = persisted_media.id.unwrap();
 
     let persisted_subs = sub_repo.find_by_media_item(media_id).await.unwrap();
-    assert_eq!(persisted_subs.len(), 2, "both embedded tracks should be persisted");
-    assert!(persisted_subs.iter().any(|s| s.stream_index == Some(2) && s.file_path.is_none()));
-    assert!(persisted_subs.iter().any(|s| s.stream_index == Some(3) && s.file_path.is_none()));
+    assert_eq!(
+        persisted_subs.len(),
+        2,
+        "both embedded tracks should be persisted"
+    );
+    assert!(persisted_subs
+        .iter()
+        .any(|s| s.stream_index == Some(2) && s.file_path.is_none()));
+    assert!(persisted_subs
+        .iter()
+        .any(|s| s.stream_index == Some(3) && s.file_path.is_none()));
 
     // Send second Upsert with exact same item & tracks - deduplication should prevent duplicate rows
     tx.send(IngestMessage::Upsert(item.clone(), subs.clone()))
@@ -476,7 +500,11 @@ async fn test_pipeline_and_worker_embedded_subtitles_ingest_and_deduplication() 
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     let persisted_subs_after = sub_repo.find_by_media_item(media_id).await.unwrap();
-    assert_eq!(persisted_subs_after.len(), 2, "deduplication must keep exactly 2 tracks, no duplicates");
+    assert_eq!(
+        persisted_subs_after.len(),
+        2,
+        "deduplication must keep exactly 2 tracks, no duplicates"
+    );
 
     // Send third Upsert containing a 3rd distinct stream_index with file_path: None
     let mut more_subs = subs.clone();
@@ -498,8 +526,54 @@ async fn test_pipeline_and_worker_embedded_subtitles_ingest_and_deduplication() 
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     let persisted_subs_final = sub_repo.find_by_media_item(media_id).await.unwrap();
-    assert_eq!(persisted_subs_final.len(), 3, "new stream_index should be inserted while streams 2 and 3 are deduplicated");
+    assert_eq!(
+        persisted_subs_final.len(),
+        3,
+        "new stream_index should be inserted while streams 2 and 3 are deduplicated"
+    );
 
     drop(tx);
     worker_handle.await.unwrap();
+}
+
+#[test]
+fn test_scan_directory_recursive_discovers_all_supported_video_extensions() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    let expected_files = [
+        "film1.mkv",
+        "film2.mp4",
+        "film3.m4v",
+        "film4.MOV",
+        "film5.webm",
+        "film6.avi",
+        "film7.ts",
+        "film8.m2ts",
+        "film9.MTS",
+        "film10.3gp",
+        "film11.3G2",
+    ];
+    for name in expected_files {
+        File::create(root.join(name)).unwrap();
+    }
+
+    // Non-video sidecars & assets must be ignored
+    for ignored in ["film1.en.srt", "film1.nfo", "poster.jpg", "soundtrack.mp3"] {
+        File::create(root.join(ignored)).unwrap();
+    }
+
+    let discovered = scan_directory_recursive(root);
+    assert_eq!(discovered.len(), expected_files.len());
+
+    let names: Vec<String> = discovered
+        .iter()
+        .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    for expected in expected_files {
+        assert!(
+            names.contains(&expected.to_string()),
+            "expected scan_directory_recursive to discover {expected}"
+        );
+    }
 }

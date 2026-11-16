@@ -694,20 +694,15 @@ async fn expand_items_request(
 }
 
 fn is_playable_media_file(path: &FsPath) -> bool {
+    if kadr_core::is_video_path(path) {
+        return true;
+    }
     let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
         return false;
     };
     matches!(
         ext.to_ascii_lowercase().as_str(),
-        "mkv"
-            | "mp4"
-            | "webm"
-            | "avi"
-            | "mov"
-            | "m4v"
-            | "ts"
-            | "m2ts"
-            | "mpg"
+        "mpg"
             | "mpeg"
             | "wmv"
             | "flv"

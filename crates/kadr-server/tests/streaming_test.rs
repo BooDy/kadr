@@ -302,3 +302,106 @@ async fn test_range_edge_cases_and_416() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn test_streaming_mime_types_for_all_video_containers() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+
+    lib_repo
+        .insert(&Library {
+            id: "lib1".to_string(),
+            name: "Movies".to_string(),
+            path: PathBuf::from("/tmp/movies"),
+            media_type: MediaType::Movie,
+            created_at: 1000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let dir = tempdir().unwrap();
+    let cases = [
+        ("mov", Some("mov"), "video/quicktime"),
+        ("m4v", Some("m4v"), "video/mp4"),
+        ("webm", Some("webm"), "video/webm"),
+        ("avi", Some("avi"), "video/x-msvideo"),
+        ("ts", Some("ts"), "video/mp2t"),
+        ("m2ts", Some("m2ts"), "video/mp2t"),
+        ("mts", None, "video/mp2t"),
+        ("3gp", Some("3gp"), "video/3gpp"),
+        ("3g2", None, "video/3gpp2"),
+    ];
+
+    let mut batch = Vec::new();
+    for (idx, (ext, container_opt, _expected_mime)) in cases.iter().enumerate() {
+        let filename = format!("clip_{idx}.{ext}");
+        let video_path = dir.path().join(&filename);
+        std::fs::write(&video_path, [0xAAu8; 64]).unwrap();
+
+        batch.push(MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: format!("Clip {idx}"),
+            original_title: None,
+            release_year: Some(2024),
+            added_at: 1000 + idx as i64,
+            file_path: video_path,
+            file_name: filename,
+            file_size: 64,
+            technical: TechnicalInfo {
+                duration_seconds: 10,
+                container: container_opt.map(|s| s.to_string()),
+                ..Default::default()
+            },
+            metadata: MediaMetadata::default(),
+        });
+    }
+    media_repo.upsert_batch(&batch).await.unwrap();
+
+    let jwt = JwtService::new("my-secret-key-that-is-at-least-32-bytes-long", 3600);
+    let token = jwt
+        .generate_token(&User {
+            id: "u1".to_string(),
+            username: "test".to_string(),
+            pin_hash: "hash".to_string(),
+            role: UserRole::Standard,
+            created_at: 1000,
+        })
+        .unwrap();
+
+    let app = create_router(
+        user_repo,
+        playback_repo,
+        media_repo.clone(),
+        lib_repo,
+        jwt,
+        RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300)),
+        Arc::new(SessionRegistry::new()),
+    );
+
+    for (idx, (ext, _, expected_mime)) in cases.iter().enumerate() {
+        let path = dir.path().join(format!("clip_{idx}.{ext}"));
+        let item = media_repo.find_by_path(&path).await.unwrap().unwrap();
+        let item_id = item.id.unwrap();
+
+        let req = Request::builder()
+            .uri(format!("/api/v1/stream/{item_id}"))
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            *expected_mime,
+            "unexpected Content-Type for .{ext}"
+        );
+    }
+}

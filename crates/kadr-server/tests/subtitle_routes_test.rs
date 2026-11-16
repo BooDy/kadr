@@ -628,8 +628,16 @@ async fn test_lazy_embedded_mkv_discovery_and_webvtt_extraction() {
     let media_dir = ctx._temp_dir.path().join("media");
     let srt_ar = media_dir.join("ar_embed.srt");
     let srt_en = media_dir.join("en_embed.srt");
-    std::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا بالعالم!\n").unwrap();
-    std::fs::write(&srt_en, "1\n00:00:00,500 --> 00:00:01,500\nHello embedded world!\n").unwrap();
+    std::fs::write(
+        &srt_ar,
+        "1\n00:00:00,500 --> 00:00:01,500\nمرحبا بالعالم!\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &srt_en,
+        "1\n00:00:00,500 --> 00:00:01,500\nHello embedded world!\n",
+    )
+    .unwrap();
 
     let mkv_path = media_dir.join("embedded_test.mkv");
     let status = std::process::Command::new("ffmpeg")
@@ -778,6 +786,8 @@ async fn test_lazy_embedded_mkv_discovery_and_webvtt_extraction() {
 
     let cache_dir = ctx.subtitle_service.cache_dir();
     let cached_file = cache_dir.join(format!("{}.vtt", ara_track_id));
-    assert!(cached_file.exists(), "Cached WebVTT file should exist on disk");
+    assert!(
+        cached_file.exists(),
+        "Cached WebVTT file should exist on disk"
+    );
 }
-
