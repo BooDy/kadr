@@ -232,3 +232,130 @@ async fn test_ffprobe_attached_pic_ignored() {
     assert_eq!(info.audio_codec.as_deref(), Some("flac"));
     assert!(info.duration_seconds >= 1);
 }
+
+use kadr_core::subtitles::{SubtitleFormat, SubtitleSource};
+use kadr_ingest::probe::{
+    ffprobe::parse_embedded_subtitles_from_json, probe_embedded_subtitles,
+};
+use serde_json::json;
+
+#[test]
+fn test_parse_embedded_subtitles_filters_bitmap_and_normalizes_metadata() {
+    let sample = json!({
+        "streams": [
+            { "index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080 },
+            { "index": 1, "codec_type": "audio", "codec_name": "aac", "channels": 2 },
+            {
+                "index": 2,
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "disposition": { "default": 1, "forced": 0, "hearing_impaired": 0 },
+                "tags": { "language": "ar", "title": "Arabic [Official]" }
+            },
+            {
+                "index": 3,
+                "codec_type": "subtitle",
+                "codec_name": "ass",
+                "disposition": { "default": 0, "forced": 1, "hearing_impaired": 1 },
+                "tags": { "language": "en" }
+            },
+            {
+                "index": 4,
+                "codec_type": "subtitle",
+                "codec_name": "hdmv_pgs_subtitle",
+                "disposition": { "default": 0, "forced": 0 },
+                "tags": { "language": "eng", "title": "PGS BluRay" }
+            }
+        ]
+    });
+
+    let subs = parse_embedded_subtitles_from_json(&sample);
+    assert_eq!(subs.len(), 2, "PGS bitmap stream must be skipped");
+
+    assert_eq!(subs[0].source, SubtitleSource::Embedded);
+    assert_eq!(subs[0].stream_index, Some(2));
+    assert_eq!(subs[0].language, "ara");
+    assert_eq!(subs[0].title.as_deref(), Some("Arabic [Official]"));
+    assert_eq!(subs[0].format, SubtitleFormat::Srt);
+    assert!(subs[0].is_default);
+    assert!(!subs[0].is_forced);
+    assert!(subs[0].file_path.is_none());
+
+    assert_eq!(subs[1].source, SubtitleSource::Embedded);
+    assert_eq!(subs[1].stream_index, Some(3));
+    assert_eq!(subs[1].language, "eng");
+    assert_eq!(subs[1].title.as_deref(), Some("English [SDH] [Forced]"));
+    assert_eq!(subs[1].format, SubtitleFormat::Ass);
+    assert!(!subs[1].is_default);
+    assert!(subs[1].is_forced);
+}
+
+#[tokio::test]
+async fn test_probe_embedded_subtitles_on_real_mkv() {
+    let dir = tempdir().unwrap();
+    let srt_ar = dir.path().join("ar.srt");
+    let srt_en = dir.path().join("en.srt");
+    std::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا!\n").unwrap();
+    std::fs::write(&srt_en, "1\n00:00:00,500 --> 00:00:01,500\nHello!\n").unwrap();
+
+    let mkv_path = dir.path().join("episode.mkv");
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo:d=2",
+            "-i",
+            srt_ar.to_str().unwrap(),
+            "-i",
+            srt_en.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-map",
+            "3:s:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-c:s",
+            "srt",
+            "-metadata:s:s:0",
+            "language=ara",
+            "-metadata:s:s:0",
+            "title=Arabic",
+            "-disposition:s:0",
+            "default",
+            "-metadata:s:s:1",
+            "language=eng",
+            "-disposition:s:1",
+            "0",
+            mkv_path.to_str().unwrap(),
+        ])
+        .status();
+
+    let Ok(st) = status else { return };
+    if !st.success() {
+        return;
+    }
+
+    let subs = probe_embedded_subtitles(&mkv_path).await.unwrap();
+    assert_eq!(subs.len(), 2);
+    assert_eq!(subs[0].language, "ara");
+    assert_eq!(subs[0].stream_index, Some(2));
+    assert!(subs[0].is_default);
+    assert_eq!(subs[1].language, "eng");
+    assert_eq!(subs[1].stream_index, Some(3));
+}

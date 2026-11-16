@@ -263,8 +263,11 @@ impl IngestWorker {
                                                     .into_iter()
                                                     .filter(|t| {
                                                         !existing.iter().any(|e| {
-                                                            e.file_path == t.file_path
-                                                                && e.source == t.source
+                                                            if t.source == kadr_core::subtitles::SubtitleSource::Embedded {
+                                                                e.source == t.source && e.stream_index == t.stream_index
+                                                            } else {
+                                                                e.source == t.source && e.file_path == t.file_path
+                                                            }
                                                         })
                                                     })
                                                     .collect();

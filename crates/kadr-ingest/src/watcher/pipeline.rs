@@ -69,7 +69,7 @@ impl IngestPipeline {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let mut technical = self.prober.probe(path).await?;
+        let (mut technical, embedded_subtitles) = self.prober.probe_with_subtitles(path).await?;
         if technical.resolution.is_none() {
             technical.resolution = parsed.resolution;
         }
@@ -166,7 +166,8 @@ impl IngestPipeline {
         meta.poster_path = poster_path;
         meta.backdrop_path = artwork.backdrop.and_then(|p| p.to_str().map(String::from));
 
-        let subtitles = self.sidecar_scanner.find_subtitles(path);
+        let mut subtitles = embedded_subtitles;
+        subtitles.extend(self.sidecar_scanner.find_subtitles(path));
 
         Ok(Some((
             MediaItem {

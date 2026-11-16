@@ -33,7 +33,7 @@ impl DiscoveredSubtitle {
     }
 }
 
-fn language_display_name(lang: &str) -> &'static str {
+pub(crate) fn language_display_name(lang: &str) -> &'static str {
     match lang {
         "eng" => "English",
         "ara" => "Arabic",
@@ -44,12 +44,16 @@ fn language_display_name(lang: &str) -> &'static str {
         "jpn" => "Japanese",
         "kor" => "Korean",
         "chi" => "Chinese",
+        "rus" => "Russian",
+        "tur" => "Turkish",
+        "por" => "Portuguese",
+        "hin" => "Hindi",
         "und" => "Undetermined",
         _ => "",
     }
 }
 
-fn map_known_language(token: &str) -> Option<&'static str> {
+pub(crate) fn map_known_language(token: &str) -> Option<&'static str> {
     match token {
         "en" | "eng" | "english" => Some("eng"),
         "ar" | "ara" | "arabic" => Some("ara"),
@@ -60,8 +64,29 @@ fn map_known_language(token: &str) -> Option<&'static str> {
         "ja" | "jpn" | "japanese" => Some("jpn"),
         "ko" | "kor" | "korean" => Some("kor"),
         "zh" | "zho" | "chi" | "chinese" => Some("chi"),
+        "ru" | "rus" | "russian" => Some("rus"),
+        "tr" | "tur" | "turkish" => Some("tur"),
+        "pt" | "por" | "portuguese" => Some("por"),
+        "hi" | "hin" | "hindi" => Some("hin"),
         _ => None,
     }
+}
+
+pub(crate) fn normalize_language_tag(raw: &str) -> String {
+    let trimmed = raw.trim().to_ascii_lowercase();
+    if trimmed.is_empty() {
+        return "und".to_string();
+    }
+    let primary = trimmed.split(['-', '_']).next().unwrap_or(&trimmed);
+    if let Some(canonical) = map_known_language(primary) {
+        return canonical.to_string();
+    }
+    if (primary.len() == 2 || primary.len() == 3)
+        && primary.chars().all(|c| c.is_ascii_alphabetic())
+    {
+        return primary.to_string();
+    }
+    "und".to_string()
 }
 
 fn is_non_language_keyword(token: &str) -> bool {

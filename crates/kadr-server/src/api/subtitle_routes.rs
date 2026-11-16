@@ -23,6 +23,8 @@ pub struct SubtitleTrackResponse {
     pub language: String,
     pub title: Option<String>,
     pub format: SubtitleFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_index: Option<u32>,
     pub is_default: bool,
     pub is_forced: bool,
     pub stream_url: String,
@@ -38,6 +40,7 @@ impl SubtitleTrackResponse {
             language: track.language,
             title: track.title,
             format: track.format,
+            stream_index: track.stream_index,
             is_default: track.is_default,
             is_forced: track.is_forced,
             stream_url,
@@ -85,17 +88,19 @@ pub async fn list_subtitles(
         )
     })?;
 
-    if item_exists.is_none() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Media item not found" })),
-        ));
-    }
+    let item = match item_exists {
+        Some(item) => item,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Media item not found" })),
+            ));
+        }
+    };
 
-    // 2. Fetch subtitle tracks for media item
+    // 2. Fetch subtitle tracks for media item (with lazy probing for supported containers)
     let tracks = subtitle_service
-        .subtitle_repo()
-        .find_by_media_item(item_id)
+        .list_or_probe_subtitles(&item)
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch subtitles for item {item_id}: {e}");

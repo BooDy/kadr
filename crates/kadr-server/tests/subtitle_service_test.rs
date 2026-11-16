@@ -260,7 +260,7 @@ async fn test_clean_error_when_subtitle_id_or_disk_file_is_missing() {
             title: Some("Embedded Track No File".to_string()),
             format: SubtitleFormat::Srt,
             file_path: None,
-            stream_index: Some(2),
+            stream_index: None,
             is_default: false,
             is_forced: false,
             created_at: 1000,
@@ -453,3 +453,414 @@ async fn test_delete_track_cleans_db_cache_and_downloaded_source() {
         .expect("delete_track on missing track should succeed returning false");
     assert!(!deleted_missing);
 }
+
+#[tokio::test]
+async fn test_embedded_mkv_extraction_and_caching() {
+    let (service, subtitle_repo, media_repo, _media_item_id, cache_dir, media_dir) =
+        setup_test_context().await;
+
+    let srt_ar = media_dir.path().join("ar_sub.srt");
+    tokio::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا بالمشاهد!\n")
+        .await
+        .unwrap();
+
+    let mkv_path = media_dir.path().join("movie_embedded.mkv");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo:d=2",
+            "-i",
+            srt_ar.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-c:s",
+            "srt",
+            "-metadata:s:s:0",
+            "language=ara",
+            "-metadata:s:s:0",
+            "title=Arabic Embedded",
+            "-disposition:s:0",
+            "default",
+            mkv_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("ffmpeg should create mkv");
+    assert!(status.success());
+
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "MKV Embedded Movie".to_string(),
+            original_title: None,
+            release_year: Some(2023),
+            added_at: 1000,
+            file_path: mkv_path.clone(),
+            file_name: "movie_embedded.mkv".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        }])
+        .await
+        .unwrap();
+
+    let mkv_item = media_repo.find_by_path(&mkv_path).await.unwrap().unwrap();
+    let mkv_item_id = mkv_item.id.unwrap();
+
+    let track_id = subtitle_repo
+        .create(&SubtitleTrack {
+            id: 0,
+            media_item_id: mkv_item_id,
+            source: SubtitleSource::Embedded,
+            language: "ara".to_string(),
+            title: Some("Arabic Embedded".to_string()),
+            format: SubtitleFormat::Srt,
+            file_path: None,
+            stream_index: Some(2),
+            is_default: true,
+            is_forced: false,
+            created_at: 1000,
+        })
+        .await
+        .unwrap();
+
+    let cached_expected = cache_dir.path().join(format!("{}.vtt", track_id));
+    assert!(!cached_expected.exists());
+
+    // First call: extracts via ffmpeg
+    let vtt_path = service
+        .get_webvtt_path(track_id)
+        .await
+        .expect("get_webvtt_path should extract embedded subtitle");
+
+    assert_eq!(vtt_path, cached_expected);
+    assert!(vtt_path.exists());
+    let content = tokio::fs::read_to_string(&vtt_path).await.unwrap();
+    assert!(content.starts_with("WEBVTT"));
+    assert!(content.contains("مرحبا بالمشاهد!"));
+
+    // Second call: cache hit
+    let start = Instant::now();
+    let second_path = service
+        .get_webvtt_path(track_id)
+        .await
+        .expect("get_webvtt_path cache hit should succeed");
+    let elapsed = start.elapsed();
+    assert_eq!(second_path, vtt_path);
+    assert!(elapsed < Duration::from_millis(50));
+}
+
+#[tokio::test]
+async fn test_singleflight_concurrent_extractions() {
+    let (service, subtitle_repo, media_repo, _media_item_id, _cache_dir, media_dir) =
+        setup_test_context().await;
+
+    let srt_path = media_dir.path().join("singleflight.srt");
+    tokio::fs::write(&srt_path, "1\n00:00:00,500 --> 00:00:01,500\nConcurrent Test\n")
+        .await
+        .unwrap();
+
+    let mkv_path = media_dir.path().join("singleflight.mkv");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo:d=2",
+            "-i",
+            srt_path.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-c:s",
+            "srt",
+            mkv_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("ffmpeg should create mkv");
+    assert!(status.success());
+
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Singleflight Movie".to_string(),
+            original_title: None,
+            release_year: Some(2023),
+            added_at: 1000,
+            file_path: mkv_path.clone(),
+            file_name: "singleflight.mkv".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        }])
+        .await
+        .unwrap();
+
+    let mkv_item = media_repo.find_by_path(&mkv_path).await.unwrap().unwrap();
+    let mkv_item_id = mkv_item.id.unwrap();
+
+    let track_id = subtitle_repo
+        .create(&SubtitleTrack {
+            id: 0,
+            media_item_id: mkv_item_id,
+            source: SubtitleSource::Embedded,
+            language: "und".to_string(),
+            title: Some("Singleflight Track".to_string()),
+            format: SubtitleFormat::Srt,
+            file_path: None,
+            stream_index: Some(2),
+            is_default: false,
+            is_forced: false,
+            created_at: 1000,
+        })
+        .await
+        .unwrap();
+
+    let svc1 = service.clone();
+    let svc2 = service.clone();
+    let svc3 = service.clone();
+
+    let (res1, res2, res3) = tokio::join!(
+        svc1.get_webvtt_path(track_id),
+        svc2.get_webvtt_path(track_id),
+        svc3.get_webvtt_path(track_id),
+    );
+
+    let p1 = res1.expect("res1 should succeed");
+    let p2 = res2.expect("res2 should succeed");
+    let p3 = res3.expect("res3 should succeed");
+
+    assert_eq!(p1, p2);
+    assert_eq!(p2, p3);
+    assert!(p1.exists());
+
+    let content = tokio::fs::read_to_string(&p1).await.unwrap();
+    assert!(content.starts_with("WEBVTT"));
+    assert!(content.contains("Concurrent Test"));
+
+    // Verify in-flight singleflight lock is completely cleaned up
+    assert_eq!(
+        service.in_flight_count(),
+        0,
+        "in_flight_extractions map should be empty after extractions finish"
+    );
+}
+
+#[tokio::test]
+async fn test_sidecar_ass_conversion_via_ffmpeg() {
+    let (service, subtitle_repo, _media_repo, media_item_id, cache_dir, media_dir) =
+        setup_test_context().await;
+
+    let ass_content = "\
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 384
+PlayResY: 288
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Styled ASS Subtitle!
+";
+    let ass_path = media_dir.path().join("movie.ass");
+    tokio::fs::write(&ass_path, ass_content).await.unwrap();
+
+    let track_id = subtitle_repo
+        .create(&SubtitleTrack {
+            id: 0,
+            media_item_id,
+            source: SubtitleSource::Sidecar,
+            language: "eng".to_string(),
+            title: Some("English ASS".to_string()),
+            format: SubtitleFormat::Ass,
+            file_path: Some(ass_path.to_string_lossy().to_string()),
+            stream_index: None,
+            is_default: false,
+            is_forced: false,
+            created_at: 1000,
+        })
+        .await
+        .unwrap();
+
+    let expected_cache_path = cache_dir.path().join(format!("{}.vtt", track_id));
+    assert!(!expected_cache_path.exists());
+
+    let vtt_path = service
+        .get_webvtt_path(track_id)
+        .await
+        .expect("get_webvtt_path should convert ASS sidecar");
+
+    assert_eq!(vtt_path, expected_cache_path);
+    assert!(vtt_path.exists());
+
+    let converted_content = tokio::fs::read_to_string(&vtt_path).await.unwrap();
+    assert!(converted_content.starts_with("WEBVTT"));
+    assert!(converted_content.contains("Styled ASS Subtitle!"));
+}
+
+#[tokio::test]
+async fn test_singleflight_concurrent_list_or_probe_subtitles() {
+    let (service, subtitle_repo, media_repo, _media_item_id, _cache_dir, media_dir) =
+        setup_test_context().await;
+
+    let srt_ar = media_dir.path().join("probe_ar.srt");
+    let srt_en = media_dir.path().join("probe_en.srt");
+    tokio::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا!\n")
+        .await
+        .unwrap();
+    tokio::fs::write(&srt_en, "1\n00:00:00,500 --> 00:00:01,500\nHello!\n")
+        .await
+        .unwrap();
+
+    let mkv_path = media_dir.path().join("concurrent_probe.mkv");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo:d=2",
+            "-i",
+            srt_ar.to_str().unwrap(),
+            "-i",
+            srt_en.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-map",
+            "3:s:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-c:s",
+            "srt",
+            "-metadata:s:s:0",
+            "language=ara",
+            "-disposition:s:0",
+            "default",
+            "-metadata:s:s:1",
+            "language=eng",
+            "-disposition:s:1",
+            "0",
+            mkv_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("ffmpeg should create mkv");
+    assert!(status.success());
+
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Concurrent Probe Movie".to_string(),
+            original_title: None,
+            release_year: Some(2023),
+            added_at: 1000,
+            file_path: mkv_path.clone(),
+            file_name: "concurrent_probe.mkv".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        }])
+        .await
+        .unwrap();
+
+    let mkv_item = media_repo.find_by_path(&mkv_path).await.unwrap().unwrap();
+    let mkv_item_id = mkv_item.id.unwrap();
+
+    // Verify 0 tracks initially
+    let initial_tracks = subtitle_repo.find_by_media_item(mkv_item_id).await.unwrap();
+    assert_eq!(initial_tracks.len(), 0);
+
+    let svc1 = service.clone();
+    let svc2 = service.clone();
+    let item1 = mkv_item.clone();
+    let item2 = mkv_item.clone();
+
+    // Run simultaneous list_or_probe_subtitles calls
+    let (res1, res2) = tokio::join!(
+        svc1.list_or_probe_subtitles(&item1),
+        svc2.list_or_probe_subtitles(&item2),
+    );
+
+    let tracks1 = res1.expect("res1 should succeed");
+    let tracks2 = res2.expect("res2 should succeed");
+
+    assert_eq!(tracks1.len(), 2);
+    assert_eq!(tracks2.len(), 2);
+
+    // CRITICAL: Verify DB contains strictly 2 tracks (no duplicate SQLite rows)
+    let db_tracks = subtitle_repo.find_by_media_item(mkv_item_id).await.unwrap();
+    assert_eq!(
+        db_tracks.len(),
+        2,
+        "Expected exactly 2 tracks in SQLite, no duplicates!"
+    );
+
+    let stream_indices: Vec<Option<u32>> = db_tracks.iter().map(|t| t.stream_index).collect();
+    assert!(stream_indices.contains(&Some(2)));
+    assert!(stream_indices.contains(&Some(3)));
+
+    // Verify in_flight_probes cleaned up
+    assert_eq!(
+        service.in_flight_probe_count(),
+        0,
+        "in_flight_probes map should be empty after simultaneous probes finish"
+    );
+}
+
+

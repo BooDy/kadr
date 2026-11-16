@@ -1,11 +1,116 @@
 use crate::error::Result;
+use crate::sidecars::subtitles::{language_display_name, normalize_language_tag};
+use crate::sidecars::DiscoveredSubtitle;
 use kadr_core::models::TechnicalInfo;
+use kadr_core::subtitles::{SubtitleFormat, SubtitleSource};
 use serde_json::Value;
 use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
 
-pub async fn run_ffprobe<P: AsRef<Path>>(path: P) -> Result<Option<TechnicalInfo>> {
+#[derive(Debug, Clone, Default)]
+pub struct FfprobeOutput {
+    pub technical: TechnicalInfo,
+    pub embedded_subtitles: Vec<DiscoveredSubtitle>,
+}
+
+pub type ProbedMedia = FfprobeOutput;
+
+fn disposition_flag(stream: &Value, key: &str) -> bool {
+    stream["disposition"][key].as_i64() == Some(1)
+        || stream["disposition"][key].as_str() == Some("1")
+}
+
+fn map_subtitle_codec(codec_name: &str) -> Option<SubtitleFormat> {
+    match codec_name.trim().to_ascii_lowercase().as_str() {
+        "subrip" | "srt" | "text" | "mov_text" | "tx3g" => Some(SubtitleFormat::Srt),
+        "ass" | "ssa" => Some(SubtitleFormat::Ass),
+        "webvtt" | "vtt" => Some(SubtitleFormat::Vtt),
+        _ => None,
+    }
+}
+
+fn is_generic_handler_title(title: &str) -> bool {
+    let lower = title.trim().to_ascii_lowercase();
+    lower.is_empty()
+        || lower == "subtitlehandler"
+        || lower == "gpac streaming text handler"
+        || lower == "sbtl"
+}
+
+pub fn parse_embedded_subtitles_from_json(json: &Value) -> Vec<DiscoveredSubtitle> {
+    let mut out = Vec::new();
+    let Some(streams) = json["streams"].as_array() else {
+        return out;
+    };
+
+    for stream in streams {
+        if stream["codec_type"].as_str() != Some("subtitle") {
+            continue;
+        }
+        let Some(codec_name) = stream["codec_name"].as_str() else {
+            continue;
+        };
+        let Some(format) = map_subtitle_codec(codec_name) else {
+            continue;
+        };
+        let Some(stream_index) = stream["index"].as_u64().and_then(|i| u32::try_from(i).ok()) else {
+            continue;
+        };
+
+        let raw_lang = stream["tags"]["language"]
+            .as_str()
+            .or_else(|| stream["tags"]["LANGUAGE"].as_str())
+            .unwrap_or("und");
+        let language = normalize_language_tag(raw_lang);
+
+        let is_default = disposition_flag(stream, "default");
+        let is_forced = disposition_flag(stream, "forced");
+        let is_sdh = disposition_flag(stream, "hearing_impaired");
+
+        let raw_title = stream["tags"]["title"]
+            .as_str()
+            .or_else(|| stream["tags"]["TITLE"].as_str())
+            .map(str::trim)
+            .filter(|t| !is_generic_handler_title(t));
+
+        let title = if let Some(explicit) = raw_title {
+            explicit.to_string()
+        } else {
+            let base = if language == "und" {
+                format!("Track {}", stream_index)
+            } else {
+                match language_display_name(&language) {
+                    "" | "Undetermined" => language.to_ascii_uppercase(),
+                    name => name.to_string(),
+                }
+            };
+            let mut label = base;
+            if is_sdh {
+                label.push_str(" [SDH]");
+            }
+            if is_forced {
+                label.push_str(" [Forced]");
+            }
+            label
+        };
+
+        out.push(DiscoveredSubtitle {
+            source: SubtitleSource::Embedded,
+            language,
+            title: Some(title),
+            format,
+            file_path: None,
+            stream_index: Some(stream_index),
+            is_default,
+            is_forced,
+        });
+    }
+
+    out
+}
+
+pub async fn run_ffprobe_full<P: AsRef<Path>>(path: P) -> Result<Option<FfprobeOutput>> {
     let output = match Command::new("ffprobe")
         .args([
             "-v",
@@ -72,5 +177,21 @@ pub async fn run_ffprobe<P: AsRef<Path>>(path: P) -> Result<Option<TechnicalInfo
         }
     }
 
-    Ok(Some(info))
+    let embedded_subtitles = parse_embedded_subtitles_from_json(&json);
+
+    Ok(Some(FfprobeOutput {
+        technical: info,
+        embedded_subtitles,
+    }))
+}
+
+pub async fn run_ffprobe<P: AsRef<Path>>(path: P) -> Result<Option<TechnicalInfo>> {
+    Ok(run_ffprobe_full(path).await?.map(|out| out.technical))
+}
+
+pub async fn probe_embedded_subtitles<P: AsRef<Path>>(path: P) -> Result<Vec<DiscoveredSubtitle>> {
+    Ok(run_ffprobe_full(path)
+        .await?
+        .map(|out| out.embedded_subtitles)
+        .unwrap_or_default())
 }

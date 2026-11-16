@@ -344,3 +344,162 @@ fn test_scan_directory_recursive_ignores_symlink_loops_and_avoids_duplicate_file
     assert!(names.contains(&"Movie.2023.1080p.mkv".to_string()));
     assert!(names.contains(&"SubMovie.2024.1080p.mkv".to_string()));
 }
+
+#[tokio::test]
+async fn test_pipeline_and_worker_embedded_subtitles_ingest_and_deduplication() {
+    let ffmpeg_available = std::process::Command::new("ffmpeg").arg("-version").output().is_ok();
+    let ffprobe_available = std::process::Command::new("ffprobe").arg("-version").output().is_ok();
+    if !ffmpeg_available || !ffprobe_available {
+        return;
+    }
+
+    let dir = tempdir().unwrap();
+    let srt_ar = dir.path().join("ar.srt");
+    let srt_en = dir.path().join("en.srt");
+    std::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا!\n").unwrap();
+    std::fs::write(&srt_en, "1\n00:00:00,500 --> 00:00:01,500\nHello!\n").unwrap();
+
+    let mkv_path = dir.path().join("Sample.Movie.2024.1080p.mkv");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo:d=1",
+            "-i",
+            srt_ar.to_str().unwrap(),
+            "-i",
+            srt_en.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-map",
+            "3:s:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-c:s",
+            "srt",
+            "-metadata:s:s:0",
+            "language=ara",
+            "-metadata:s:s:0",
+            "title=Arabic",
+            "-metadata:s:s:1",
+            "language=eng",
+            "-metadata:s:s:1",
+            "title=English",
+            mkv_path.to_str().unwrap(),
+        ])
+        .status();
+
+    let Ok(st) = status else { return };
+    if !st.success() {
+        return;
+    }
+
+    let library = Library {
+        id: "movies".to_string(),
+        name: "Movies".to_string(),
+        path: dir.path().to_path_buf(),
+        media_type: MediaType::Movie,
+        created_at: 1700000000,
+        ..Default::default()
+    };
+
+    // 1. Verify IngestPipeline::process_file finds both embedded subtitle tracks
+    let pipeline = IngestPipeline::new(true, None);
+    let (item, subs) = pipeline
+        .process_file(&library, &mkv_path)
+        .await
+        .unwrap()
+        .expect("should process mkv with embedded subtitles");
+
+    assert_eq!(subs.len(), 2, "pipeline must discover both embedded subtitle streams");
+    assert_eq!(subs[0].source, kadr_core::subtitles::SubtitleSource::Embedded);
+    assert_eq!(subs[0].stream_index, Some(2));
+    assert!(subs[0].file_path.is_none());
+    assert_eq!(subs[1].source, kadr_core::subtitles::SubtitleSource::Embedded);
+    assert_eq!(subs[1].stream_index, Some(3));
+    assert!(subs[1].file_path.is_none());
+
+    // 2. Set up DB & IngestWorker to test insertion and multi-track deduplication
+    let pool = kadr_storage::create_in_memory_pool().unwrap();
+    kadr_storage::initialize_database(&pool).await.unwrap();
+
+    let lib_repo = kadr_storage::LibraryRepository::new(pool.clone());
+    lib_repo.insert(&library).await.unwrap();
+
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let sub_repo = kadr_storage::repos::SubtitleRepository::new(pool.clone());
+
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
+    let worker = IngestWorker::new_with_subtitles(rx, media_repo.clone(), sub_repo.clone());
+    let worker_handle = tokio::spawn(worker.run());
+
+    // Send first Upsert with the 2 embedded tracks
+    tx.send(IngestMessage::Upsert(item.clone(), subs.clone()))
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let persisted_media = media_repo
+        .find_by_path(&item.file_path)
+        .await
+        .unwrap()
+        .expect("media item should be persisted");
+    let media_id = persisted_media.id.unwrap();
+
+    let persisted_subs = sub_repo.find_by_media_item(media_id).await.unwrap();
+    assert_eq!(persisted_subs.len(), 2, "both embedded tracks should be persisted");
+    assert!(persisted_subs.iter().any(|s| s.stream_index == Some(2) && s.file_path.is_none()));
+    assert!(persisted_subs.iter().any(|s| s.stream_index == Some(3) && s.file_path.is_none()));
+
+    // Send second Upsert with exact same item & tracks - deduplication should prevent duplicate rows
+    tx.send(IngestMessage::Upsert(item.clone(), subs.clone()))
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let persisted_subs_after = sub_repo.find_by_media_item(media_id).await.unwrap();
+    assert_eq!(persisted_subs_after.len(), 2, "deduplication must keep exactly 2 tracks, no duplicates");
+
+    // Send third Upsert containing a 3rd distinct stream_index with file_path: None
+    let mut more_subs = subs.clone();
+    more_subs.push(kadr_ingest::sidecars::DiscoveredSubtitle {
+        source: kadr_core::subtitles::SubtitleSource::Embedded,
+        language: "fra".to_string(),
+        title: Some("French".to_string()),
+        format: kadr_core::subtitles::SubtitleFormat::Srt,
+        file_path: None,
+        stream_index: Some(4),
+        is_default: false,
+        is_forced: false,
+    });
+
+    tx.send(IngestMessage::Upsert(item.clone(), more_subs))
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let persisted_subs_final = sub_repo.find_by_media_item(media_id).await.unwrap();
+    assert_eq!(persisted_subs_final.len(), 3, "new stream_index should be inserted while streams 2 and 3 are deduplicated");
+
+    drop(tx);
+    worker_handle.await.unwrap();
+}

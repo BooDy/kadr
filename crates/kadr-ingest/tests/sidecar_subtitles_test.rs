@@ -91,7 +91,8 @@ fn test_language_tag_extraction() {
         ("Film.2020.zh.srt", "chi", "Chinese"),
         ("Film.2020.zho.srt", "chi", "Chinese"),
         ("Film.2020.chi.srt", "chi", "Chinese"),
-        ("Film.2020.pt.srt", "pt", "pt"),
+        ("Film.2020.pt.srt", "por", "Portuguese"),
+        ("Film.2020.sw.srt", "sw", "sw"),
         ("Film.2020.srt", "und", "Undetermined"),
     ];
 

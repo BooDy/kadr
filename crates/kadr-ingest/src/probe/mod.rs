@@ -1,7 +1,13 @@
 pub mod ffprobe;
 pub mod pure_rust;
 
+pub use ffprobe::{
+    parse_embedded_subtitles_from_json, probe_embedded_subtitles, run_ffprobe, run_ffprobe_full,
+    FfprobeOutput, ProbedMedia,
+};
+
 use crate::error::Result;
+use crate::sidecars::DiscoveredSubtitle;
 use kadr_core::models::TechnicalInfo;
 use std::path::Path;
 
@@ -16,28 +22,38 @@ impl TechnicalProber {
     }
 
     pub async fn probe<P: AsRef<Path>>(&self, path: P) -> Result<TechnicalInfo> {
+        let (info, _) = self.probe_with_subtitles(path).await?;
+        Ok(info)
+    }
+
+    pub async fn probe_with_subtitles<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<(TechnicalInfo, Vec<DiscoveredSubtitle>)> {
         let mut base_info = pure_rust::inspect_container(&path)?;
+        let mut embedded_subtitles = Vec::new();
 
         if self.enable_ffprobe {
-            if let Ok(Some(probed)) = ffprobe::run_ffprobe(&path).await {
-                if probed.duration_seconds > 0 {
-                    base_info.duration_seconds = probed.duration_seconds;
+            if let Ok(Some(probed)) = ffprobe::run_ffprobe_full(&path).await {
+                if probed.technical.duration_seconds > 0 {
+                    base_info.duration_seconds = probed.technical.duration_seconds;
                 }
-                if probed.resolution.is_some() {
-                    base_info.resolution = probed.resolution;
+                if probed.technical.resolution.is_some() {
+                    base_info.resolution = probed.technical.resolution;
                 }
-                if probed.video_codec.is_some() {
-                    base_info.video_codec = probed.video_codec;
+                if probed.technical.video_codec.is_some() {
+                    base_info.video_codec = probed.technical.video_codec;
                 }
-                if probed.audio_codec.is_some() {
-                    base_info.audio_codec = probed.audio_codec;
+                if probed.technical.audio_codec.is_some() {
+                    base_info.audio_codec = probed.technical.audio_codec;
                 }
-                if probed.audio_channels.is_some() {
-                    base_info.audio_channels = probed.audio_channels;
+                if probed.technical.audio_channels.is_some() {
+                    base_info.audio_channels = probed.technical.audio_channels;
                 }
+                embedded_subtitles = probed.embedded_subtitles;
             }
         }
 
-        Ok(base_info)
+        Ok((base_info, embedded_subtitles))
     }
 }

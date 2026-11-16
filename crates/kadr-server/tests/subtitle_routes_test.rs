@@ -619,3 +619,165 @@ async fn test_download_unconfigured_fails_with_bad_request() {
     let val: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(val["error"], "OpenSubtitles integration is not configured");
 }
+
+#[tokio::test]
+async fn test_lazy_embedded_mkv_discovery_and_webvtt_extraction() {
+    let ctx = setup_test_context(None).await;
+
+    // 1. Generate real MKV file with 1 video stream, 1 audio stream, and 2 embedded subtitle streams
+    let media_dir = ctx._temp_dir.path().join("media");
+    let srt_ar = media_dir.join("ar_embed.srt");
+    let srt_en = media_dir.join("en_embed.srt");
+    std::fs::write(&srt_ar, "1\n00:00:00,500 --> 00:00:01,500\nمرحبا بالعالم!\n").unwrap();
+    std::fs::write(&srt_en, "1\n00:00:00,500 --> 00:00:01,500\nHello embedded world!\n").unwrap();
+
+    let mkv_path = media_dir.join("embedded_test.mkv");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo:d=2",
+            "-i",
+            srt_ar.to_str().unwrap(),
+            "-i",
+            srt_en.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-map",
+            "3:s:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-c:s",
+            "srt",
+            "-metadata:s:s:0",
+            "language=ara",
+            "-metadata:s:s:0",
+            "title=Arabic",
+            "-disposition:s:0",
+            "default",
+            "-metadata:s:s:1",
+            "language=eng",
+            "-disposition:s:1",
+            "0",
+            mkv_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("ffmpeg failed to spawn");
+    assert!(status.success(), "ffmpeg failed to create test mkv");
+
+    // 2. Insert MediaItem into media_repo WITHOUT inserting any media_subtitles rows
+    let media_repo = ctx.subtitle_service.media_repo();
+    media_repo
+        .upsert_batch(&[MediaItem {
+            id: None,
+            library_id: "lib1".to_string(),
+            item_type: MediaType::Movie,
+            title: "Embedded MKV Test".to_string(),
+            original_title: None,
+            release_year: Some(2024),
+            added_at: 1000,
+            file_path: mkv_path.clone(),
+            file_name: "embedded_test.mkv".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo::default(),
+            metadata: MediaMetadata::default(),
+        }])
+        .await
+        .unwrap();
+
+    let mkv_item = media_repo
+        .find_by_path(&mkv_path)
+        .await
+        .unwrap()
+        .expect("mkv item should exist");
+    let mkv_item_id = mkv_item.id.expect("id should be present");
+
+    // 3. Call GET /api/v1/items/{mkv_item_id}/subtitles with Bearer token
+    let req = Request::builder()
+        .uri(format!("/api/v1/items/{}/subtitles", mkv_item_id))
+        .header("authorization", format!("Bearer {}", ctx.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
+    let tracks: Value = serde_json::from_slice(&bytes).unwrap();
+    let list = tracks.as_array().expect("expected array");
+    assert_eq!(list.len(), 2, "Expected 2 lazy-discovered embedded tracks");
+
+    let ara_track = list
+        .iter()
+        .find(|t| t["language"] == "ara")
+        .expect("ara track not found");
+    assert_eq!(ara_track["source"], "embedded");
+    assert_eq!(ara_track["stream_index"], 2);
+    assert_eq!(ara_track["is_default"], true);
+
+    let eng_track = list
+        .iter()
+        .find(|t| t["language"] == "eng")
+        .expect("eng track not found");
+    assert_eq!(eng_track["source"], "embedded");
+    assert_eq!(eng_track["stream_index"], 3);
+
+    let ara_track_id = ara_track["id"].as_i64().expect("ara track id");
+
+    // 4. Call GET /api/v1/subtitles/{ara_track_id}/stream.vtt
+    let req = Request::builder()
+        .uri(format!("/api/v1/subtitles/{}/stream.vtt", ara_track_id))
+        .body(Body::empty())
+        .unwrap();
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let content_type = res
+        .headers()
+        .get("content-type")
+        .expect("content-type header")
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.starts_with("text/vtt"),
+        "Expected text/vtt content type, got: {}",
+        content_type
+    );
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 64)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(
+        body_str.starts_with("WEBVTT"),
+        "Expected body to start with WEBVTT, got: {}",
+        body_str
+    );
+    assert!(
+        body_str.contains("مرحبا بالعالم!"),
+        "Expected body to contain Arabic subtitle text, got: {}",
+        body_str
+    );
+
+    let cache_dir = ctx.subtitle_service.cache_dir();
+    let cached_file = cache_dir.join(format!("{}.vtt", ara_track_id));
+    assert!(cached_file.exists(), "Cached WebVTT file should exist on disk");
+}
+
