@@ -94,7 +94,7 @@ Before displaying an IP entry screen, clients should perform local network disco
   "app": "kadr",
   "server_id": "8f3e2b1a-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
   "name": "Living Room Server",
-  "version": "0.1.1-alpha",
+  "version": "0.2.1",
   "protocol_version": 1,
   "port": 8492,
   "setup_completed": true,
@@ -109,7 +109,7 @@ Before displaying an IP entry screen, clients should perform local network disco
 | `app` | String | Constant identifier: always `"kadr"`. |
 | `server_id` | String | Persistent server UUID; remains stable across server reboots. |
 | `name` | String | Human-readable server friendly name configured by the administrator. |
-| `version` | String | Server semver release string (e.g. `"0.1.1-alpha"`). |
+| `version` | String | Server Cargo package semver string (e.g. `"0.2.1"`). |
 | `protocol_version` | Integer | Protocol integer version (`1`). Incremented for breaking protocol changes. |
 | `port` | Integer | Port number bound by the HTTP server (e.g. `8492`). |
 | `setup_completed` | Boolean | `false` if no administrator account exists yet; `true` once configured. |
@@ -710,20 +710,26 @@ Content-Range: bytes 0-1048575/8589934592
 <binary video stream bytes>
 ```
 
-#### MIME Types Returned (Local Disk Streams)
-| Extension | Content-Type |
-| :--- | :--- |
-| `.mkv` | `video/x-matroska` |
-| `.mp4`, `.m4v` | `video/mp4` |
-| `.webm` | `video/webm` |
-| `.mov` | `video/quicktime` |
-| `.avi` | `video/x-msvideo` |
-| `.mp3` | `audio/mpeg` |
-| `.flac` | `audio/flac` |
-| `.aac` | `audio/aac` |
-| `.ogg` | `audio/ogg` |
-| `.wav` | `audio/wav` |
-| Other | `application/octet-stream` |
+#### Supported Video Containers & MIME Types Returned (Local Disk Streams)
+
+Kadr indexes, browses, probes (via 256-byte magic-byte pure-Rust container inspection and optional `ffprobe`), and byte-range streams **11 video container extensions** (`mkv`, `mp4`, `m4v`, `mov`, `webm`, `avi`, `ts`, `m2ts`, `mts`, `3gp`, `3g2`) plus common audio files. `GET /api/v1/stream/{item_id}` resolves `Content-Type` from `item.technical.container` first, automatically falling back to the file extension on disk when `container` is unset or unrecognized:
+
+| Container / Extension | `Content-Type` | Pure-Rust Container Inspection |
+| :--- | :--- | :--- |
+| `.mp4`, `.m4v` | `video/mp4` | ISO BMFF `ftyp` (`isom`, `mp42`, `M4V `, etc.) |
+| `.mov` | `video/quicktime` | ISO BMFF `ftyp` (`qt  `) |
+| `.mkv` | `video/x-matroska` | EBML (`0x1A45DFA3`, `matroska`) |
+| `.webm` | `video/webm` | EBML (`0x1A45DFA3`, `webm`) |
+| `.avi` | `video/x-msvideo` | RIFF (`RIFF....AVI `) |
+| `.ts`, `.m2ts`, `.mts` | `video/mp2t` | 188-byte MPEG-TS (`0x47` sync) / 192-byte BDAV M2TS |
+| `.3gp` | `video/3gpp` | ISO BMFF `ftyp` (`3gp*`) |
+| `.3g2` | `video/3gpp2` | ISO BMFF `ftyp` (`3g2*`) |
+| `.mp3` | `audio/mpeg` | Audio extension mapping |
+| `.flac` | `audio/flac` | Audio extension mapping |
+| `.aac` | `audio/aac` | Audio extension mapping |
+| `.ogg` | `audio/ogg` | Audio extension mapping |
+| `.wav` | `audio/wav` | Audio extension mapping |
+| Other | `application/octet-stream` | Fallback |
 
 ---
 
@@ -748,9 +754,9 @@ Before initiating playback, the client should inspect the `technical` metadata b
 1. **`audio_codec`**: Check if the device has a native decoder for the audio format.
    - **Samsung Tizen OS**: **Lacks decoders for DTS, DTS-HD, and Dolby TrueHD**. Playing these directly results in silent video or player fatal error.
    - **Browsers (Chrome / Firefox)**: Lack support for DTS, TrueHD, and AC3/E-AC3 (Dolby Digital).
-2. **`container`**: Check if the client's player pipeline supports the container file extension.
-   - **Tizen HTML5 `<video>` / AVPlay**: Often fails on `.mkv` or `.avi` files, but natively plays HLS (`.m3u8`) and `.mp4`.
-   - **Web Browsers**: Native HTML5 `<video>` supports `.mp4` and `.webm`, but **rejects `.mkv`**.
+2. **`container`**: Check if the client's player pipeline supports the container format (`mkv`, `mp4`, `m4v`, `mov`, `webm`, `avi`, `ts`, `m2ts`, `mts`, `3gp`, `3g2`).
+   - **Tizen HTML5 `<video>` / AVPlay**: Often fails on `.mkv` or `.avi` files, while natively playing HLS (`.m3u8`), `.mp4`/`.m4v`, and MPEG-TS (`.ts`/`.m2ts`).
+   - **Web Browsers**: Native HTML5 `<video>` reliably supports `.mp4`/`.m4v` and `.webm` (plus `.mov` on Safari), whereas `.mkv`, `.avi`, raw `.ts`/`.m2ts`/`.mts`, and legacy `.3gp`/`.3g2` codecs typically require Kadr's HLS remux/transcode fallback.
 3. **`video_codec` & `resolution`**:
    - Check if the screen hardware can decode the resolution and profile (e.g. older 1080p Smart TVs cannot decode 4K HEVC 10-bit or AV1).
    - Note that for plugin-published items where `technical` fields are omitted (`null`), clients can attempt `GET /api/v1/stream/{id}` first: if the plugin requires server-side transcoding, Kadr responds with `409 Conflict` (`PLAYBACK_REQUIRES_TRANSCODE`) containing `hls_url` (see [Section 6.4](#64-plugin-backed-playback-resolution-direct-proxy-transcode)).
@@ -996,24 +1002,36 @@ Call when the user closes the player or playback finishes:
 
 ## 7. Subtitles, Storyboard Trickplay & Media Assets
 
-Kadr provides first-class subtitle delivery with on-the-fly WebVTT conversion, disk caching, in-player online subtitle search via OpenSubtitles, high-resolution artwork delivery, and 10×10 storyboard trickplay sprite sheets with single-frame seek fallback.
+Kadr provides first-class subtitle delivery across **embedded container text streams**, **local sidecar files**, and **downloaded OpenSubtitles tracks** — normalizing every track into UTF-8 WebVTT with singleflight extraction and disk caching — alongside high-resolution artwork delivery and 10×10 storyboard trickplay sprite sheets with single-frame seek fallback.
 
-### 7.1 Subtitle Discovery
+### 7.1 Subtitle Discovery (Embedded, Sidecar & Downloaded)
 
 - **Method & Route**: `GET /api/v1/items/{item_id}/subtitles`
 - **Headers**: `Authorization: Bearer <token>`
-- **Response (`200 OK`)**:
+- **Response (`200 OK` — `SubtitleTrackResponse[]`)**:
 
 ```json
 [
   {
+    "id": 11,
+    "media_item_id": 101,
+    "source": "embedded",
+    "language": "eng",
+    "title": "English [SDH]",
+    "format": "srt",
+    "stream_index": 2,
+    "is_default": true,
+    "is_forced": false,
+    "stream_url": "/api/v1/subtitles/11/stream.vtt"
+  },
+  {
     "id": 12,
     "media_item_id": 101,
     "source": "sidecar",
-    "language": "en",
+    "language": "eng",
     "title": "English [Full]",
     "format": "srt",
-    "is_default": true,
+    "is_default": false,
     "is_forced": false,
     "stream_url": "/api/v1/subtitles/12/stream.vtt"
   },
@@ -1031,15 +1049,22 @@ Kadr provides first-class subtitle delivery with on-the-fly WebVTT conversion, d
 ]
 ```
 
+#### Subtitle Track Fields & Embedded Stream Discovery:
+- **`source`**: `"embedded"` (muxed inside the video container), `"sidecar"` (companion `.srt`, `.vtt`, `.ass`, or `.sub` file on disk), or `"downloaded"` (fetched via OpenSubtitles).
+- **`stream_index`**: 0-based `ffprobe` container stream index (`u32`, e.g. `2`), serialized **only** on `"embedded"` tracks (`skip_serializing_if = "Option::is_none"`).
+- **Supported Embedded Text Codecs**: During library scans — and **lazily on first `GET /api/v1/items/{item_id}/subtitles` request** (via singleflight `ffprobe` backfill for pre-existing catalog items across all supported video containers: `mkv`, `mp4`, `m4v`, `mov`, `webm`, `avi`, `ts`, `m2ts`, `mts`, `3gp`, `3g2`) — Kadr indexes embedded text subtitle streams (`subrip`/`srt`, `text`, `ass`/`ssa`, `webvtt`/`vtt`, and MP4/MOV `mov_text`/`tx3g`). Bitmap subtitle streams (such as Blu-ray PGS `hdmv_pgs_subtitle` or DVD `dvd_subtitle`) are automatically ignored so client text-track menus only list streamable WebVTT tracks, and generic muxer handler names (`SubtitleHandler`, `GPAC Streaming Text Handler`, `sbtl`, Apple `Core Media Subtitle`) are replaced with clean human-readable language labels (`English [SDH]`, `Arabic [Forced]`, `Track 2`).
+
 ### 7.2 WebVTT Subtitle Streaming
 
-Clients consume subtitles by passing `stream_url` directly to player text track APIs:
+Clients consume all subtitle sources identically by passing `stream_url` directly to player text track APIs (`<track kind="subtitles" src="...">`, ExoPlayer `SubtitleConfiguration`, or `AVPlayer` text tracks) — **even when transcoding or direct-playing containers like MKV or MP4**:
 
 - **Method & Route**: `GET /api/v1/subtitles/{subtitle_id}/stream.vtt`
 - **Authentication**: Public / query token fallback supported (`?token=<jwt>`).
-- **Features**:
-  - Automatically converts SubRip (`.srt`) files to WebVTT (`.vtt`) in real time.
-  - Caches converted files on disk for instant re-delivery.
+- **Transparent Extraction, Conversion & Caching**:
+  - **Embedded Container Streams (`source: "embedded"`)**: Extracts the muxed stream on demand via `ffmpeg -map 0:{stream_index} -c:s webvtt -f webvtt` (with a 60s timeout and WebVTT header validation).
+  - **ASS / SSA Sidecars (`format: "ass"`)**: Converts SubStation Alpha files to WebVTT via `ffmpeg`.
+  - **SubRip & WebVTT Files (`format: "srt" | "vtt"`)**: Streams `.vtt` files directly or converts `.srt` files via Kadr's pure-Rust bounded `srt_to_webvtt_stream` normalizer.
+  - **Singleflight Deduplication & Disk Cache**: Concurrent requests for the same `subtitle_id` coalesce behind a per-track singleflight lock and atomically write `<cache_dir>/{subtitle_id}.vtt` via a temporary `.vtt.tmp.{uuid}` file for instant subsequent 64 KiB chunked delivery.
   - Sets standard headers:
     - `Content-Type: text/vtt; charset=utf-8`
     - `Cache-Control: public, max-age=86400`
@@ -2331,5 +2356,5 @@ try {
 
 ---
 
-*Document Version: 1.3.0 (Kadr 0.2.0-alpha with Storyboard Trickplay, Plugin Playback, Playlists & Universal HLS Fallback)*  
+*Document Version: 1.3.1 (Kadr 0.2.1-alpha with Embedded Subtitles, Expanded Video Containers, Storyboard Trickplay, Plugin Playback, Playlists & Universal HLS Fallback)*  
 *Maintained by the Kadr Core Engineering Team.*

@@ -8,7 +8,7 @@
 
   [![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
   [![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
-  [![Version](https://img.shields.io/badge/version-v0.2.0--alpha-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-v0.2.1--alpha-blue.svg)](CHANGELOG.md)
   [![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
   [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
   [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -31,8 +31,8 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 
 - **Blazing Fast & Lightweight**: Operates within a strict $\le 30\text{ MB}$ RSS memory envelope under standard multi-client streaming and layout hydration workloads.
 - **Pure-Rust & Portability First**: Zero external C/native runtime dependencies baseline (`reqwest` with `rustls-tls`, pure-Rust crypto via `argon2`, static SQLite engine). Compiles cleanly against `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`.
-- **Zero-Copy HTTP 206 Direct Play**: Axum-based streaming pipeline with 64 KiB chunk buffering supporting single and multipart byte-range requests without whole-file memory allocation.
-- **Universal On-Demand HLS Transcoding & Smart Stream Copy**: Automatic HTTP Live Streaming (HLS) fallback for Smart TVs (such as Samsung Tizen OS) and web players encountering unsupported audio/video codecs (`DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`) or containers (`MKV`, `AVI`). Features zero-CPU remuxing (`-c:v copy -c:a copy`), smart audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with a 15s background reaper sweeping idle sessions (`inactivity_timeout_secs`, default `60`s).
+- **Zero-Copy HTTP 206 Direct Play & Broad Container Support**: Axum-based streaming pipeline with 64 KiB chunk buffering supporting single and multipart byte-range requests without whole-file memory allocation, with unified support across **`MKV`, `MP4`, `M4V`, `MOV`, `WebM`, `AVI`, `TS`, `M2TS`, `MTS`, `3GP`, and `3G2`** containers (backed by 256-byte magic-byte pure-Rust header inspection, live filesystem watching, folder browsing, playlists, and accurate `Content-Type` MIME delivery).
+- **Universal On-Demand HLS Transcoding & Smart Stream Copy**: Automatic HTTP Live Streaming (HLS) fallback for Smart TVs (such as Samsung Tizen OS) and web players encountering unsupported audio/video codecs (`DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`) or containers (`MKV`, `AVI`, `TS`/`M2TS`/`MTS`, `3GP`/`3G2`). Features zero-CPU remuxing (`-c:v copy -c:a copy`), smart audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with a 15s background reaper sweeping idle sessions (`inactivity_timeout_secs`, default `60`s).
 - **Storyboard Seek Preview Thumbnails (Trickplay)**: Lazy on-demand and optional scan-time 10×10 JPEG sprite sheet generation (`ffmpeg` paired with a pure-Rust JPEG SOF dimension parser), serving manifest and cached sprite sheets (`/api/v1/media/:item_id/storyboard`, `/api/v1/media/:item_id/storyboard/:index.jpg`) with `202 Accepted` async generation status and `ETag` / `304 Not Modified` caching, on-demand single-frame extraction (`/api/v1/media/:item_id/frame`), private library lock enforcement, and automatic cache cleanup on re-ingest or deletion.
 - **Out-of-Process HTTP Plugin Framework & Live Channels**: Permission-scoped external HTTP plugin processes (`items:publish`, `playback:resolve`) publishing virtual libraries and `live_channel` streams without local files, resolving playback via `direct` (`307 Temporary Redirect`), `proxy` (range-forwarding HTTP relay), or `transcode` (HLS `ffmpeg` pipeline), protected by an SSRF URL guard, per-plugin circuit breaker, 30s background health monitor, live-item scrobble bypass, and live DB-persisted runtime settings.
 - **Playlists & Queue Playback**: Manual ordered playlists with per-user ownership and server-wide multi-user sharing (`is_public`), 1-step Create & Add, batch TV Show / Season / sandboxed Folder expansion, fail-closed PIN-locked library isolation (`locked_item_count`), `playlist_items` Declarative Widget AST rails, and multi-track queue playback (auto-advance, Prev/Next, shuffle, and interactive queue popover) in Cinema Player and native clients.
@@ -42,7 +42,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **TV Shows & Seasons Grouping**: Automated TV episode filename and directory cue parsing (`S01E02`), parent series aggregation, season tabs navigation, and 1-click episode playback.
 - **Hierarchical Folder Browser & Slideshow**: Sandboxed directory browsing with breadcrumbs, direct directory jumping from media details, image discovery (`jpg`, `png`, `webp`, `gif`, `avif`, `bmp`), and full-screen auto-advancing slideshows.
 - **Multi-Path & Private PIN-Locked Libraries**: Media libraries spanning multiple local filesystem paths with directory picking, 4-digit PIN protection, database query isolation, and signed HMAC unlock tokens.
-- **Online & Local Subtitles with In-Player Search**: Automatic sidecar discovery (`.srt`, `.vtt`, `.ass`, `.sub`), language tag detection, pure-Rust bounded streaming SRT $\to$ WebVTT transcoder, disk caching, and live in-player OpenSubtitles search and on-the-fly download.
+- **Embedded, Sidecar & Online Subtitles with In-Player Search**: Automatic discovery of embedded container text subtitle streams (`SRT`/`SubRip`, `ASS`/`SSA`, `WebVTT`, `mov_text`/`tx3g` via `ffprobe`, with lazy backfill probing for pre-existing catalog items while ignoring bitmap subtitle streams) and local sidecars (`.srt`, `.vtt`, `.ass`, `.sub`), language tag normalization, on-demand `ffmpeg` extraction/conversion and pure-Rust bounded streaming SRT $\to$ WebVTT transcoding, singleflight disk caching, and live in-player OpenSubtitles search and on-the-fly download.
 - **Video Thumbnail Extraction Engine**: Background `ffmpeg` frame extraction during library scans with SHA-256 disk caching and on-demand fallback routes (`/api/v1/artwork/:item_id/poster`, `/api/v1/libraries/:id/thumbnail`).
 - **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `layout:changed`, `session:synced`, `subtitle:downloaded`, `plugin:error`, `playlist:updated`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
 - **System Telemetry & Health**: Non-blocking collector querying Linux process RSS memory via `/proc/self/statm`, SQLite DB/WAL file sizes, and active playback session counters.
@@ -108,10 +108,10 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 
 | Directory | Crate / Component | Description |
 |:---|:---|:---|
-| `crates/kadr-core` | `kadr-core` | Shared domain models, Declarative Widget AST definitions (`playlist_items`, filter rules), plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
+| `crates/kadr-core` | `kadr-core` | Shared domain models, unified video container definitions (`video_formats`), Declarative Widget AST definitions (`playlist_items`, filter rules), plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
 | `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–009`), and repositories (`User`, `Library`, `MediaItem`, `Playback`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
-| `crates/kadr-ingest` | `kadr-ingest` | Filesystem watcher (`notify`), media scanner, `ffprobe` parser, sidecar subtitle detector, background `ffmpeg` thumbnail extractor, and batch ingestion worker. |
-| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, out-of-process HTTP plugin framework, ordered playlists & AST widget resolver, subtitle delivery & OpenSubtitles client, SSE event bus, and static web serving. |
+| `crates/kadr-ingest` | `kadr-ingest` | Filesystem watcher (`notify`), media scanner, 256-byte pure-Rust container inspector, `ffprobe` technical & embedded subtitle stream parser, sidecar subtitle detector, background `ffmpeg` thumbnail extractor, and batch ingestion worker. |
+| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, out-of-process HTTP plugin framework, ordered playlists & AST widget resolver, embedded/sidecar/OpenSubtitles WebVTT delivery, SSE event bus, and static web serving. |
 | `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React (Browse, Cinema Player, Playlists, Layout Studio, Plugins Admin, and Telemetry Dashboard). |
 | `examples/plugin-hello` | `plugin-hello` | Minimal standalone Axum HTTP plugin template publishing virtual sample videos and resolving `direct` playback descriptors. |
 | `tests/` & `crates/*/tests/` | Workspace & Crate Tests | Comprehensive unit, integration, and end-to-end test suites covering ingestion, auth, Direct Play & HLS streaming, storyboards, plugins, playlists, AST resolution, subtitles, SSE events, and web serving. |
@@ -120,7 +120,7 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 
 ## Quick Install for Users (Linux)
 
-Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.2.0-alpha`).
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.2.1-alpha`).
 
 ### Option 1: Automated One-Line Installer (Recommended — All Linux Distributions)
 
@@ -140,9 +140,9 @@ Download the appropriate `.deb` package from the [Kadr Releases Page](https://gi
 
 ```bash
 # Install the Debian package (creates 'kadr' user, registers systemd service, installs web app)
-sudo dpkg -i kadr_0.2.0_amd64.deb    # For 64-bit PC / Server
+sudo dpkg -i kadr_0.2.1_amd64.deb    # For 64-bit PC / Server
 # OR
-sudo dpkg -i kadr_0.2.0_arm64.deb    # For Raspberry Pi 4/5 / ARM64
+sudo dpkg -i kadr_0.2.1_arm64.deb    # For Raspberry Pi 4/5 / ARM64
 
 # Start Kadr and enable automatic start on system boot
 sudo systemctl enable --now kadr
@@ -159,8 +159,8 @@ For offline installation on generic Linux distributions:
 
 ```bash
 # 1. Download and extract the standalone bundle from Releases
-tar -xzf kadr-v0.2.0-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.2.0-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.2.1-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.2.1-alpha-x86_64-unknown-linux-musl
 
 # 2. Run the automated installer (installs binary, web assets, and systemd service)
 sudo ./install.sh
@@ -188,7 +188,7 @@ curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh 
 Download the updated package and reinstall with `dpkg`:
 
 ```bash
-sudo dpkg -i kadr_0.2.0_amd64.deb    # or kadr_0.2.0_arm64.deb
+sudo dpkg -i kadr_0.2.1_amd64.deb    # or kadr_0.2.1_arm64.deb
 sudo systemctl restart kadr
 ```
 
@@ -197,8 +197,8 @@ sudo systemctl restart kadr
 Extract the new archive and execute the bundled installer (it automatically detects the active service and upgrades in-place):
 
 ```bash
-tar -xzf kadr-v0.2.0-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.2.0-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.2.1-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.2.1-alpha-x86_64-unknown-linux-musl
 sudo ./install.sh
 ```
 
@@ -241,8 +241,8 @@ sudo ./install.sh
 For maintainers, pushing any semantic version tag triggers the automated build and release pipeline:
 
 ```bash
-git tag -a v0.2.0-alpha -m "Release v0.2.0-alpha"
-git push origin v0.2.0-alpha
+git tag -a v0.2.1-alpha -m "Release v0.2.1-alpha"
+git push origin v0.2.1-alpha
 ```
 
 The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/workflows/release.yml)) will:
@@ -261,7 +261,7 @@ The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/w
 
 - **Rust**: Version `1.80` or later ([install via rustup](https://rustup.rs))
 - **Node.js**: Version `20.x` or later & `npm` (for building the web client)
-- **Optional**: `ffmpeg` & `ffprobe` (for detailed video/audio codec extraction, video thumbnail & storyboard sprite-sheet generation, and on-demand HLS transcoding fallback)
+- **Optional**: `ffmpeg` & `ffprobe` (for detailed video/audio codec & embedded subtitle stream probing, on-demand embedded & `.ass` subtitle WebVTT extraction, video thumbnail & storyboard sprite-sheet generation, and on-demand HLS transcoding fallback)
 
 ---
 
@@ -491,8 +491,8 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `DELETE /api/v1/plugin/libraries/:id/items/:remote_id` — Delete a published virtual item from a plugin-owned library (requires plugin Bearer token with `items:publish`).
 
 ### Subtitle Management
-- `GET /api/v1/items/:item_id/subtitles` — List available subtitle tracks for an item.
-- `GET /api/v1/subtitles/:subtitle_id/stream.vtt` — Public WebVTT stream (on-the-fly SRT $\to$ WebVTT conversion with disk caching).
+- `GET /api/v1/items/:item_id/subtitles` — List available embedded (`source: "embedded"` with `stream_index`), sidecar (`"sidecar"`), and downloaded (`"downloaded"`) subtitle tracks for an item (lazily probing embedded container text subtitle streams via `ffprobe` when not yet indexed).
+- `GET /api/v1/subtitles/:subtitle_id/stream.vtt` — Public WebVTT stream (on-demand `ffmpeg` extraction/conversion for embedded container & `.ass` tracks, pure-Rust SRT $\to$ WebVTT conversion, and singleflight disk caching).
 - `GET /api/v1/subtitles/:item_id/search?languages=en,ar` — Search online subtitles via OpenSubtitles.
 - `POST /api/v1/subtitles/:item_id/download` — Download online subtitle track and register in database.
 - `DELETE /api/v1/subtitles/:subtitle_id` — Delete subtitle track and purge cache.

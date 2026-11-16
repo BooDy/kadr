@@ -5,6 +5,15 @@ All notable changes to the Kadr media server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.1-alpha] - 2026-11-16
+
+### Added
+- **Embedded Container Subtitle Detection & WebVTT Extraction** (`4469846`, `86b9e1f`): Added `ffprobe` text subtitle stream discovery (`subrip`/`srt`, `text`, `ass`/`ssa`, `webvtt`/`vtt`, and `mov_text`/`tx3g` with generic muxer handler-name filtering including `SubtitleHandler`, `sbtl`, and Apple `Core Media Subtitle`, while ignoring bitmap subtitle streams), `SubtitleSource::Embedded` with `stream_index` metadata (`SubtitleTrack` / `SubtitleTrackResponse`), `SubtitleDeliveryService` on-demand FFmpeg WebVTT extraction (`-map 0:{stream_index} -c:s webvtt -f webvtt`) and `.ass`/`.ssa` sidecar WebVTT conversion with atomic temp-file caching and per-track singleflight deduplication locks, lazy backfill probing on `GET /api/v1/items/{item_id}/subtitles` (`list_or_probe_subtitles`) for pre-existing catalog items, and bounded `GET /api/v1/subtitles/{subtitle_id}/stream.vtt` streaming.
+- **Unified & Expanded Video Container Support** (`86b9e1f`): Added `kadr_core::video_formats` (`VIDEO_EXTENSIONS`, `is_video_extension`, `is_video_path`, `video_mime_for_extension`) expanding supported video containers to **`mkv`, `mp4`, `m4v`, `mov`, `webm`, `avi`, `ts`, `m2ts`, `mts`, `3gp`, and `3g2`** across filename/episode parsing, live filesystem watching, sidecar subtitle matching, 256-byte magic-byte pure-Rust container inspection (`EBML` `mkv`/`webm`, ISO BMFF `ftyp` `mp4`/`m4v`/`mov`/`3gp`/`3g2`, `RIFF` `avi`, 188-byte MPEG-TS `ts`, 192-byte BDAV `m2ts`), folder browsing, playlist batch expansion, HTTP byte-range MIME resolution, and embedded subtitle probing.
+
+### Fixed
+- **Storyboard Route Error Sizing** (`3533c28`): Boxed `axum::response::Response` errors in `storyboard_routes::load_and_authorize_item` to eliminate oversized `Result` stack frames under strict Clippy lints.
+
 ## [v0.2.0-alpha] - 2026-11-12
 
 ### Added
@@ -90,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded Server-Sent Events (SSE) bus for system telemetry and realtime updates.
 - Profile-based PIN authentication and JWT session management.
 
+[v0.2.1-alpha]: https://github.com/BooDy/kadr/compare/v0.2.0-alpha...v0.2.1-alpha
 [v0.2.0-alpha]: https://github.com/BooDy/kadr/compare/v0.1.3-alpha...v0.2.0-alpha
 [v0.1.3-alpha]: https://github.com/BooDy/kadr/compare/v0.1.2-alpha...v0.1.3-alpha
 [v0.1.2-alpha]: https://github.com/BooDy/kadr/compare/v0.1.1-alpha...v0.1.2-alpha
