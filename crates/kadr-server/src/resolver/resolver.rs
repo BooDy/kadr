@@ -111,12 +111,7 @@ impl WidgetResolver {
         unlocked_ids: &[String],
     ) -> bool {
         match self.lib_repo.get_by_id(&item.library_id).await {
-            Ok(Some(lib)) => {
-                if lib.is_private && !unlocked_ids.contains(&item.library_id) {
-                    return false;
-                }
-                true
-            }
+            Ok(Some(lib)) => !lib.is_private || unlocked_ids.contains(&item.library_id),
             Ok(None) => true,
             Err(err) => {
                 tracing::error!(
