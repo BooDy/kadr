@@ -10,7 +10,7 @@ Welcome to the **Kadr Client Developer Guide**. This document is the definitive 
 2. [Network Autodiscovery (`GET /api/v1/discovery`)](#2-network-autodiscovery-get-apiv1discovery)
 3. [Authentication, User Profiles & Private Libraries](#3-authentication-user-profiles--private-libraries)
 4. [Declarative Screen Layout Engine (AST)](#4-declarative-screen-layout-engine-ast)
-5. [Media Details & Direct Folder Navigation](#5-media-details--direct-folder-navigation)
+5. [Media Details, Global Search & Metadata Management](#5-media-details-global-search--metadata-management)
 6. [Video Streaming, HLS Transcoding Fallback, Plugin Playback & Scrobbling](#6-video-streaming-hls-transcoding-fallback-plugin-playback--scrobbling)
 7. [Subtitles, Storyboard Trickplay & Media Assets](#7-subtitles-storyboard-trickplay--media-assets)
 8. [Libraries, Hierarchical Folder Browsing & Real-Time Events (SSE)](#8-libraries-hierarchical-folder-browsing--real-time-events-sse)
@@ -94,7 +94,7 @@ Before displaying an IP entry screen, clients should perform local network disco
   "app": "kadr",
   "server_id": "8f3e2b1a-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
   "name": "Living Room Server",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "protocol_version": 1,
   "port": 8492,
   "setup_completed": true,
@@ -109,7 +109,7 @@ Before displaying an IP entry screen, clients should perform local network disco
 | `app` | String | Constant identifier: always `"kadr"`. |
 | `server_id` | String | Persistent server UUID; remains stable across server reboots. |
 | `name` | String | Human-readable server friendly name configured by the administrator. |
-| `version` | String | Server Cargo package semver string (e.g. `"0.2.1"`). |
+| `version` | String | Server Cargo package semver string (e.g. `"0.3.0"`). |
 | `protocol_version` | Integer | Protocol integer version (`1`). Incremented for breaking protocol changes. |
 | `port` | Integer | Port number bound by the HTTP server (e.g. `8492`). |
 | `setup_completed` | Boolean | `false` if no administrator account exists yet; `true` once configured. |
@@ -525,14 +525,14 @@ When a user scrolls to the end of a carousel or catalog grid (including `playlis
 
 ---
 
-## 5. Media Details & Direct Folder Navigation
+## 5. Media Details, Global Search & Metadata Management
 
 When a user clicks on any card, the client should query the unified item details endpoint.
 
 ### Endpoint Specification
 
 - **Method & Route**: `GET /api/v1/items/{item_id}` (alias: `GET /api/v1/items/{item_id}/details`)
-- **Headers**: `Authorization: Bearer <token>`, optional `X-Library-Unlock-Token: <token>`
+- **Headers**: `Authorization: Bearer <token>`, optional `X-Library-Unlock-Token: <token>` or `X-Kadr-Unlocked: <token1>,<token2>`
 - **Response**: `200 OK`
 
 ### 5.1 Movie Item Details Response Example
@@ -551,8 +551,18 @@ When a user clicks on any card, the client should query the unified item details
     "release_year": 2024,
     "badge": "RESUME"
   },
+  "original_title": "Dune: Part Two",
   "overview": "Paul Atreides unites with Chani and the Fremen while seeking revenge against the conspirators who destroyed his family.",
   "genres": ["Action", "Adventure", "Sci-Fi"],
+  "director": "Denis Villeneuve",
+  "writers": ["Denis Villeneuve", "Jon Spaihts"],
+  "actors": ["Timothée Chalamet", "Zendaya", "Rebecca Ferguson"],
+  "tags": ["IMAX", "Desert"],
+  "studio": "Legendary Pictures",
+  "country": "US",
+  "language": "en",
+  "tmdb_id": 693134,
+  "locked_fields": ["title", "director"],
   "duration_seconds": 9960,
   "technical": {
     "duration_seconds": 9960,
@@ -643,6 +653,143 @@ sequenceDiagram
 ```
 
 This feature allows seamless deep-linking: a user browsing the Home screen or Search results can immediately jump into the physical folder on disk to view related extras, soundtrack albums, or bonus featurettes.
+
+---
+
+### 5.4 Global SQLite FTS5 Search (`GET /api/v1/search`)
+
+Kadr indexes every catalog item in an embedded SQLite FTS5 virtual table (`media_items_fts`, `unicode61 remove_diacritics 2`) kept automatically synchronized via `AFTER INSERT`, `AFTER UPDATE`, and `AFTER DELETE` triggers across titles, original titles, series/episode tags (`S01E02`), overviews, cast/directors/writers, genres/tags/studios/countries, filenames, and release years.
+
+- **Method & Route**: `GET /api/v1/search`
+- **Authentication**: `Authorization: Bearer <jwt_token>` (`401 Unauthorized` when missing), plus optional `X-Kadr-Unlocked: <token1>,<token2>` / `X-Library-Unlock-Token: <token>` (items inside locked private libraries are strictly excluded).
+- **Query Parameters**:
+  | Parameter | Type | Default | Description |
+  | :--- | :--- | :--- | :--- |
+  | `q` | `string` | `""` | User search text. Empty/whitespace or punctuation-only input returns `200 OK` with `{"query": "", "total": 0, "items": []}`. Arbitrary FTS5 operators/punctuation (`"`, `*`, `^`, `:`, `()`, `-`, `+`) and Unicode/Arabic diacritics are safely sanitized into prefix-matched tokens (`"tok1"* AND "tok2"*`). |
+  | `item_type` | `string` | *(all)* | Optional media type filter (`all`, `movie`, `show`, `season`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`, `unknown`). Invalid values return `400 Bad Request`. |
+  | `library_id` | `string` | *(all)* | Optional library UUID filter. |
+  | `limit` | `usize` | `30` | Maximum items returned, clamped to `1..=100`. |
+
+#### Response (`200 OK` — `SearchResponse`)
+
+Results are ordered by weighted BM25 relevance (`title` 10.0, `original_title` 8.0, `series_title` 7.0, `people` 5.0, `genres_tags` 4.0, `release_year` 3.0, `overview` 2.0, `file_name` 1.5) and hydrated with the caller's `playback_progress` and `badge`:
+
+```json
+{
+  "query": "Villeneuve",
+  "total": 1,
+  "items": [
+    {
+      "id": 101,
+      "library_id": "lib-movies-001",
+      "library_name": "Movies",
+      "item_type": "movie",
+      "title": "Dune: Part Two",
+      "original_title": "Dune: Part Two",
+      "release_year": 2024,
+      "overview": "Paul Atreides unites with Chani and the Fremen.",
+      "poster_url": "/api/v1/artwork/101/poster",
+      "backdrop_url": "/api/v1/artwork/101/backdrop",
+      "badge": "RESUME",
+      "rating": 8.6,
+      "duration_seconds": 9960,
+      "playback_progress": 0.42,
+      "series_title": null,
+      "season": null,
+      "episode": null,
+      "genres": ["Action", "Adventure", "Sci-Fi"],
+      "director": "Denis Villeneuve"
+    }
+  ]
+}
+```
+
+---
+
+### 5.5 Inline Metadata & Artwork Overrides (`PATCH /api/v1/items/{id}/metadata`)
+
+Administrators can edit an item's metadata and custom artwork directly. Every edited field name is recorded in `media_items.locked_fields` so subsequent filesystem `upsert_batch` rescans never overwrite admin customizations unless `reset_locks: true` is passed.
+
+- **Method & Route**: `PATCH /api/v1/items/{id}/metadata`
+- **Permissions**: `Admin` role (`403 Forbidden` for standard users; `403 {"error": "LIBRARY_LOCKED"}` if the item belongs to a locked private library without a valid unlock token).
+- **Request Body (`PatchItemMetadataBody`)**:
+  All fields are optional; scalar nullable fields distinguish *omitted* (leave unchanged) from `null` (clear value):
+  ```json
+  {
+    "title": "Dune: Part Two (IMAX Edition)",
+    "original_title": "Dune: Part Two",
+    "release_year": 2024,
+    "overview": "Updated synopsis...",
+    "director": "Denis Villeneuve",
+    "writers": ["Denis Villeneuve", "Jon Spaihts"],
+    "actors": ["Timothée Chalamet", "Zendaya"],
+    "genres": ["Sci-Fi", "Adventure"],
+    "tags": ["IMAX"],
+    "studio": "Legendary Pictures",
+    "country": "US",
+    "language": "en",
+    "rating": 8.8,
+    "poster_url": "https://image.example.com/dune2_poster.jpg",
+    "backdrop_url": "https://image.example.com/dune2_backdrop.png",
+    "series_title": null,
+    "season": null,
+    "episode": null,
+    "reset_locks": false
+  }
+  ```
+- **Local Artwork Caching & SSRF Guard**: When `poster_url` or `backdrop_url` is supplied as a non-empty URL, Kadr validates the host against its SSRF private-IP guard (unless `plugins.allow_private_proxy == true`), enforces a `15 MiB` download cap, verifies JPEG/PNG/WebP magic bytes, writes the image under `<data_dir>/artwork/{id}/`, and serves it offline from `/api/v1/artwork/{id}/poster` or `/backdrop`.
+- **Side Effects & Response (`200 OK`)**: Updates SQLite + FTS5 search index immediately, emits SSE `library:updated`, and returns the refreshed `ItemDetailsPayload` (including updated `locked_fields`).
+
+---
+
+### 5.6 Opt-In TMDb Scraper & Admin Metadata Settings
+
+TMDb scraping is **disabled by default** (`enabled: false`, zero external network calls until opted in by an administrator). Both TMDb v3 API keys (32-char query key) and TMDb v4 Read Access Tokens (`eyJ...` / `Bearer ...` JWTs) are supported automatically.
+
+#### 1. Read / Update Metadata Settings — `GET` & `PUT /api/v1/admin/settings/metadata`
+- **Permissions**: `Admin` role.
+- **`GET` Response (`200 OK` — raw `api_key` is never returned in plaintext)**:
+  ```json
+  {
+    "enabled": true,
+    "auto_fetch_on_scan": false,
+    "language": "en-US",
+    "api_key_configured": true,
+    "api_key_hint": "••••9f2a"
+  }
+  ```
+- **`PUT` Request Body**: Partial `{ "enabled"?: bool, "auto_fetch_on_scan"?: bool, "language"?: string, "api_key"?: string }` (passing `"api_key": ""` clears the stored credential). Returns updated `MetadataSettingsResponse`.
+
+#### 2. Interactive TMDb Search ("Identify") — `GET /api/v1/items/{id}/tmdb/search`
+- **Permissions**: `Admin` role (+ unlock token for private libraries).
+- **Query Parameters**: `q` (defaults to `item.title`), `year` (optional `i32`), `media_type` (`"movie"` or `"tv"`, defaults from `item.item_type`).
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "results": [
+      {
+        "tmdb_id": 693134,
+        "media_type": "movie",
+        "title": "Dune: Part Two",
+        "original_title": "Dune: Part Two",
+        "release_year": 2024,
+        "overview": "Follow the mythic journey of Paul Atreides...",
+        "rating": 8.3,
+        "poster_url": "https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg"
+      }
+    ]
+  }
+  ```
+
+#### 3. Apply TMDb Match to Item — `POST /api/v1/items/{id}/tmdb/apply`
+- **Permissions**: `Admin` role (+ unlock token for private libraries).
+- **Request Body**: `{"tmdb_id": 693134, "media_type": "movie", "download_artwork": true}` (`download_artwork` defaults to `true`).
+- **Behavior & Response (`200 OK`)**: Fetches full localized credits/genres/studios from TMDb, caches poster & backdrop locally under `<data_dir>/artwork/`, locks applied fields so rescans preserve them, emits `library:updated`, and returns the updated `ItemDetailsPayload`.
+
+#### 4. Batch Library Enrichment — `POST /api/v1/admin/libraries/{id}/tmdb/enrich`
+- **Permissions**: `Admin` role (+ unlock token if library is private).
+- **Response (`200 OK`)**: `{"scanned": 42, "matched": 38, "skipped": 4, "errors": 0}`. Skips items that already carry a `tmdb_id` or user-locked title/metadata.
 
 ### 5.4 Plugin Items & Live Channels (`media_type: "live_channel"`)
 
@@ -1375,6 +1522,7 @@ Clients can query all registered libraries on the server (both local disk librar
 #### Identifying Virtual Plugin Libraries & Client Behavior:
 - **Exact Wire Fields**: Every `Library` object serializes `id`, `name`, `path`, `paths`, `media_type`, `is_private`, and `created_at` (`pin_hash` is never serialized, and SQLite's internal `plugin_id` ownership column is **not** exposed as a JSON field on `Library`).
 - **Detecting Virtual Plugin Libraries**: Plugins register virtual libraries with synthetic `plugin://<plugin_id>/library/<library_id>` URIs in `path` and `paths` (see [`docs/PLUGIN_GUIDE.md`](./PLUGIN_GUIDE.md)). Clients can detect a virtual library via `library.path.startsWith("plugin://")`.
+- **Managed Git Plugins vs. External Plugins (Admin API)**: Administrators can install managed plugins directly from GitHub, GitLab, or Gitea/Forgejo releases via `POST /api/v1/admin/plugins/install` (`{"repo_url": "https://...", "tag"?: "...", "forge"?: "github|gitlab|gitea"}` -> `201 {"plugin": PluginRecord}` with `install_kind: "managed"`, staged in `"pending"` without executing unapproved binaries until `POST /api/v1/admin/plugins/{id}/approve`) and update them in place via `POST /api/v1/admin/plugins/{id}/update` (`{"tag"?: "..."}` -> `200 {"updated", "previous_version", "requires_approval", "plugin"}`), alongside external URL registration (`POST /api/v1/admin/plugins`). See [`docs/PLUGIN_GUIDE.md`](./PLUGIN_GUIDE.md) for full archive layout and supervision contracts.
 - **Catalog vs. Folder Browsing**:
   - Virtual plugin libraries work identically to local libraries across screen AST layouts (`GET /api/v1/screens/{screen_id}`), widget pagination (`GET /api/v1/widgets/{widget_id}/data`), item details (`GET /api/v1/items/{item_id}`), and Playlists (`/api/v1/playlists`).
   - Filesystem-only endpoints (`GET /api/v1/libraries/{id}/folders`, `/thumbnail`, and `/image`) require a real directory on disk and return **`404 Not Found`** (`{"error": "Library path not found on disk"}`) for `plugin://` virtual libraries. Clients should hide the **"Folder View"** tab whenever `library.path.startsWith("plugin://")`.
@@ -2337,6 +2485,8 @@ try {
 | `400 Bad Request` | `{"error": "No playable media items to add"}` (or `"Non-playable media item type"`, `"No playable episodes found"`, `"No playable media items in folder"`) | Empty batch add request, attempting to add a non-playable `Season` item directly, or adding an empty show/season/folder. | Disable add actions on empty containers or display inline feedback. |
 | `400 Bad Request` | `{"error": "Invalid folder path"}` | Playlist folder batch add path contains `..`, null byte, absolute path, or escapes configured library root. | Pass library-relative folder paths returned by `/api/v1/libraries/{id}/folders`. |
 | `400 Bad Request` | `{"error": "item_ids must be an exact permutation of visible playlist items"}` | `PUT /api/v1/playlists/{id}/items/order` omits visible items, contains duplicates, or includes unknown/locked IDs. | Refresh `GET /api/v1/playlists/{id}` and submit an exact permutation of visible `card.id`s. |
+| `400 Bad Request` | `{"error": "Invalid item_type '...'"}` | `GET /api/v1/search` called with an unrecognized `item_type` filter. | Pass `all` or a valid `MediaType` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`). |
+| `400 Bad Request` | `{"error": "TMDB_NOT_CONFIGURED", "message": "..."}` / `"INVALID_TITLE"` / `"INVALID_RATING"` / `"BLOCKED_URL"` / `"UNSUPPORTED_IMAGE"` / `"ARTWORK_TOO_LARGE"` | TMDb disabled or missing API key on `/tmdb/*`, empty title or out-of-range rating (`0.0..=10.0`) on `PATCH /api/v1/items/{id}/metadata`, or rejected custom artwork URL. | Prompt admin to configure TMDb under `Administration > Metadata & TMDb` or validate form inputs. |
 | `401 Unauthorized` | `{"error": "Missing authorization token"}` / `{"error": "Invalid or expired token"}` / Invalid PIN | Missing, invalid, or expired JWT (`Authorization: Bearer` / `?token=`), or incorrect profile PIN. | Prompt user for profile PIN or re-login. |
 | `403 Forbidden` | `{"error": "Forbidden"}` | Non-owner, non-admin caller attempting to update, add/remove/reorder items, or delete another user's public playlist. | Hide edit/reorder/delete controls whenever `summary.is_editable == false`. |
 | `403 Forbidden` | `{"error": "LIBRARY_LOCKED"}` | Request accesses `/stream/{id}`, `/hls/*`, `/storyboard*`, `/frame`, `/items/{id}`, `/libraries/{id}/folders`, or adds/removes a locked private-library item in a playlist without a valid unlock token. | Present 4-digit Library PIN dialog, call `POST /api/v1/libraries/{id}/unlock`, attach `X-Kadr-Unlocked` / `X-Library-Unlock-Token` (or `?unlocked=`), and retry. |
@@ -2356,5 +2506,5 @@ try {
 
 ---
 
-*Document Version: 1.3.1 (Kadr 0.2.1-alpha with Embedded Subtitles, Expanded Video Containers, Storyboard Trickplay, Plugin Playback, Playlists & Universal HLS Fallback)*  
+*Document Version: 1.4.0 (Kadr 0.3.0-alpha with Managed Git Plugins, Global FTS5 Search, Inline Metadata & TMDb Scraper, Embedded Subtitles, Storyboard Trickplay, Playlists & Universal HLS Fallback)*  
 *Maintained by the Kadr Core Engineering Team.*

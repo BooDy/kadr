@@ -8,7 +8,7 @@
 
   [![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
   [![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
-  [![Version](https://img.shields.io/badge/version-v0.2.1--alpha-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-v0.3.0--alpha-blue.svg)](CHANGELOG.md)
   [![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
   [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
   [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -34,9 +34,11 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Zero-Copy HTTP 206 Direct Play & Broad Container Support**: Axum-based streaming pipeline with 64 KiB chunk buffering supporting single and multipart byte-range requests without whole-file memory allocation, with unified support across **`MKV`, `MP4`, `M4V`, `MOV`, `WebM`, `AVI`, `TS`, `M2TS`, `MTS`, `3GP`, and `3G2`** containers (backed by 256-byte magic-byte pure-Rust header inspection, live filesystem watching, folder browsing, playlists, and accurate `Content-Type` MIME delivery).
 - **Universal On-Demand HLS Transcoding & Smart Stream Copy**: Automatic HTTP Live Streaming (HLS) fallback for Smart TVs (such as Samsung Tizen OS) and web players encountering unsupported audio/video codecs (`DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`) or containers (`MKV`, `AVI`, `TS`/`M2TS`/`MTS`, `3GP`/`3G2`). Features zero-CPU remuxing (`-c:v copy -c:a copy`), smart audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with a 15s background reaper sweeping idle sessions (`inactivity_timeout_secs`, default `60`s).
 - **Storyboard Seek Preview Thumbnails (Trickplay)**: Lazy on-demand and optional scan-time 10×10 JPEG sprite sheet generation (`ffmpeg` paired with a pure-Rust JPEG SOF dimension parser), serving manifest and cached sprite sheets (`/api/v1/media/:item_id/storyboard`, `/api/v1/media/:item_id/storyboard/:index.jpg`) with `202 Accepted` async generation status and `ETag` / `304 Not Modified` caching, on-demand single-frame extraction (`/api/v1/media/:item_id/frame`), private library lock enforcement, and automatic cache cleanup on re-ingest or deletion.
-- **Out-of-Process HTTP Plugin Framework & Live Channels**: Permission-scoped external HTTP plugin processes (`items:publish`, `playback:resolve`) publishing virtual libraries and `live_channel` streams without local files, resolving playback via `direct` (`307 Temporary Redirect`), `proxy` (range-forwarding HTTP relay), or `transcode` (HLS `ffmpeg` pipeline), protected by an SSRF URL guard, per-plugin circuit breaker, 30s background health monitor, live-item scrobble bypass, and live DB-persisted runtime settings.
+- **Out-of-Process HTTP Plugin Framework, Git Installation & Process Supervision**: Install managed plugins directly from **GitHub**, **GitLab**, or **Gitea / Forgejo** release archives (`flate2` `rust_backend` + `tar` pure-Rust unpacker with SHA-256 verification and zero C dependencies) or register external HTTP plugin processes. Managed plugins wait in `pending` until admin permission approval (`items:publish`, `playback:resolve`), run under `PluginSupervisor` (`127.0.0.1:<ephemeral_port>`, `env_clear()` isolation, crash backoff, 1-click updates), publish virtual libraries and `live_channel` streams, and resolve playback via `direct` (`307`), `proxy`, or `transcode` (HLS).
+- **Global SQLite FTS5 Search & Instant Search Modal**: Sub-millisecond full-text catalog search (`GET /api/v1/search`) backed by SQLite FTS5 (`unicode61 remove_diacritics 2`), trigger-synchronized indexing across titles, series/episode `SxxExx` codes, cast, directors, writers, genres, tags, studios, overviews, filenames, and years, BM25 column weighting, safe punctuation/Unicode query sanitization, fail-closed PIN-locked private library isolation, and an instant `Ctrl+K` / `/` search modal in the Web UI.
+- **Inline Metadata & Artwork Editor + Opt-In TMDb Scraper**: Edit titles, credits, genres, tags, ratings, and cached local posters/backdrops directly from Item Details (`PATCH /api/v1/items/:id/metadata`) with per-field lock protection (`locked_fields`) that survives filesystem rescans, paired with an opt-in TMDb v3/v4 scraper (`Identify` modal, per-library `Fetch Missing Metadata`, and optional `auto_fetch_on_scan` ingest enrichment) that caches artwork locally under `<data_dir>/artwork/` for offline operation.
 - **Playlists & Queue Playback**: Manual ordered playlists with per-user ownership and server-wide multi-user sharing (`is_public`), 1-step Create & Add, batch TV Show / Season / sandboxed Folder expansion, fail-closed PIN-locked library isolation (`locked_item_count`), `playlist_items` Declarative Widget AST rails, and multi-track queue playback (auto-advance, Prev/Next, shuffle, and interactive queue popover) in Cinema Player and native clients.
-- **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (`001–009`).
+- **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (`001–012`).
 - **Network Autodiscovery & Server Identity**: Zero-conf unauthenticated `/api/v1/discovery` endpoint and persistent server identity configuration for instantaneous client detection across local networks.
 - **Declarative Widget AST Layout Engine**: Single-roundtrip screen hydration (`Home`, `Movies`, `Shows`, plus custom screens) powering hero spotlights, horizontal card carousels, and catalog grids with badge computation (`4K`, `NEW`, `RESUME` progress bars).
 - **TV Shows & Seasons Grouping**: Automated TV episode filename and directory cue parsing (`S01E02`), parent series aggregation, season tabs navigation, and 1-click episode playback.
@@ -49,7 +51,8 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Integrated Cinema Web App & Studio**:
   - **Cinema Player**: Full-screen dark video player with multi-track queue playback (auto-advance, Prev/Next track controls, interactive Queue popover, return-to-previous-view navigation), native HTML5 `<track>` WebVTT subtitles, in-player subtitle downloading, auto-resume seeking, 10s playback scrobbling heartbeats, and media keyboard shortcuts (paired with server-side `/storyboard` & `/frame` trickplay APIs for seek-preview clients).
   - **Playlists View**: Top-bar `Playlists` screen with `PlaylistDetailView` (Play All, Shuffle, drag-and-drop / button item reordering, public/private visibility toggle) and 1-step `AddToPlaylistModal` across catalog cards, TV shows/seasons, and folders.
-  - **Plugins Admin Panel**: Live administration tab (`Administration > Plugins`) to toggle plugin support and runtime settings without restarts, register plugins by URL, approve requested permissions, copy connection secrets and scoped tokens (`KADR_URL`, `KADR_PLUGIN_SECRET`, `KADR_PLUGIN_TOKEN`), and monitor plugin health.
+  - **Global Search & Metadata Tools**: Instant `Ctrl+K` / `/` Global Search modal across public and unlocked libraries, plus inline `Edit Metadata` & TMDb `Identify` modals on Item Details.
+  - **Plugins & Metadata Admin Panels**: Live administration tabs (`Administration > Plugins` and `Administration > Metadata & TMDb`) to install/update managed Git plugins or external URL plugins, approve permissions, configure opt-in TMDb credentials & scan enrichment, and monitor plugin health.
   - **Layout Studio**: Visual device simulator (TV 16:9, Tablet 4:3, Mobile 9:16) with widget tree inspection, `playlist_items` rail picker, query filter rules (ratings, genres, exclusions), and custom screen persistence.
   - **Telemetry Dashboard**: Real-time resource gauges and live streaming SSE log feed.
   - **Static File Serving**: Served directly by the Axum server with HTML5 history pushState fallback to `index.html`.
@@ -84,7 +87,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
                |                           |                          |
 +--------------v---------------------------|-----------+              |
 |        kadr-storage                      |           |              |
-| (SQLite WAL Pool, Migrations 001-009)    |           |              |
+| (SQLite WAL Pool, Migrations 001-012)    |           |              |
 +--------------+---------------------------+-----------+              |
                |                           |                          |
 +--------------v-----------+   +-----------+-----------+              |
@@ -108,11 +111,11 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 
 | Directory | Crate / Component | Description |
 |:---|:---|:---|
-| `crates/kadr-core` | `kadr-core` | Shared domain models, unified video container definitions (`video_formats`), Declarative Widget AST definitions (`playlist_items`, filter rules), plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
-| `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–009`), and repositories (`User`, `Library`, `MediaItem`, `Playback`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
+| `crates/kadr-core` | `kadr-core` | Shared domain models (`locked_fields`, metadata overrides), unified video container definitions (`video_formats`), Declarative Widget AST definitions (`playlist_items`, filter rules), search, plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
+| `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–012`, including FTS5 full-text index & triggers), and repositories (`User`, `Library`, `MediaItem`, `Search`, `Playback`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
 | `crates/kadr-ingest` | `kadr-ingest` | Filesystem watcher (`notify`), media scanner, 256-byte pure-Rust container inspector, `ffprobe` technical & embedded subtitle stream parser, sidecar subtitle detector, background `ffmpeg` thumbnail extractor, and batch ingestion worker. |
-| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, out-of-process HTTP plugin framework, ordered playlists & AST widget resolver, embedded/sidecar/OpenSubtitles WebVTT delivery, SSE event bus, and static web serving. |
-| `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React (Browse, Cinema Player, Playlists, Layout Studio, Plugins Admin, and Telemetry Dashboard). |
+| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, managed Git plugin installer & supervisor + HTTP plugin framework, global FTS5 search, inline metadata & opt-in TMDb scraper, ordered playlists & AST widget resolver, embedded/sidecar/OpenSubtitles WebVTT delivery, SSE event bus, and static web serving. |
+| `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React (Browse, Global Search, Cinema Player, Playlists, Metadata & TMDb Editor, Layout Studio, Plugins Admin, and Telemetry Dashboard). |
 | `examples/plugin-hello` | `plugin-hello` | Minimal standalone Axum HTTP plugin template publishing virtual sample videos and resolving `direct` playback descriptors. |
 | `tests/` & `crates/*/tests/` | Workspace & Crate Tests | Comprehensive unit, integration, and end-to-end test suites covering ingestion, auth, Direct Play & HLS streaming, storyboards, plugins, playlists, AST resolution, subtitles, SSE events, and web serving. |
 
@@ -120,7 +123,7 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 
 ## Quick Install for Users (Linux)
 
-Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.2.1-alpha`).
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.3.0-alpha`).
 
 ### Option 1: Automated One-Line Installer (Recommended — All Linux Distributions)
 
@@ -140,9 +143,9 @@ Download the appropriate `.deb` package from the [Kadr Releases Page](https://gi
 
 ```bash
 # Install the Debian package (creates 'kadr' user, registers systemd service, installs web app)
-sudo dpkg -i kadr_0.2.1_amd64.deb    # For 64-bit PC / Server
+sudo dpkg -i kadr_0.3.0_amd64.deb    # For 64-bit PC / Server
 # OR
-sudo dpkg -i kadr_0.2.1_arm64.deb    # For Raspberry Pi 4/5 / ARM64
+sudo dpkg -i kadr_0.3.0_arm64.deb    # For Raspberry Pi 4/5 / ARM64
 
 # Start Kadr and enable automatic start on system boot
 sudo systemctl enable --now kadr
@@ -159,8 +162,8 @@ For offline installation on generic Linux distributions:
 
 ```bash
 # 1. Download and extract the standalone bundle from Releases
-tar -xzf kadr-v0.2.1-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.2.1-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.3.0-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.3.0-alpha-x86_64-unknown-linux-musl
 
 # 2. Run the automated installer (installs binary, web assets, and systemd service)
 sudo ./install.sh
@@ -188,7 +191,7 @@ curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh 
 Download the updated package and reinstall with `dpkg`:
 
 ```bash
-sudo dpkg -i kadr_0.2.1_amd64.deb    # or kadr_0.2.1_arm64.deb
+sudo dpkg -i kadr_0.3.0_amd64.deb    # or kadr_0.3.0_arm64.deb
 sudo systemctl restart kadr
 ```
 
@@ -197,8 +200,8 @@ sudo systemctl restart kadr
 Extract the new archive and execute the bundled installer (it automatically detects the active service and upgrades in-place):
 
 ```bash
-tar -xzf kadr-v0.2.1-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.2.1-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.3.0-alpha-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.3.0-alpha-x86_64-unknown-linux-musl
 sudo ./install.sh
 ```
 
@@ -241,8 +244,8 @@ sudo ./install.sh
 For maintainers, pushing any semantic version tag triggers the automated build and release pipeline:
 
 ```bash
-git tag -a v0.2.1-alpha -m "Release v0.2.1-alpha"
-git push origin v0.2.1-alpha
+git tag -a v0.3.0-alpha -m "Release v0.3.0-alpha"
+git push origin v0.3.0-alpha
 ```
 
 The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/workflows/release.yml)) will:
@@ -371,7 +374,7 @@ The server will start at `http://localhost:8492` (or configured host/port).
 Kadr maintains a 100% passing test suite across all crates, frontend suites, and end-to-end integration tests:
 
 ```bash
-# Run all Rust workspace unit, integration, and E2E tests (75 integration test targets across 4 crates)
+# Run all Rust workspace unit, integration, and E2E tests (516 tests across 89 suites in 4 crates)
 cargo test --workspace
 
 # Run end-to-end user journey test suites specifically
@@ -383,14 +386,17 @@ cargo test --test e2e_subtitles_test
 cargo test --test e2e_events_telemetry_test
 cargo test --test e2e_web_serving_test
 cargo test --test e2e_ingest_test
+cargo test --test e2e_metadata_search_test
 
-# Run storyboard trickplay & HTTP plugin framework test suites
+# Run storyboard trickplay, search, metadata/TMDb & HTTP plugin framework test suites
 cargo test --test storyboard_routes_test --test storyboard_service_test
+cargo test --test search_fts_test --test search_routes_test --test metadata_overrides_test --test metadata_tmdb_routes_test
 cargo test --test plugin_admin_test --test plugin_settings_test --test plugin_publish_test \
   --test plugin_playback_test --test plugin_live_playback_test --test plugin_connection_test \
-  --test plugin_health_test --test plugin_client_test --test plugin_auth_test --test plugin_url_guard_test
+  --test plugin_health_test --test plugin_client_test --test plugin_auth_test --test plugin_url_guard_test \
+  --test plugin_forge_test --test plugin_installer_test --test plugin_supervisor_test --test plugin_install_test
 
-# Run frontend tests (Vitest — 20 test suites)
+# Run frontend tests (Vitest — 275 tests across 24 test suites)
 cd web
 npm test -- --run
 cd ..
@@ -454,11 +460,17 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `GET /api/v1/artwork/:item_id/poster` — Stream cached poster artwork (`image/jpeg`, `image/png`, `image/webp`, `image/avif`) with on-demand `ffmpeg` video thumbnail fallback.
 - `GET /api/v1/artwork/:item_id/backdrop` — Stream cached backdrop artwork.
 
-### Declarative Screens & Widget AST
+### Declarative Screens, Global Search & Metadata Management
 - `GET /api/v1/screens` / `POST /api/v1/screens` — List available screen layouts (`home`, `movies`, `shows`, plus custom screens) or create a custom screen (admin).
 - `GET /api/v1/screens/:screen_id` / `PUT /api/v1/screens/:screen_id` / `DELETE /api/v1/screens/:screen_id` — Retrieve hydrated/unhydrated screen AST, save layout changes (admin), or delete a custom screen (admin).
 - `GET /api/v1/widgets/:widget_id/data?offset=0&limit=20` — Fetch paginated items for a specific widget query (including `playlist_items` macro and filter rules).
-- `GET /api/v1/items/:item_id` (or `/api/v1/items/:item_id/details`) — Detailed metadata payload for modal inspection (including directory, series/season episodes, and live/plugin fields).
+- `GET /api/v1/search?q=<query>&item_type=<optional>&library_id=<optional>&limit=<1..100>` — Global SQLite FTS5 catalog search ranked by BM25 with viewer playback progress hydration and PIN-locked library isolation.
+- `GET /api/v1/items/:item_id` (or `/api/v1/items/:item_id/details`) — Detailed metadata payload for modal inspection (including credits, `locked_fields`, `tmdb_id`, directory, series/season episodes, and live/plugin fields).
+- `PATCH /api/v1/items/:item_id/metadata` — Update item metadata fields, lock edited fields against rescans (`reset_locks: true` to clear locks), and optionally download/cache custom `poster_url` / `backdrop_url` artwork (admin).
+- `GET /api/v1/items/:item_id/tmdb/search?q=&year=&media_type=` — Search TMDb (`movie` or `tv`) for candidate matches on an item (admin).
+- `POST /api/v1/items/:item_id/tmdb/apply` — Apply a TMDb entry (`{"tmdb_id": 603, "media_type": "movie", "download_artwork": true}`) and cache poster/backdrop locally under `<data_dir>/artwork/` (admin).
+- `GET /api/v1/admin/settings/metadata` / `PUT /api/v1/admin/settings/metadata` — Retrieve (with masked `api_key_hint`) or update opt-in TMDb settings (`enabled`, `auto_fetch_on_scan`, `language`, `api_key`) (admin).
+- `POST /api/v1/admin/libraries/:id/tmdb/enrich` — Batch-enrich unmatched items in a library via TMDb, returning `{ scanned, matched, skipped, errors }` (admin).
 
 ### Playback & Scrobbling
 - `POST /api/v1/playback/sessions` — Start a new playback tracking session (`{"media_item_id": 42}`; live items track active session telemetry without persisting watch progress).
@@ -477,11 +489,13 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `DELETE /api/v1/playlists/:id/items/:media_item_id` — Remove an item from a playlist and re-compact positions (`0..N-1`).
 - `PUT /api/v1/playlists/:id/items/order` — Reorder visible playlist items (`{"item_ids": [...]}`) while preserving any PIN-locked private library items.
 
-### HTTP Plugin Framework (Admin & Plugin Publishing)
+### HTTP Plugin Framework (Admin, Git Install & Plugin Publishing)
 - `GET /api/v1/admin/plugins/settings` / `PUT /api/v1/admin/plugins/settings` — Retrieve or live-update DB-persisted plugin framework settings (`enabled`, `resolve_timeout_secs`, `allow_private_proxy`) (admin).
-- `GET /api/v1/admin/plugins` — List registered plugins with status, permissions, capabilities, and health (admin).
+- `GET /api/v1/admin/plugins` — List registered external and managed Git plugins with status, `install_kind`, `repo_url`, `installed_tag`, permissions, capabilities, and health (admin).
+- `POST /api/v1/admin/plugins/install` — Install a managed plugin from a GitHub, GitLab, or Gitea/Forgejo release (`{"repo_url": "https://...", "tag"?: "...", "forge"?: "github|gitlab|gitea"}`), unpacking safely in `pending` state without executing the binary prior to approval (admin).
+- `POST /api/v1/admin/plugins/:id/update` — Update an installed managed plugin to the latest (or specified `{"tag": "..."}`) release, re-entering `pending` if requested permissions expand (admin).
 - `POST /api/v1/admin/plugins` — Register an external HTTP plugin by `{"base_url": "http://host:port"}`, fetching its `/manifest.json` and returning `{ plugin, secret }` in `pending` state (admin).
-- `POST /api/v1/admin/plugins/:id/approve` — Approve a pending plugin's requested permissions (or subset `{"permissions": [...]}`), enable it, and return `{ plugin, token }` (admin).
+- `POST /api/v1/admin/plugins/:id/approve` — Approve a pending plugin's requested permissions (or subset `{"permissions": [...]}`), enable it (spawning supervised child process for managed plugins), and return `{ plugin, token }` (admin).
 - `GET /api/v1/admin/plugins/:id/connection` — Retrieve `{ base_url, secret }` for configuring the plugin process (admin).
 - `POST /api/v1/admin/plugins/:id/token` — Issue a fresh scoped plugin-to-server Bearer token `{ token }` for an approved plugin (admin).
 - `POST /api/v1/admin/plugins/:id/enable` / `POST /api/v1/admin/plugins/:id/disable` — Toggle an approved plugin without removing its catalog (admin).

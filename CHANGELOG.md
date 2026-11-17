@@ -5,6 +5,13 @@ All notable changes to the Kadr media server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0-alpha] - 2026-11-17
+
+### Added
+- **Git-Based Plugin Installation & Process Supervision**: Added SQLite migration `010_managed_plugins.sql` (`install_kind`, `repo_url`, `forge_kind`, `installed_tag`), GitHub, GitLab v4, and Gitea/Forgejo v1 release asset discovery (`* -<os>-<arch>.tar.gz` with optional `checksums.txt`/`SHA256SUMS` verification and redirect-hop SSRF validation), a pure-Rust safe bundle unpacker (`flate2` `rust_backend` + `tar` with zero C dependencies, rejecting path traversal/symlinks/hardlinks/FIFOs/device nodes, enforcing `100 MiB` compressed / `250 MiB` uncompressed caps, preserving static `web/dist` assets, and staging binaries in `pending` without executing unapproved code), `PluginSupervisor` child-process lifecycle management (`127.0.0.1:<ephemeral_port>`, `Command::env_clear()` environment isolation, `/health` polling, exponential crash backoff, startup auto-launch, and graceful `SIGTERM` $\to$ `SIGKILL` shutdown), `POST /api/v1/admin/plugins/install` and `POST /api/v1/admin/plugins/{id}/update` (re-entering `pending` if permissions expand), and Admin Web UI controls (`Install from Git` vs `External URL`, `Managed` badge, release tag display, and 1-click updates).
+- **Global SQLite FTS5 Search & Instant Search Modal**: Added SQLite migration `011_search_fts.sql` (`media_items_fts` virtual table with `unicode61 remove_diacritics 2` tokenization and `AFTER INSERT`/`UPDATE`/`DELETE` synchronization triggers indexing titles, series/episode `SxxExx` tags, overviews, cast/directors/writers, genres/tags/studio/country, filenames, and release years), `SearchRepository` with BM25 column-weighted ranking, an FTS5 query sanitizer supporting arbitrary punctuation, operators, and non-Latin/Arabic scripts without syntax errors, fail-closed private PIN-locked library isolation (`UnlockedLibraries`), `GET /api/v1/search?q=&item_type=&library_id=&limit=`, and a keyboard-driven `GlobalSearchModal` (`Ctrl+K`, `Cmd+K`, and `/` outside editable inputs) in the Web UI.
+- **Inline Metadata & Artwork Editor + Opt-In TMDb Scraper**: Added SQLite migration `012_metadata_overrides.sql` (`media_items.locked_fields`) protecting manual and TMDb-applied metadata overrides across filesystem `upsert_batch` rescans (`reset_locks: true` to restore scanner defaults), `PATCH /api/v1/items/{id}/metadata` with SSRF-guarded local poster/backdrop caching (`<data_dir>/artwork/`, `15 MiB` cap, JPEG/PNG/WebP magic-byte verification), opt-in `TmdbClient` supporting both TMDb v3 API keys and v4 Bearer Read Access Tokens (`GET`/`PUT /api/v1/admin/settings/metadata` with masked `api_key_hint`, `GET /api/v1/items/{id}/tmdb/search`, `POST /api/v1/items/{id}/tmdb/apply`, `POST /api/v1/admin/libraries/{id}/tmdb/enrich`, and optional `auto_fetch_on_scan` ingest enrichment), plus `MetadataEditorModal`, `IdentifyTmdbModal`, and the `Metadata & TMDb` Admin Dashboard tab.
+
 ## [v0.2.1-alpha] - 2026-11-16
 
 ### Added
@@ -100,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded Server-Sent Events (SSE) bus for system telemetry and realtime updates.
 - Profile-based PIN authentication and JWT session management.
 
+[v0.3.0-alpha]: https://github.com/BooDy/kadr/compare/v0.2.1-alpha...v0.3.0-alpha
 [v0.2.1-alpha]: https://github.com/BooDy/kadr/compare/v0.2.0-alpha...v0.2.1-alpha
 [v0.2.0-alpha]: https://github.com/BooDy/kadr/compare/v0.1.3-alpha...v0.2.0-alpha
 [v0.1.3-alpha]: https://github.com/BooDy/kadr/compare/v0.1.2-alpha...v0.1.3-alpha
