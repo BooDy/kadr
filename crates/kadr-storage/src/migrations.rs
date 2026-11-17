@@ -13,6 +13,7 @@ pub fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/007_plugins.sql")),
         M::up(include_str!("migrations/008_settings.sql")),
         M::up(include_str!("migrations/009_playlists.sql")),
+        M::up(include_str!("migrations/010_managed_plugins.sql")),
     ])
 }
 

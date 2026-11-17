@@ -55,6 +55,25 @@ describe('PluginsPanel', () => {
     }));
     vi.spyOn(api, 'listPlugins').mockResolvedValue([]);
     vi.spyOn(api, 'registerPlugin').mockResolvedValue({ plugin: pendingPlugin, secret: 's' });
+    vi.spyOn(api, 'installPlugin').mockResolvedValue({
+      plugin: {
+        ...pendingPlugin,
+        install_kind: 'managed',
+        repo_url: 'https://github.com/acme/hello',
+        installed_tag: 'v0.1.0',
+      },
+    });
+    vi.spyOn(api, 'updatePlugin').mockResolvedValue({
+      updated: false,
+      previous_version: '0.1.0',
+      requires_approval: false,
+      plugin: {
+        ...enabledPlugin,
+        install_kind: 'managed',
+        repo_url: 'https://github.com/acme/hello',
+        installed_tag: 'v0.1.0',
+      },
+    });
     vi.spyOn(api, 'approvePlugin').mockResolvedValue({ plugin: enabledPlugin, token: 't' });
     vi.spyOn(api, 'setPluginEnabled').mockResolvedValue(enabledPlugin);
     vi.spyOn(api, 'removePlugin').mockResolvedValue();
@@ -77,7 +96,7 @@ describe('PluginsPanel', () => {
     await waitFor(() => expect(enableSwitch()).toHaveAttribute('aria-checked', 'false'));
     expect(screen.getByText(/Plugins are disabled/i)).toBeInTheDocument();
     expect(api.listPlugins).not.toHaveBeenCalled();
-    expect(screen.getByLabelText(/Plugin base URL/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Repository URL/i)).toBeDisabled();
   });
 
   it('enables plugins from the switch and loads the list', async () => {
@@ -139,8 +158,9 @@ describe('PluginsPanel', () => {
     vi.mocked(api.getPluginSettings).mockResolvedValue(enabledSettings);
     vi.mocked(api.listPlugins).mockResolvedValueOnce([]).mockResolvedValue([pendingPlugin]);
     render(<PluginsPanel />);
-    await waitFor(() => expect(screen.getByLabelText(/Plugin base URL/i)).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText(/Repository URL/i)).toBeEnabled());
 
+    fireEvent.click(screen.getByRole('tab', { name: /External URL/i }));
     fireEvent.change(screen.getByLabelText(/Plugin base URL/i), {
       target: { value: 'http://127.0.0.1:9100' },
     });
@@ -159,7 +179,8 @@ describe('PluginsPanel', () => {
       })
     );
     render(<PluginsPanel />);
-    await waitFor(() => expect(screen.getByLabelText(/Plugin base URL/i)).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText(/Repository URL/i)).toBeEnabled());
+    fireEvent.click(screen.getByRole('tab', { name: /External URL/i }));
     fireEvent.change(screen.getByLabelText(/Plugin base URL/i), { target: { value: 'http://bad' } });
     fireEvent.click(screen.getByRole('button', { name: /Register plugin/i }));
     await waitFor(() =>
@@ -345,6 +366,7 @@ describe('PluginsPanel', () => {
     vi.mocked(api.registerPlugin).mockResolvedValueOnce({ plugin: newPlugin, secret: 's' });
     vi.mocked(api.listPlugins).mockResolvedValueOnce([newPlugin]);
 
+    fireEvent.click(screen.getByRole('tab', { name: /External URL/i }));
     fireEvent.change(screen.getByLabelText(/Plugin base URL/i), {
       target: { value: 'http://127.0.0.1:9200' },
     });
@@ -437,5 +459,88 @@ describe('PluginsPanel', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByRole('status')).toHaveTextContent(/Removed "Hello Plugin"/i);
+  });
+
+  it('installs a plugin from Git and opens the approval dialog immediately', async () => {
+    const managedPending: PluginRecord = {
+      ...pendingPlugin,
+      install_kind: 'managed',
+      repo_url: 'https://github.com/acme/hello',
+      installed_tag: 'v0.1.0',
+    };
+    vi.mocked(api.getPluginSettings).mockResolvedValue(enabledSettings);
+    vi.mocked(api.listPlugins).mockResolvedValueOnce([]).mockResolvedValue([managedPending]);
+    vi.mocked(api.installPlugin).mockResolvedValue({ plugin: managedPending });
+
+    render(<PluginsPanel />);
+    await waitFor(() => expect(screen.getByLabelText(/Repository URL/i)).toBeEnabled());
+
+    fireEvent.change(screen.getByLabelText(/Repository URL/i), {
+      target: { value: 'https://github.com/acme/hello' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Install plugin/i }));
+
+    await waitFor(() =>
+      expect(api.installPlugin).toHaveBeenCalledWith({
+        repo_url: 'https://github.com/acme/hello',
+        tag: undefined,
+      })
+    );
+    expect(await screen.findByRole('dialog', { name: /Approve Hello Plugin/i })).toBeInTheDocument();
+  });
+
+  it('updates a managed plugin across noop, seamless upgrade, and permission re-approval', async () => {
+    const managedEnabled: PluginRecord = {
+      ...enabledPlugin,
+      install_kind: 'managed',
+      repo_url: 'https://github.com/acme/hello',
+      installed_tag: 'v0.1.0',
+    };
+    vi.mocked(api.getPluginSettings).mockResolvedValue(enabledSettings);
+    vi.mocked(api.listPlugins).mockResolvedValue([managedEnabled]);
+    render(<PluginsPanel />);
+    await waitFor(() => expect(screen.getByTestId('plugin-row-hello')).toBeInTheDocument());
+
+    // 1. Already up to date
+    fireEvent.click(screen.getByRole('button', { name: /^Update$/i }));
+    await waitFor(() => expect(api.updatePlugin).toHaveBeenCalledWith('hello'));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/already up to date \(v0\.1\.0\)/i)
+    );
+
+    // 2. Seamless update
+    const v2: PluginRecord = {
+      ...managedEnabled,
+      installed_tag: 'v0.2.0',
+      manifest: { ...managedEnabled.manifest, version: '0.2.0' },
+    };
+    vi.mocked(api.updatePlugin).mockResolvedValueOnce({
+      updated: true,
+      previous_version: '0.1.0',
+      requires_approval: false,
+      plugin: v2,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Update$/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /Updated "Hello Plugin" from v0\.1\.0 to v0\.2\.0/i
+      )
+    );
+
+    // 3. Update requiring new permission approval
+    const v3Pending: PluginRecord = {
+      ...v2,
+      status: 'pending',
+      installed_tag: 'v0.3.0',
+      manifest: { ...v2.manifest, version: '0.3.0' },
+    };
+    vi.mocked(api.updatePlugin).mockResolvedValueOnce({
+      updated: true,
+      previous_version: '0.2.0',
+      requires_approval: true,
+      plugin: v3Pending,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Update$/i }));
+    expect(await screen.findByRole('dialog', { name: /Approve Hello Plugin/i })).toBeInTheDocument();
   });
 });

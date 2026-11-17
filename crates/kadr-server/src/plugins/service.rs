@@ -2,20 +2,28 @@ use crate::config::{AppConfig, PluginSettings};
 use crate::events::EventBus;
 use crate::plugins::auth::{derive_plugin_secret, PluginAuth, PluginTokenService};
 use crate::plugins::client::{PluginClient, PluginError};
+use crate::plugins::forge::{ForgeClient, ForgeError};
+use crate::plugins::installer::{plugin_paths, remove_plugin_files, unpack_bundle};
 use crate::plugins::settings::PluginSettingsUpdate;
+use crate::plugins::supervisor::{
+    kadr_local_url, OnPortChanged, PluginSupervisor, SpawnSpec, StartOutcome,
+};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
+use kadr_core::events::SystemEvent;
 use kadr_core::plugin::{
-    ClientCapabilities, PlaybackDescriptor, PluginPermission, PluginRecord, PluginStatus,
+    ClientCapabilities, ForgeKind, PlaybackDescriptor, PluginInstallKind, PluginPermission,
+    PluginRecord, PluginStatus,
 };
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PluginRepository, SettingsRepository,
 };
 use kadr_storage::{StorageError, StoragePool};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
@@ -32,12 +40,29 @@ pub enum ServiceError {
     Invalid(String),
     #[error("{0}")]
     Forbidden(String),
+    #[error("{0}")]
+    ChecksumMismatch(String),
+    #[error("{0}")]
+    ForgeError(String),
+    #[error("Forge request timed out")]
+    ForgeTimeout,
     #[error(transparent)]
     Plugin(#[from] PluginError),
     #[error("Storage error: {0}")]
     Storage(#[from] StorageError),
     #[error("{0}")]
     Internal(String),
+}
+
+impl From<ForgeError> for ServiceError {
+    fn from(e: ForgeError) -> Self {
+        match e {
+            ForgeError::InvalidRequest(m) => Self::Invalid(m),
+            ForgeError::ChecksumMismatch(m) => Self::ChecksumMismatch(m),
+            ForgeError::ForgeError(m) => Self::ForgeError(m),
+            ForgeError::Timeout => Self::ForgeTimeout,
+        }
+    }
 }
 
 impl IntoResponse for ServiceError {
@@ -48,6 +73,9 @@ impl IntoResponse for ServiceError {
             Self::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT".to_string()),
             Self::Invalid(_) => (StatusCode::BAD_REQUEST, "INVALID_REQUEST".to_string()),
             Self::Forbidden(_) => (StatusCode::FORBIDDEN, "FORBIDDEN".to_string()),
+            Self::ChecksumMismatch(_) => (StatusCode::BAD_GATEWAY, "CHECKSUM_MISMATCH".to_string()),
+            Self::ForgeError(_) => (StatusCode::BAD_GATEWAY, "FORGE_ERROR".to_string()),
+            Self::ForgeTimeout => (StatusCode::GATEWAY_TIMEOUT, "FORGE_TIMEOUT".to_string()),
             Self::Plugin(e) => (e.status(), e.code().to_string()),
             Self::Storage(e) => {
                 tracing::error!("Plugin storage error: {e}");
@@ -70,6 +98,14 @@ impl IntoResponse for ServiceError {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UpdateOutcome {
+    pub updated: bool,
+    pub previous_version: String,
+    pub requires_approval: bool,
+    pub plugin: PluginRecord,
+}
+
 pub(crate) struct CachedDescriptor {
     pub descriptor: PlaybackDescriptor,
     pub expires_at: Instant,
@@ -85,6 +121,9 @@ struct Inner {
     config: Arc<RwLock<AppConfig>>,
     events: Arc<EventBus>,
     client: PluginClient,
+    forge: ForgeClient,
+    supervisor: PluginSupervisor,
+    op_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// Used to fetch upstream media in `proxy` mode: never follows redirects, no total timeout.
     proxy_http: reqwest::Client,
     /// Short-lived, in-memory playback descriptor cache keyed by (item id, user id, client capabilities).
@@ -125,6 +164,7 @@ impl PluginService {
             .try_read()
             .map(|c| c.plugins.clone())
             .unwrap_or_default();
+        let timeout = Duration::from_secs(settings.resolve_timeout_secs.max(1));
         Self {
             inner: Arc::new(Inner {
                 repo: PluginRepository::new(pool.clone()),
@@ -135,9 +175,10 @@ impl PluginService {
                 server_secret: server_secret.to_vec(),
                 config,
                 events,
-                client: PluginClient::new(Duration::from_secs(
-                    settings.resolve_timeout_secs.max(1),
-                )),
+                client: PluginClient::new(timeout),
+                forge: ForgeClient::new(timeout),
+                supervisor: PluginSupervisor::new(),
+                op_locks: Mutex::new(HashMap::new()),
                 proxy_http: reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
                     .connect_timeout(Duration::from_secs(10))
@@ -146,6 +187,13 @@ impl PluginService {
                 cache: Mutex::new(HashMap::new()),
             }),
         }
+    }
+
+    pub fn with_forge_client(mut self, forge: ForgeClient) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("with_forge_client must be called before cloning PluginService")
+            .forge = forge;
+        self
     }
 
     pub fn repo(&self) -> &PluginRepository {
@@ -163,6 +211,9 @@ impl PluginService {
     pub fn client(&self) -> &PluginClient {
         &self.inner.client
     }
+    pub fn supervisor(&self) -> &PluginSupervisor {
+        &self.inner.supervisor
+    }
     pub fn proxy_client(&self) -> &reqwest::Client {
         &self.inner.proxy_http
     }
@@ -172,8 +223,25 @@ impl PluginService {
         &self.inner.cache
     }
 
+    pub async fn plugins_dir(&self) -> PathBuf {
+        self.inner
+            .config
+            .read()
+            .await
+            .server
+            .data_dir
+            .join("plugins")
+    }
+
     pub fn secret_for(&self, plugin_id: &str) -> String {
         derive_plugin_secret(&self.inner.server_secret, plugin_id)
+    }
+
+    async fn lock_for(&self, id: &str) -> Arc<Mutex<()>> {
+        let mut map = self.inner.op_locks.lock().await;
+        map.entry(id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     pub async fn settings(&self) -> PluginSettings {
@@ -199,6 +267,7 @@ impl PluginService {
         update: PluginSettingsUpdate,
     ) -> Result<PluginSettings, ServiceError> {
         update.validate().map_err(ServiceError::Invalid)?;
+        let was_enabled = self.settings().await.enabled;
         self.inner.settings_repo.set_many(&update.entries()).await?;
         let applied = {
             let mut cfg = self.inner.config.write().await;
@@ -206,13 +275,18 @@ impl PluginService {
             cfg.plugins.clone()
         };
         self.apply_timeout(&applied);
+        if was_enabled && !applied.enabled {
+            self.shutdown_managed_plugins().await;
+        } else if !was_enabled && applied.enabled {
+            self.start_managed_plugins().await;
+        }
         Ok(applied)
     }
 
     fn apply_timeout(&self, settings: &PluginSettings) {
-        self.inner
-            .client
-            .set_timeout(Duration::from_secs(settings.resolve_timeout_secs.max(1)));
+        let timeout = Duration::from_secs(settings.resolve_timeout_secs.max(1));
+        self.inner.client.set_timeout(timeout);
+        self.inner.forge.set_timeout(timeout);
     }
 
     /// Re-reads `resolve_timeout_secs` from the live config and pushes it into the client.
@@ -235,6 +309,71 @@ impl PluginService {
             .ok_or_else(|| ServiceError::NotFound(format!("plugin '{id}' not found")))
     }
 
+    async fn spawn_managed(&self, record: &PluginRecord) -> Result<(), ServiceError> {
+        let (plugins_dir, kadr_url, timeout_secs) = {
+            let cfg = self.inner.config.read().await;
+            (
+                cfg.server.data_dir.join("plugins"),
+                kadr_local_url(&cfg.server.host, cfg.server.port),
+                cfg.plugins.resolve_timeout_secs.max(1),
+            )
+        };
+        let paths = plugin_paths(&plugins_dir, &record.id);
+        let token = self
+            .inner
+            .tokens
+            .issue(&record.id)
+            .map_err(|e| ServiceError::Internal(format!("failed to issue token: {e}")))?;
+        let secret = self.secret_for(&record.id);
+        let repo = self.inner.repo.clone();
+        let on_port: OnPortChanged = Arc::new(move |id, url| {
+            let repo = repo.clone();
+            tokio::spawn(async move {
+                let _ = repo.set_base_url(&id, &url).await;
+            });
+        });
+
+        let outcome = self
+            .inner
+            .supervisor
+            .start(
+                SpawnSpec {
+                    plugin_id: record.id.clone(),
+                    bin_path: paths.bin_path,
+                    data_dir: paths.data_dir,
+                    kadr_url,
+                    secret,
+                    token,
+                },
+                Duration::from_secs(timeout_secs),
+                Some(on_port),
+            )
+            .await;
+
+        match outcome {
+            StartOutcome::Healthy { base_url } => {
+                self.inner.repo.set_base_url(&record.id, &base_url).await?;
+                self.inner
+                    .repo
+                    .set_status(&record.id, PluginStatus::Enabled)
+                    .await?;
+            }
+            StartOutcome::Unhealthy { base_url, reason } => {
+                self.inner.repo.set_base_url(&record.id, &base_url).await?;
+                self.inner
+                    .repo
+                    .set_status(&record.id, PluginStatus::Unhealthy)
+                    .await?;
+                self.inner.events.publish(SystemEvent::PluginError {
+                    plugin_id: record.id.clone(),
+                    message: reason,
+                    timestamp: now_secs(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Fetches and validates the manifest, then stores the plugin as `pending`.
     /// Returns the record and the derived server-to-plugin secret.
     pub async fn register(&self, base_url: &str) -> Result<(PluginRecord, String), ServiceError> {
@@ -243,6 +382,10 @@ impl PluginService {
         let base_url = normalize_base_url(base_url)?;
         let manifest = self.inner.client.fetch_manifest(&base_url).await?;
         manifest.validate().map_err(ServiceError::Invalid)?;
+
+        let lock = self.lock_for(&manifest.id).await;
+        let _guard = lock.lock().await;
+
         if self.inner.repo.get(&manifest.id).await?.is_some() {
             return Err(ServiceError::Conflict(format!(
                 "plugin '{}' is already registered",
@@ -257,10 +400,188 @@ impl PluginService {
             granted_permissions: vec![],
             status: PluginStatus::Pending,
             created_at: now_secs(),
+            install_kind: PluginInstallKind::External,
+            repo_url: None,
+            forge_kind: None,
+            installed_tag: None,
         };
         self.inner.repo.insert(&record).await?;
         let secret = self.secret_for(&record.id);
         Ok((record, secret))
+    }
+
+    /// Downloads a prebuilt release bundle from GitHub, GitLab, or Gitea, unpacks it into
+    /// `<data_dir>/plugins/<id>/`, and registers the plugin as `pending` WITHOUT executing the binary.
+    pub async fn install_from_git(
+        &self,
+        repo_url: &str,
+        tag: Option<&str>,
+        forge: Option<ForgeKind>,
+    ) -> Result<PluginRecord, ServiceError> {
+        self.ensure_enabled().await?;
+        self.sync_client_timeout().await;
+        let settings = self.settings().await;
+        let plugins_dir = self.plugins_dir().await;
+
+        let bundle = self
+            .inner
+            .forge
+            .fetch_release_bundle(repo_url, tag, forge, settings.allow_private_proxy)
+            .await?;
+        let staged =
+            unpack_bundle(&plugins_dir, &bundle.archive_bytes).map_err(ServiceError::Invalid)?;
+        let manifest = staged.manifest().clone();
+
+        let lock = self.lock_for(&manifest.id).await;
+        let _guard = lock.lock().await;
+
+        if self.inner.repo.get(&manifest.id).await?.is_some() {
+            return Err(ServiceError::Conflict(format!(
+                "plugin '{}' is already registered",
+                manifest.id
+            )));
+        }
+        staged
+            .commit_fresh(&plugins_dir)
+            .map_err(ServiceError::Internal)?;
+
+        let record = PluginRecord {
+            id: manifest.id.clone(),
+            name: manifest.name.clone(),
+            base_url: "http://127.0.0.1:0".to_string(),
+            manifest,
+            granted_permissions: vec![],
+            status: PluginStatus::Pending,
+            created_at: now_secs(),
+            install_kind: PluginInstallKind::Managed,
+            repo_url: Some(bundle.canonical_repo_url),
+            forge_kind: Some(bundle.forge_kind),
+            installed_tag: Some(bundle.tag_name),
+        };
+        self.inner.repo.insert(&record).await?;
+        Ok(record)
+    }
+
+    pub async fn update_managed(
+        &self,
+        id: &str,
+        tag: Option<&str>,
+    ) -> Result<UpdateOutcome, ServiceError> {
+        self.ensure_enabled().await?;
+        self.sync_client_timeout().await;
+        let lock = self.lock_for(id).await;
+        let _guard = lock.lock().await;
+
+        let existing = self.get_or_404(id).await?;
+        if existing.install_kind != PluginInstallKind::Managed {
+            return Err(ServiceError::Invalid(
+                "only Git-installed managed plugins can be updated".to_string(),
+            ));
+        }
+        let repo_url = existing.repo_url.clone().ok_or_else(|| {
+            ServiceError::Invalid("managed plugin has no repository URL".to_string())
+        })?;
+        let settings = self.settings().await;
+        let bundle = self
+            .inner
+            .forge
+            .fetch_release_bundle(
+                &repo_url,
+                tag,
+                existing.forge_kind,
+                settings.allow_private_proxy,
+            )
+            .await?;
+
+        let previous_version = existing.manifest.version.clone();
+        let explicit_tag = tag.map(str::trim).filter(|t| !t.is_empty());
+        if explicit_tag.is_none()
+            && existing.installed_tag.as_deref() == Some(bundle.tag_name.as_str())
+        {
+            return Ok(UpdateOutcome {
+                updated: false,
+                previous_version,
+                requires_approval: false,
+                plugin: existing,
+            });
+        }
+
+        let plugins_dir = self.plugins_dir().await;
+        let staged =
+            unpack_bundle(&plugins_dir, &bundle.archive_bytes).map_err(ServiceError::Invalid)?;
+        let new_manifest = staged.manifest().clone();
+        if new_manifest.id != existing.id {
+            return Err(ServiceError::Invalid(format!(
+                "updated manifest id '{}' does not match installed plugin '{}'",
+                new_manifest.id, existing.id
+            )));
+        }
+
+        self.inner.supervisor.stop(id).await;
+        staged
+            .commit_update(&plugins_dir, id)
+            .map_err(ServiceError::Internal)?;
+        self.inner
+            .repo
+            .update_release(id, &new_manifest.name, &new_manifest, &bundle.tag_name)
+            .await?;
+
+        let needs_new_perms = existing.status == PluginStatus::Pending
+            || new_manifest
+                .permissions
+                .iter()
+                .any(|p| !existing.granted_permissions.contains(p));
+
+        if needs_new_perms {
+            self.inner
+                .repo
+                .set_status(id, PluginStatus::Pending)
+                .await?;
+            return Ok(UpdateOutcome {
+                updated: true,
+                previous_version,
+                requires_approval: true,
+                plugin: self.get_or_404(id).await?,
+            });
+        }
+
+        let refreshed = self.get_or_404(id).await?;
+        if matches!(
+            existing.status,
+            PluginStatus::Enabled | PluginStatus::Unhealthy
+        ) {
+            self.spawn_managed(&refreshed).await?;
+        }
+        Ok(UpdateOutcome {
+            updated: true,
+            previous_version,
+            requires_approval: false,
+            plugin: self.get_or_404(id).await?,
+        })
+    }
+
+    pub async fn start_managed_plugins(&self) {
+        if self.ensure_enabled().await.is_err() {
+            return;
+        }
+        let Ok(records) = self.inner.repo.list().await else {
+            return;
+        };
+        for rec in records {
+            if rec.install_kind == PluginInstallKind::Managed
+                && matches!(rec.status, PluginStatus::Enabled | PluginStatus::Unhealthy)
+            {
+                let lock = self.lock_for(&rec.id).await;
+                let _guard = lock.lock().await;
+                if let Err(e) = self.spawn_managed(&rec).await {
+                    tracing::error!(plugin = %rec.id, "Failed to start managed plugin: {e}");
+                }
+            }
+        }
+    }
+
+    pub async fn shutdown_managed_plugins(&self) {
+        self.inner.supervisor.stop_all().await;
     }
 
     /// Grants permissions (default: everything the manifest requested), enables the plugin
@@ -271,6 +592,9 @@ impl PluginService {
         requested: Option<Vec<PluginPermission>>,
     ) -> Result<(PluginRecord, String), ServiceError> {
         self.ensure_enabled().await?;
+        let lock = self.lock_for(id).await;
+        let _guard = lock.lock().await;
+
         let record = self.get_or_404(id).await?;
         let mut granted = match requested {
             None => record.manifest.permissions.clone(),
@@ -295,6 +619,12 @@ impl PluginService {
             .repo
             .set_status(id, PluginStatus::Enabled)
             .await?;
+
+        if record.install_kind == PluginInstallKind::Managed {
+            let refreshed = self.get_or_404(id).await?;
+            self.spawn_managed(&refreshed).await?;
+        }
+
         let token = self
             .inner
             .tokens
@@ -305,18 +635,33 @@ impl PluginService {
 
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<PluginRecord, ServiceError> {
         self.ensure_enabled().await?;
+        let lock = self.lock_for(id).await;
+        let _guard = lock.lock().await;
+
         let record = self.get_or_404(id).await?;
         if record.status == PluginStatus::Pending {
             return Err(ServiceError::Invalid(
                 "plugin has not been approved yet".to_string(),
             ));
         }
-        let status = if enabled {
-            PluginStatus::Enabled
+        if record.install_kind == PluginInstallKind::Managed {
+            if enabled {
+                self.spawn_managed(&record).await?;
+            } else {
+                self.inner.supervisor.stop(id).await;
+                self.inner
+                    .repo
+                    .set_status(id, PluginStatus::Disabled)
+                    .await?;
+            }
         } else {
-            PluginStatus::Disabled
-        };
-        self.inner.repo.set_status(id, status).await?;
+            let status = if enabled {
+                PluginStatus::Enabled
+            } else {
+                PluginStatus::Disabled
+            };
+            self.inner.repo.set_status(id, status).await?;
+        }
         self.get_or_404(id).await
     }
 
@@ -346,11 +691,20 @@ impl PluginService {
 
     pub async fn remove(&self, id: &str, purge: bool) -> Result<(), ServiceError> {
         self.ensure_enabled().await?;
-        self.get_or_404(id).await?;
+        let lock = self.lock_for(id).await;
+        let _guard = lock.lock().await;
+
+        let record = self.get_or_404(id).await?;
+        if record.install_kind == PluginInstallKind::Managed {
+            self.inner.supervisor.stop(id).await;
+        }
         if purge {
             self.inner.libs.delete_by_plugin(id).await?;
         }
         self.inner.repo.delete(id).await?;
+        if record.install_kind == PluginInstallKind::Managed {
+            let _ = remove_plugin_files(&self.plugins_dir().await, id, purge);
+        }
         Ok(())
     }
 

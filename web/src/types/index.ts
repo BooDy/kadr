@@ -394,6 +394,8 @@ export interface CreateUserPayload {
 // Plugin Types
 export type PluginStatus = 'pending' | 'enabled' | 'disabled' | 'unhealthy';
 export type PluginPermission = 'items:publish' | 'playback:resolve';
+export type PluginInstallKind = 'external' | 'managed';
+export type ForgeKind = 'github' | 'gitlab' | 'gitea';
 
 export interface PluginManifest {
   id: string;
@@ -415,6 +417,27 @@ export interface PluginRecord {
   granted_permissions: PluginPermission[];
   status: PluginStatus;
   created_at: number;
+  install_kind?: PluginInstallKind;
+  repo_url?: string | null;
+  forge_kind?: ForgeKind | null;
+  installed_tag?: string | null;
+}
+
+export interface InstallPluginPayload {
+  repo_url: string;
+  tag?: string;
+  forge?: ForgeKind;
+}
+
+export interface InstallPluginResponse {
+  plugin: PluginRecord;
+}
+
+export interface UpdatePluginResponse {
+  updated: boolean;
+  previous_version: string;
+  requires_approval: boolean;
+  plugin: PluginRecord;
 }
 
 export interface PluginSettings {

@@ -183,6 +183,7 @@ use tower::ServiceExt;
 
 pub struct Harness {
     pub app: Router,
+    pub data_dir: tempfile::TempDir,
     pub media_repo: MediaItemRepository,
     pub lib_repo: LibraryRepository,
     pub plugin_repo: PluginRepository,
@@ -252,10 +253,12 @@ pub async fn build(settings: PluginSettings) -> Harness {
         event_bus.clone(),
     ));
     let (ingest_tx, _rx) = tokio::sync::mpsc::channel(1);
-    let config = AppConfig {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut config = AppConfig {
         plugins: settings,
         ..Default::default()
     };
+    config.server.data_dir = data_dir.path().to_path_buf();
 
     let playback_repo_handle = playback_repo.clone();
     let app = create_router_with_ingest(
@@ -282,6 +285,7 @@ pub async fn build(settings: PluginSettings) -> Harness {
 
     Harness {
         app,
+        data_dir,
         media_repo,
         lib_repo,
         plugin_repo,

@@ -404,7 +404,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_bus.clone(),
     );
     let health_monitor_handle = kadr_server::plugins::health::spawn_health_monitor(
-        plugin_service,
+        plugin_service.clone(),
         std::time::Duration::from_secs(30),
     );
 
@@ -425,10 +425,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_collector,
         ingest_tx.clone(),
         pipeline.clone(),
-        shared_config,
+        shared_config.clone(),
         server_identity,
     )
-    .layer(axum::Extension(storyboard_service));
+    .layer(axum::Extension(storyboard_service))
+    .layer(axum::Extension(plugin_service.clone()));
 
     // Mount static web SPA serving if assets exist
     let env_web = std::env::var("KADR_WEB_DIR")
@@ -465,7 +466,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{}:{}", config.server.host, config.server.port);
     info!(listen = %addr, "Binding Axum HTTP listener");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    if let Ok(bound) = listener.local_addr() {
+        shared_config.write().await.server.port = bound.port();
+    }
     info!("Kadr Milestone 5A HTTP server running at http://{}", addr);
+
+    let startup_plugins = plugin_service.clone();
+    tokio::spawn(async move {
+        startup_plugins.start_managed_plugins().await;
+    });
 
     let server = axum::serve(
         listener,
@@ -481,6 +490,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     telemetry_handle.abort();
     prune_handle.abort();
     health_monitor_handle.abort();
+    plugin_service.shutdown_managed_plugins().await;
     drop(watchers);
     drop(ingest_tx);
     if let Err(e) = worker_handle.await {

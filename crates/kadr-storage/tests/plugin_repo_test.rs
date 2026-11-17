@@ -1,6 +1,7 @@
 use kadr_core::models::{MediaItem, MediaType};
 use kadr_core::plugin::{
-    PluginCapabilities, PluginManifest, PluginPermission, PluginRecord, PluginStatus,
+    ForgeKind, PluginCapabilities, PluginInstallKind, PluginManifest, PluginPermission,
+    PluginRecord, PluginStatus,
 };
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PluginRepository};
 use kadr_storage::{create_in_memory_pool, initialize_database};
@@ -21,6 +22,10 @@ fn record(id: &str) -> PluginRecord {
         granted_permissions: vec![],
         status: PluginStatus::Pending,
         created_at: 1_700_000_000,
+        install_kind: PluginInstallKind::External,
+        repo_url: None,
+        forge_kind: None,
+        installed_tag: None,
     }
 }
 
@@ -130,4 +135,67 @@ async fn virtual_library_lifecycle_and_purge() {
     assert_eq!(media.count_by_library("lib-1").await.unwrap(), 0);
     // Regular library untouched.
     assert!(libs.get_by_id("real").await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn managed_plugin_metadata_base_url_and_release_updates_roundtrip() {
+    let (repo, _, _) = setup().await;
+    let mut rec = record("hello");
+    rec.install_kind = PluginInstallKind::Managed;
+    rec.repo_url = Some("https://github.com/acme/plugin-hello".to_string());
+    rec.forge_kind = Some(ForgeKind::Github);
+    rec.installed_tag = Some("v0.1.0".to_string());
+    repo.insert(&rec).await.unwrap();
+
+    let got = repo.get("hello").await.unwrap().unwrap();
+    assert_eq!(got, rec);
+
+    assert!(repo
+        .set_base_url("hello", "http://127.0.0.1:45123")
+        .await
+        .unwrap());
+    let mut new_manifest = got.manifest.clone();
+    new_manifest.name = "Hello v2".to_string();
+    new_manifest.version = "0.2.0".to_string();
+    assert!(repo
+        .update_release("hello", "Hello v2", &new_manifest, "v0.2.0")
+        .await
+        .unwrap());
+
+    let updated = repo.get("hello").await.unwrap().unwrap();
+    assert_eq!(updated.base_url, "http://127.0.0.1:45123");
+    assert_eq!(updated.name, "Hello v2");
+    assert_eq!(updated.manifest.version, "0.2.0");
+    assert_eq!(updated.installed_tag.as_deref(), Some("v0.2.0"));
+}
+
+#[tokio::test]
+async fn migration_010_upgrades_existing_external_plugins_cleanly() {
+    let pool = create_in_memory_pool().unwrap();
+    let conn = pool.get().await.unwrap();
+    conn.interact(|c| {
+        kadr_storage::migrations::migrations()
+            .to_version(c, 9)
+            .unwrap();
+        c.execute(
+            "INSERT INTO plugins (id, name, base_url, manifest, granted_permissions, status, created_at)
+             VALUES ('legacy', 'Legacy', 'http://127.0.0.1:9000',
+                     '{\"id\":\"legacy\",\"name\":\"Legacy\",\"version\":\"0.1.0\",\"api_version\":1}',
+                     '[]', 'enabled', 1700000000)",
+            [],
+        )
+        .unwrap();
+        kadr_storage::migrations::run_migrations(c).unwrap();
+    })
+    .await
+    .unwrap();
+    drop(conn);
+
+    let repo = PluginRepository::new(pool);
+    let legacy = repo.get("legacy").await.unwrap().unwrap();
+    assert_eq!(legacy.install_kind, PluginInstallKind::External);
+    assert_eq!(legacy.repo_url, None);
+    assert_eq!(legacy.forge_kind, None);
+    assert_eq!(legacy.installed_tag, None);
+    assert_eq!(legacy.status, PluginStatus::Enabled);
 }

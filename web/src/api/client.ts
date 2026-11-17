@@ -23,6 +23,9 @@ import type {
   PluginRecord,
   PluginSettings,
   RegisterPluginResponse,
+  InstallPluginPayload,
+  InstallPluginResponse,
+  UpdatePluginResponse,
   ScanResultResponse,
   ScreenLayout,
   ScreenSummary,
@@ -591,6 +594,23 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ base_url: baseUrl }),
     });
+  }
+
+  public async installPlugin(payload: InstallPluginPayload): Promise<InstallPluginResponse> {
+    return this.request<InstallPluginResponse>('/api/v1/admin/plugins/install', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async updatePlugin(id: string, tag?: string): Promise<UpdatePluginResponse> {
+    return this.request<UpdatePluginResponse>(
+      `/api/v1/admin/plugins/${encodeURIComponent(id)}/update`,
+      {
+        method: 'POST',
+        body: tag ? JSON.stringify({ tag }) : undefined,
+      }
+    );
   }
 
   public async approvePlugin(

@@ -169,6 +169,44 @@ export const PluginsPanel: React.FC = () => {
     return ok;
   };
 
+  const installFromGit = async (repoUrl: string, tag?: string): Promise<boolean> => {
+    let ok = false;
+    await run(async () => {
+      const res = await api.installPlugin({ repo_url: repoUrl, tag });
+      ok = true;
+      await refresh(true);
+      if (isMountedRef.current) {
+        setDialogError(null);
+        setApproving(res.plugin);
+        setBanner({
+          type: 'success',
+          text: `Downloaded "${res.plugin.name}". Review and approve its permissions to start it.`,
+        });
+      }
+    });
+    return ok;
+  };
+
+  const updateManagedPlugin = (plugin: PluginRecord) =>
+    run(async () => {
+      const res = await api.updatePlugin(plugin.id);
+      await refresh(true);
+      if (!isMountedRef.current) return;
+      if (!res.updated) {
+        return `"${res.plugin.name}" is already up to date (v${res.plugin.manifest.version}).`;
+      }
+      if (res.requires_approval) {
+        setDialogError(null);
+        setApproving(res.plugin);
+        setBanner({
+          type: 'warning',
+          text: `Updated "${res.plugin.name}" to v${res.plugin.manifest.version}. Approve its new permissions to start it.`,
+        });
+        return;
+      }
+      return `Updated "${res.plugin.name}" from v${res.previous_version} to v${res.plugin.manifest.version}.`;
+    });
+
   const confirmApprove = (permissions: PluginPermission[]) => {
     const target = approving;
     if (!target) return;
@@ -380,9 +418,13 @@ export const PluginsPanel: React.FC = () => {
           >
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-accent uppercase tracking-wider">
-                Register a plugin
+                Add a plugin
               </h3>
-              <RegisterPluginForm onRegister={register} disabled={!enabled || busy} />
+              <RegisterPluginForm
+                onRegister={register}
+                onInstall={installFromGit}
+                disabled={!enabled || busy}
+              />
             </div>
 
             <div className="space-y-3">
@@ -396,6 +438,7 @@ export const PluginsPanel: React.FC = () => {
                 onEnable={(p) => void setPluginEnabled(p, true)}
                 onDisable={(p) => void setPluginEnabled(p, false)}
                 onConnection={openConnecting}
+                onUpdate={(p) => void updateManagedPlugin(p)}
                 onRemove={openRemove}
               />
             </div>

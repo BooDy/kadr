@@ -1,6 +1,6 @@
 use crate::auth::jwt::RequireAdmin;
 use crate::config::PluginSettings;
-use crate::plugins::service::{PluginService, ServiceError};
+use crate::plugins::service::{PluginService, ServiceError, UpdateOutcome};
 use crate::plugins::settings::PluginSettingsUpdate;
 use axum::{
     extract::{Path, Query},
@@ -8,13 +8,25 @@ use axum::{
     routing::{delete, get, post},
     Extension, Json, Router,
 };
-use kadr_core::plugin::{PluginPermission, PluginRecord};
+use kadr_core::plugin::{ForgeKind, PluginPermission, PluginRecord};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 #[derive(Deserialize)]
 pub struct RegisterBody {
     pub base_url: String,
+}
+
+#[derive(Deserialize)]
+pub struct InstallBody {
+    pub repo_url: String,
+    pub tag: Option<String>,
+    pub forge: Option<ForgeKind>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct UpdateBody {
+    pub tag: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -34,11 +46,13 @@ pub fn admin_routes() -> Router {
             "/api/v1/admin/plugins/settings",
             get(get_plugin_settings).put(put_plugin_settings),
         )
+        .route("/api/v1/admin/plugins/install", post(install_plugin))
         .route(
             "/api/v1/admin/plugins",
             get(list_plugins).post(register_plugin),
         )
         .route("/api/v1/admin/plugins/{id}/approve", post(approve_plugin))
+        .route("/api/v1/admin/plugins/{id}/update", post(update_plugin))
         .route(
             "/api/v1/admin/plugins/{id}/connection",
             get(plugin_connection),
@@ -66,6 +80,27 @@ async fn register_plugin(
         StatusCode::CREATED,
         Json(json!({ "plugin": plugin, "secret": secret })),
     ))
+}
+
+async fn install_plugin(
+    _admin: RequireAdmin,
+    Extension(svc): Extension<PluginService>,
+    Json(body): Json<InstallBody>,
+) -> Result<(StatusCode, Json<Value>), ServiceError> {
+    let plugin = svc
+        .install_from_git(&body.repo_url, body.tag.as_deref(), body.forge)
+        .await?;
+    Ok((StatusCode::CREATED, Json(json!({ "plugin": plugin }))))
+}
+
+async fn update_plugin(
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+    Extension(svc): Extension<PluginService>,
+    body: Option<Json<UpdateBody>>,
+) -> Result<Json<UpdateOutcome>, ServiceError> {
+    let tag = body.and_then(|Json(b)| b.tag);
+    Ok(Json(svc.update_managed(&id, tag.as_deref()).await?))
 }
 
 async fn approve_plugin(

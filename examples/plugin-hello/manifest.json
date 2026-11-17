@@ -1,0 +1,11 @@
+{
+  "id": "hello",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "permissions": ["items:publish", "playback:resolve"],
+  "capabilities": {
+    "virtual_library": true,
+    "playback_resolver": true
+  }
+}

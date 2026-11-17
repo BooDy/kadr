@@ -264,12 +264,12 @@ pub fn create_router_with_ingest(
         .layer(Extension(pipeline))
         .layer(Extension(config))
         .layer(Extension(identity))
-        .layer(Extension(plugin_service))
         .layer(Extension(plugin_tokens))
         .layer(axum::middleware::from_fn(
             move |mut req: axum::extract::Request, next: axum::middleware::Next| {
                 let default_mgr = hls_manager.clone();
                 let default_sb = storyboard_service.clone();
+                let default_ps = plugin_service.clone();
                 async move {
                     if req
                         .extensions()
@@ -284,6 +284,13 @@ pub fn create_router_with_ingest(
                         .is_none()
                     {
                         req.extensions_mut().insert(default_sb);
+                    }
+                    if req
+                        .extensions()
+                        .get::<crate::plugins::PluginService>()
+                        .is_none()
+                    {
+                        req.extensions_mut().insert(default_ps);
                     }
                     next.run(req).await
                 }

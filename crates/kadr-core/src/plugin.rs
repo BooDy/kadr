@@ -86,8 +86,8 @@ impl PluginManifest {
         if !id_ok {
             return Err("manifest id must match [a-z0-9-]{1,32}".to_string());
         }
-        if self.id == "settings" {
-            return Err("manifest id 'settings' is reserved".to_string());
+        if matches!(self.id.as_str(), "settings" | "install") {
+            return Err(format!("manifest id '{}' is reserved", self.id));
         }
         if self.name.trim().is_empty() {
             return Err("manifest name must not be empty".to_string());
@@ -102,6 +102,58 @@ impl PluginManifest {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginInstallKind {
+    #[default]
+    External,
+    Managed,
+}
+
+impl PluginInstallKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::External => "external",
+            Self::Managed => "managed",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "external" => Some(Self::External),
+            "managed" => Some(Self::Managed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForgeKind {
+    Github,
+    Gitlab,
+    Gitea,
+}
+
+impl ForgeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Github => "github",
+            Self::Gitlab => "gitlab",
+            Self::Gitea => "gitea",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "github" => Some(Self::Github),
+            "gitlab" => Some(Self::Gitlab),
+            "gitea" => Some(Self::Gitea),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginRecord {
     pub id: String,
@@ -111,6 +163,14 @@ pub struct PluginRecord {
     pub granted_permissions: Vec<PluginPermission>,
     pub status: PluginStatus,
     pub created_at: i64,
+    #[serde(default)]
+    pub install_kind: PluginInstallKind,
+    #[serde(default)]
+    pub repo_url: Option<String>,
+    #[serde(default)]
+    pub forge_kind: Option<ForgeKind>,
+    #[serde(default)]
+    pub installed_tag: Option<String>,
 }
 
 impl PluginRecord {

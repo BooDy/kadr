@@ -8,6 +8,7 @@ export interface PluginListProps {
   onEnable: (plugin: PluginRecord) => void;
   onDisable: (plugin: PluginRecord) => void;
   onConnection: (plugin: PluginRecord) => void;
+  onUpdate?: (plugin: PluginRecord) => void;
   onRemove: (plugin: PluginRecord) => void;
 }
 
@@ -32,6 +33,10 @@ const primaryClass =
 const dangerClass =
   'px-3 py-1.5 text-xs font-medium rounded-lg border border-cta/30 text-cta hover:bg-cta/15 disabled:opacity-50 cursor-pointer';
 
+function isSafeHttpUrl(raw?: string | null): raw is string {
+  return Boolean(raw && (raw.startsWith('https://') || raw.startsWith('http://')));
+}
+
 export const PluginList: React.FC<PluginListProps> = ({
   plugins,
   busy = false,
@@ -39,6 +44,7 @@ export const PluginList: React.FC<PluginListProps> = ({
   onEnable,
   onDisable,
   onConnection,
+  onUpdate,
   onRemove,
 }) => {
   if (plugins.length === 0) {
@@ -49,6 +55,7 @@ export const PluginList: React.FC<PluginListProps> = ({
     <ul className="space-y-3">
       {plugins.map((plugin) => {
         const pending = plugin.status === 'pending';
+        const isManaged = plugin.install_kind === 'managed';
         const permissions = pending ? plugin.manifest.permissions : plugin.granted_permissions;
         return (
           <li
@@ -60,13 +67,31 @@ export const PluginList: React.FC<PluginListProps> = ({
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-semibold text-text-main">{plugin.name}</span>
                 <span className="text-xs text-muted">v{plugin.manifest.version}</span>
+                {isManaged && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full border border-accent/40 bg-accent/10 text-accent">
+                    {plugin.installed_tag ? `Managed · ${plugin.installed_tag}` : 'Managed'}
+                  </span>
+                )}
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full border ${STATUS_CLASS[plugin.status]}`}
                 >
                   {STATUS_LABEL[plugin.status]}
                 </span>
               </div>
-              <p className="text-xs text-muted break-all">{plugin.base_url}</p>
+              {isManaged && isSafeHttpUrl(plugin.repo_url) ? (
+                <p className="text-xs text-muted break-all">
+                  <a
+                    href={plugin.repo_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-accent underline decoration-border-subtle"
+                  >
+                    {plugin.repo_url}
+                  </a>
+                </p>
+              ) : (
+                <p className="text-xs text-muted break-all">{plugin.base_url}</p>
+              )}
               <p className="text-xs text-muted">
                 {pending ? 'Awaiting approval. Requests: ' : 'Granted: '}
                 {permissions.length === 0 ? 'none' : permissions.join(', ')}
@@ -84,7 +109,12 @@ export const PluginList: React.FC<PluginListProps> = ({
                   Enable
                 </button>
               )}
-              {!pending && (
+              {isManaged && onUpdate && (
+                <button type="button" className={buttonClass} disabled={busy} onClick={() => onUpdate(plugin)}>
+                  Update
+                </button>
+              )}
+              {!pending && !isManaged && (
                 <button type="button" className={buttonClass} disabled={busy} onClick={() => onConnection(plugin)}>
                   Connection details
                 </button>

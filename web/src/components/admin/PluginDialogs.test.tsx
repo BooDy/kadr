@@ -218,6 +218,21 @@ describe('RemovePluginDialog', () => {
     );
     expect(screen.getByRole('alert')).toHaveTextContent('Cannot remove active plugin');
   });
+
+  it('mentions deleting the local data directory when removing a managed plugin', () => {
+    render(
+      <RemovePluginDialog
+        plugin={{ ...plugin, install_kind: 'managed' }}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(
+      screen.getByLabelText(
+        /Also delete this plugin's local data directory, virtual libraries, and items/i
+      )
+    ).toBeInTheDocument();
+  });
 });
 
 describe('ConnectionDialog', () => {

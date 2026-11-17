@@ -32,7 +32,7 @@ fn header_text_ok(s: &str) -> bool {
     !s.chars().any(|c| c == '\r' || c == '\n' || c == '\0')
 }
 
-async fn ensure_public_host(url: &reqwest::Url) -> Result<(), String> {
+pub(crate) async fn ensure_public_host(url: &reqwest::Url) -> Result<(), String> {
     let host = url
         .host_str()
         .ok_or_else(|| "url has no host".to_string())?;

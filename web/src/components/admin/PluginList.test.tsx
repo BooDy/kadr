@@ -101,6 +101,25 @@ describe('PluginList', () => {
       expect(button).toBeDisabled();
     }
   });
+
+  it('renders managed badge, repo link, and Update action while hiding Connection details', () => {
+    const onUpdate = vi.fn();
+    const managed: PluginRecord = {
+      ...make('m', 'enabled', ['items:publish']),
+      install_kind: 'managed',
+      repo_url: 'https://github.com/acme/hello',
+      installed_tag: 'v1.2.3',
+    };
+    render(<PluginList plugins={[managed]} {...handlers()} onUpdate={onUpdate} />);
+    const row = screen.getByTestId('plugin-row-m');
+    expect(within(row).getByText(/Managed · v1\.2\.3/)).toBeInTheDocument();
+    const link = within(row).getByRole('link', { name: 'https://github.com/acme/hello' });
+    expect(link).toHaveAttribute('href', 'https://github.com/acme/hello');
+    expect(within(row).queryByRole('button', { name: /Connection details/i })).toBeNull();
+
+    fireEvent.click(within(row).getByRole('button', { name: /^Update$/i }));
+    expect(onUpdate).toHaveBeenCalledWith(managed);
+  });
 });
 
 describe('RegisterPluginForm', () => {
@@ -147,5 +166,29 @@ describe('RegisterPluginForm', () => {
     await waitFor(() => expect(onRegister).toHaveBeenCalledWith('http://crash'));
     expect(input.value).toBe('http://crash');
     expect(button).toBeEnabled();
+  });
+
+  it('defaults to Git install mode when onInstall is supplied and switches to External URL', async () => {
+    const onInstall = vi.fn().mockResolvedValue(true);
+    const onRegister = vi.fn().mockResolvedValue(true);
+    render(<RegisterPluginForm onRegister={onRegister} onInstall={onInstall} />);
+
+    const repoInput = screen.getByLabelText(/Repository URL/i) as HTMLInputElement;
+    const tagInput = screen.getByLabelText(/Release tag/i) as HTMLInputElement;
+    fireEvent.change(repoInput, { target: { value: ' https://github.com/acme/hello ' } });
+    fireEvent.change(tagInput, { target: { value: ' v0.2.0 ' } });
+    fireEvent.click(screen.getByRole('button', { name: /Install plugin/i }));
+    await waitFor(() =>
+      expect(onInstall).toHaveBeenCalledWith('https://github.com/acme/hello', 'v0.2.0')
+    );
+    await waitFor(() => expect(repoInput.value).toBe(''));
+    expect(tagInput.value).toBe('');
+
+    fireEvent.click(screen.getByRole('tab', { name: /External URL/i }));
+    fireEvent.change(screen.getByLabelText(/Plugin base URL/i), {
+      target: { value: 'http://127.0.0.1:9100' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Register plugin/i }));
+    await waitFor(() => expect(onRegister).toHaveBeenCalledWith('http://127.0.0.1:9100'));
   });
 });

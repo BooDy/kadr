@@ -1,11 +1,14 @@
 pub mod admin_routes;
 pub mod auth;
 pub mod client;
+pub mod forge;
 pub mod health;
+pub mod installer;
 pub mod playback;
 pub mod publish_routes;
 pub mod service;
 pub mod settings;
+pub mod supervisor;
 pub mod url_guard;
 
 pub use service::{PluginService, ServiceError};

@@ -108,3 +108,36 @@ fn manifest_id_settings_is_reserved() {
     };
     assert!(manifest.validate().unwrap_err().contains("reserved"));
 }
+
+#[test]
+fn manifest_id_install_is_reserved() {
+    let manifest = PluginManifest {
+        id: "install".into(),
+        name: "Install".into(),
+        version: "0.1.0".into(),
+        api_version: 1,
+        permissions: vec![],
+        capabilities: Default::default(),
+    };
+    assert!(manifest.validate().unwrap_err().contains("reserved"));
+}
+
+#[test]
+fn plugin_record_managed_fields_default_for_legacy_json() {
+    let rec: PluginRecord = serde_json::from_str(
+        r#"{
+            "id": "iptv",
+            "name": "IPTV",
+            "base_url": "http://127.0.0.1:9000",
+            "manifest": {"id":"iptv","name":"IPTV","version":"0.1.0","api_version":1},
+            "granted_permissions": [],
+            "status": "enabled",
+            "created_at": 1
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(rec.install_kind, PluginInstallKind::External);
+    assert_eq!(rec.repo_url, None);
+    assert_eq!(rec.forge_kind, None);
+    assert_eq!(rec.installed_tag, None);
+}

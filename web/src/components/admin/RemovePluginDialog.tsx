@@ -82,7 +82,9 @@ export const RemovePluginDialog: React.FC<RemovePluginDialogProps> = ({
             className="mt-1 accent-accent"
           />
           <span className="text-sm text-text-main">
-            Also delete this plugin&apos;s libraries and items
+            {plugin.install_kind === 'managed'
+              ? "Also delete this plugin's local data directory, virtual libraries, and items"
+              : "Also delete this plugin's libraries and items"}
           </span>
         </label>
 

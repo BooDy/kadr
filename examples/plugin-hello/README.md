@@ -3,9 +3,9 @@
 Minimal Kadr plugin. It publishes three public sample videos into a virtual library and resolves
 them as `direct` playback URLs. Use it as a template; see [`docs/PLUGIN_GUIDE.md`](../../docs/PLUGIN_GUIDE.md).
 
-## Run it
+## Run it externally (local development)
 
-1. Enable plugins in `kadr.toml` and restart Kadr:
+1. Enable plugins in `kadr.toml` and restart Kadr (or turn on **Enable plugins** in the admin UI):
 
    ```toml
    [plugins]
@@ -36,3 +36,17 @@ them as `direct` playback URLs. Use it as a template; see [`docs/PLUGIN_GUIDE.md
    ```
 
 The "Hello Videos" library now appears in Kadr, and `GET /api/v1/stream/{id}` redirects to the sample file.
+
+## Package a release archive (for Git installation)
+
+To let admins install `plugin-hello` directly from a GitHub, GitLab, or Gitea release (where Kadr supervises the process and injects `PLUGIN_BIND`, `KADR_URL`, `KADR_PLUGIN_SECRET`, `KADR_PLUGIN_TOKEN`, and `PLUGIN_DATA_DIR` automatically):
+
+```bash
+cargo build --release
+cp target/release/plugin-hello plugin
+tar -czf plugin-hello-linux-x86_64.tar.gz manifest.json plugin
+sha256sum plugin-hello-linux-x86_64.tar.gz > checksums.txt
+rm plugin
+```
+
+Attach `plugin-hello-linux-x86_64.tar.gz` and `checksums.txt` to a Git release, then paste the repository URL into **Administration → Plugins → Install from Git**.

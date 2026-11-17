@@ -1,6 +1,8 @@
 use crate::error::Result;
 use deadpool_sqlite::Pool;
-use kadr_core::plugin::{PluginManifest, PluginPermission, PluginRecord, PluginStatus};
+use kadr_core::plugin::{
+    ForgeKind, PluginInstallKind, PluginManifest, PluginPermission, PluginRecord, PluginStatus,
+};
 use rusqlite::params;
 
 #[derive(Clone)]
@@ -19,11 +21,16 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<PluginRecord> {
     let manifest_s: String = row.get(3)?;
     let perms_s: String = row.get(4)?;
     let status_s: String = row.get(5)?;
+    let install_kind_s: String = row.get(7)?;
+    let forge_kind_s: Option<String> = row.get(9)?;
     let manifest: PluginManifest =
         serde_json::from_str(&manifest_s).map_err(|e| conversion_err(3, e))?;
     let granted_permissions: Vec<PluginPermission> =
         serde_json::from_str(&perms_s).map_err(|e| conversion_err(4, e))?;
     let status = PluginStatus::parse(&status_s).unwrap_or(PluginStatus::Disabled);
+    let install_kind =
+        PluginInstallKind::parse(&install_kind_s).unwrap_or(PluginInstallKind::External);
+    let forge_kind = forge_kind_s.as_deref().and_then(ForgeKind::parse);
     Ok(PluginRecord {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -32,10 +39,14 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<PluginRecord> {
         granted_permissions,
         status,
         created_at: row.get(6)?,
+        install_kind,
+        repo_url: row.get(8)?,
+        forge_kind,
+        installed_tag: row.get(10)?,
     })
 }
 
-const COLUMNS: &str = "id, name, base_url, manifest, granted_permissions, status, created_at";
+const COLUMNS: &str = "id, name, base_url, manifest, granted_permissions, status, created_at, install_kind, repo_url, forge_kind, installed_tag";
 
 impl PluginRepository {
     pub fn new(pool: Pool) -> Self {
@@ -49,8 +60,8 @@ impl PluginRepository {
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
             c.execute(
-                "INSERT INTO plugins (id, name, base_url, manifest, granted_permissions, status, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO plugins (id, name, base_url, manifest, granted_permissions, status, created_at, install_kind, repo_url, forge_kind, installed_tag)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     rec.id,
                     rec.name,
@@ -58,7 +69,11 @@ impl PluginRepository {
                     manifest,
                     perms,
                     rec.status.as_str(),
-                    rec.created_at
+                    rec.created_at,
+                    rec.install_kind.as_str(),
+                    rec.repo_url,
+                    rec.forge_kind.map(|f| f.as_str()),
+                    rec.installed_tag,
                 ],
             )?;
             Ok(())
@@ -117,6 +132,42 @@ impl PluginRepository {
             let n = c.execute(
                 "UPDATE plugins SET granted_permissions = ?1 WHERE id = ?2",
                 params![perms, id],
+            )?;
+            Ok(n > 0)
+        })
+        .await?
+    }
+
+    pub async fn set_base_url(&self, id: &str, base_url: &str) -> Result<bool> {
+        let id = id.to_string();
+        let base_url = base_url.to_string();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let n = c.execute(
+                "UPDATE plugins SET base_url = ?1 WHERE id = ?2",
+                params![base_url, id],
+            )?;
+            Ok(n > 0)
+        })
+        .await?
+    }
+
+    pub async fn update_release(
+        &self,
+        id: &str,
+        name: &str,
+        manifest: &PluginManifest,
+        installed_tag: &str,
+    ) -> Result<bool> {
+        let id = id.to_string();
+        let name = name.to_string();
+        let manifest = serde_json::to_string(manifest)?;
+        let installed_tag = installed_tag.to_string();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let n = c.execute(
+                "UPDATE plugins SET name = ?1, manifest = ?2, installed_tag = ?3 WHERE id = ?4",
+                params![name, manifest, installed_tag, id],
             )?;
             Ok(n > 0)
         })
