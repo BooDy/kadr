@@ -9,6 +9,7 @@ pub mod library_routes;
 pub mod playback;
 pub mod playlist_routes;
 pub mod screen_routes;
+pub mod search_routes;
 pub mod storyboard_routes;
 pub mod streaming;
 pub mod subtitle_routes;
@@ -34,7 +35,7 @@ use axum::{
 };
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
-    SubtitleRepository, UserRepository,
+    SearchRepository, SubtitleRepository, UserRepository,
 };
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -100,12 +101,14 @@ pub fn create_router_with_ingest(
     );
     let plugin_tokens = crate::plugins::auth::PluginTokenService::new(jwt_svc.secret());
     let playlist_repo = PlaylistRepository::new(media_repo.pool().clone());
+    let search_repo = SearchRepository::new(media_repo.pool().clone());
 
     let router = Router::new()
         .merge(hls_routes::hls_routes())
         .merge(storyboard_routes::storyboard_routes())
         .merge(crate::plugins::plugin_routes())
         .merge(playlist_routes::playlist_routes())
+        .merge(search_routes::search_routes())
         // Public discovery route
         .route("/api/v1/discovery", get(discovery_routes::get_discovery))
         // Public profile list & auth
@@ -245,6 +248,7 @@ pub fn create_router_with_ingest(
         .layer(Extension(media_repo))
         .layer(Extension(lib_repo))
         .layer(Extension(playlist_repo))
+        .layer(Extension(search_repo))
         .layer(Extension(UnlockTokenService::new(
             jwt_svc.secret(),
             86400 * 7,

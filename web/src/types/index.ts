@@ -514,4 +514,6 @@ export type PlaylistAddTarget =
   | { kind: 'season'; showId: number; seasonNumber: number; title: string }
   | { kind: 'folder'; libraryId: string; path: string; recursive: boolean; title: string };
 
+export * from './search';
+
 

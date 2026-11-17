@@ -673,5 +673,91 @@ describe('App Shell', () => {
 
     await waitFor(() => expect(screen.getByText('Dune: Part Two')).toBeInTheDocument());
   });
+
+  it('opens GlobalSearchModal via Search button, Ctrl+K, Cmd+K, and /, ignores / inside editable elements, and opens ItemDetailsModal on selection', async () => {
+    api.setUser({ id: 'u-std', username: 'viewer', role: 'standard' });
+    api.setToken('test-jwt');
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue([]);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({ id: 'home', title: 'Home', widgets: [] });
+    vi.spyOn(api, 'search').mockResolvedValue({
+      query: 'Cairo',
+      total: 1,
+      items: [
+        {
+          id: 404,
+          library_id: 'lib-1',
+          library_name: 'Classics',
+          item_type: 'movie',
+          title: 'Cairo Station',
+          original_title: 'باب الحديد',
+          release_year: 1958,
+          overview: 'Classic Egyptian cinema.',
+          poster_url: '/api/v1/artwork/404/poster',
+          duration_seconds: 4620,
+          genres: ['Drama'],
+          director: 'Youssef Chahine',
+        },
+      ],
+    });
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue({
+      card: { id: 404, title: 'Cairo Station', media_type: 'movie' },
+      overview: 'Classic Egyptian cinema masterpiece.',
+      genres: ['Drama'],
+      stream_url: '/api/v1/stream/404',
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+
+    render(<App />);
+
+    // 1. Pressing '/' inside an input, textarea, select, or contenteditable must NOT open search
+    const dummyInput = document.createElement('input');
+    const dummyTextarea = document.createElement('textarea');
+    const dummySelect = document.createElement('select');
+    const dummyEditable = document.createElement('div');
+    dummyEditable.setAttribute('contenteditable', 'true');
+    document.body.append(dummyInput, dummyTextarea, dummySelect, dummyEditable);
+
+    for (const el of [dummyInput, dummyTextarea, dummySelect, dummyEditable]) {
+      el.focus();
+      fireEvent.keyDown(el, { key: '/' });
+      expect(screen.queryByRole('dialog', { name: /Global Search/i })).toBeNull();
+    }
+    dummyInput.remove();
+    dummyTextarea.remove();
+    dummySelect.remove();
+    dummyEditable.remove();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+
+    // 2. Pressing '/' outside inputs opens search
+    fireEvent.keyDown(window, { key: '/' });
+    expect(screen.getByRole('dialog', { name: /Global Search/i })).toBeInTheDocument();
+
+    // Close via Escape
+    fireEvent.keyDown(screen.getByLabelText('Global media search'), { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: /Global Search/i })).toBeNull();
+
+    // 3. Ctrl+K and Cmd+K toggle search
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    expect(screen.getByRole('dialog', { name: /Global Search/i })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(screen.queryByRole('dialog', { name: /Global Search/i })).toBeNull();
+
+    // 4. Header Search button opens search & selecting result opens ItemDetailsModal
+    fireEvent.click(screen.getByRole('button', { name: /^Search$/i }));
+    const searchInput = screen.getByLabelText('Global media search');
+    fireEvent.change(searchInput, { target: { value: 'Cairo' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Cairo Station')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('option', { name: /Cairo Station/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /Global Search/i })).toBeNull();
+      expect(screen.getByText('Classic Egyptian cinema masterpiece.')).toBeInTheDocument();
+    });
+  });
 });
 
