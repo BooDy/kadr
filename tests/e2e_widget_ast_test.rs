@@ -129,6 +129,7 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     // Insert Series show item
@@ -152,6 +153,7 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             genres: vec!["Drama".to_string(), "Sci-Fi".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     // Insert Series Episode item (added within last 14 days => badge "NEW")
@@ -180,6 +182,7 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             genres: vec!["Drama".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     media_repo

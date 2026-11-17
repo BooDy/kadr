@@ -6,6 +6,7 @@ pub mod events_routes;
 pub mod hls_routes;
 pub mod item_routes;
 pub mod library_routes;
+pub mod metadata_routes;
 pub mod playback;
 pub mod playlist_routes;
 pub mod screen_routes;
@@ -102,6 +103,10 @@ pub fn create_router_with_ingest(
     let plugin_tokens = crate::plugins::auth::PluginTokenService::new(jwt_svc.secret());
     let playlist_repo = PlaylistRepository::new(media_repo.pool().clone());
     let search_repo = SearchRepository::new(media_repo.pool().clone());
+    let metadata_service = Arc::new(crate::metadata::MetadataService::new(
+        media_repo.clone(),
+        config.clone(),
+    ));
 
     let router = Router::new()
         .merge(hls_routes::hls_routes())
@@ -109,6 +114,7 @@ pub fn create_router_with_ingest(
         .merge(crate::plugins::plugin_routes())
         .merge(playlist_routes::playlist_routes())
         .merge(search_routes::search_routes())
+        .merge(metadata_routes::metadata_routes())
         // Public discovery route
         .route("/api/v1/discovery", get(discovery_routes::get_discovery))
         // Public profile list & auth
@@ -274,6 +280,7 @@ pub fn create_router_with_ingest(
                 let default_mgr = hls_manager.clone();
                 let default_sb = storyboard_service.clone();
                 let default_ps = plugin_service.clone();
+                let default_meta = metadata_service.clone();
                 async move {
                     if req
                         .extensions()
@@ -295,6 +302,13 @@ pub fn create_router_with_ingest(
                         .is_none()
                     {
                         req.extensions_mut().insert(default_ps);
+                    }
+                    if req
+                        .extensions()
+                        .get::<Arc<crate::metadata::MetadataService>>()
+                        .is_none()
+                    {
+                        req.extensions_mut().insert(default_meta);
                     }
                     next.run(req).await
                 }

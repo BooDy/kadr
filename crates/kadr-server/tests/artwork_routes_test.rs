@@ -99,6 +99,7 @@ async fn setup_test_context() -> ArtworkTestContext {
                     backdrop_path: Some(backdrop_path.to_str().unwrap().to_string()),
                     ..Default::default()
                 },
+                locked_fields: Vec::new(),
             },
             MediaItem {
                 id: None,
@@ -117,6 +118,7 @@ async fn setup_test_context() -> ArtworkTestContext {
                     backdrop_path: Some("   ".to_string()),
                     ..Default::default()
                 },
+                locked_fields: Vec::new(),
             },
             MediaItem {
                 id: None,
@@ -135,6 +137,7 @@ async fn setup_test_context() -> ArtworkTestContext {
                     backdrop_path: Some("/nonexistent/path/to/backdrop.png".to_string()),
                     ..Default::default()
                 },
+                locked_fields: Vec::new(),
             },
         ])
         .await
@@ -521,6 +524,7 @@ async fn test_on_demand_thumbnail_fallback_when_poster_missing() {
                 poster_path: None,
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         }])
         .await
         .expect("upsert failed");

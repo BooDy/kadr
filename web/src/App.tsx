@@ -124,7 +124,7 @@ export const App: FC = () => {
           return;
         }
 
-        if (isSearchOpen || isAuthModalOpen || libraryToUnlock !== null) {
+        if (isSearchOpen || isAuthModalOpen || libraryToUnlock !== null || searchSelectedItemId !== null) {
           return;
         }
 
@@ -135,7 +135,7 @@ export const App: FC = () => {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [currentUser, isSearchOpen, isAuthModalOpen, libraryToUnlock]);
+  }, [currentUser, isSearchOpen, isAuthModalOpen, libraryToUnlock, searchSelectedItemId]);
 
   const handleAuthSuccess = (token: string, user: User) => {
     api.clearUnlockedTokens();
@@ -483,6 +483,7 @@ export const App: FC = () => {
           <ItemDetailsModal
             itemId={searchSelectedItemId}
             isOpen={true}
+            currentUser={currentUser}
             onClose={() => setSearchSelectedItemId(null)}
             onPlayItem={(id) => {
               setSearchSelectedItemId(null);

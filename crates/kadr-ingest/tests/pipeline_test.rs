@@ -139,6 +139,7 @@ async fn test_ingest_worker_upsert_and_delete() {
         file_size: 1024,
         technical: Default::default(),
         metadata: Default::default(),
+        locked_fields: Vec::new(),
     };
 
     tx.send(IngestMessage::Upsert(item.clone(), Vec::new()))
@@ -283,6 +284,7 @@ async fn test_ingest_worker_delete_purges_inflight_batch() {
         file_size: 2048,
         technical: Default::default(),
         metadata: Default::default(),
+        locked_fields: Vec::new(),
     };
 
     // Send Upsert followed immediately by Delete before 100ms batch flush

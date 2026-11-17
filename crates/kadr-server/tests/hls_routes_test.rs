@@ -106,6 +106,7 @@ mod test_helpers {
                 container: Some("mp4".to_string()),
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         };
         media_repo.upsert_batch(&[item]).await.unwrap();
         let items = media_repo.list_by_library(&lib.id, 1, 0).await.unwrap();

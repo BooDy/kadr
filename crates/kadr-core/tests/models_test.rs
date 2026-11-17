@@ -39,6 +39,7 @@ fn test_media_item_serialization_roundtrip() {
             release_group: Some("Ghareeb".to_string()),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let serialized = serde_json::to_string(&item).expect("serialization failed");

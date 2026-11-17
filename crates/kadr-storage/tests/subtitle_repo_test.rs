@@ -79,6 +79,7 @@ async fn test_subtitle_migration_and_repository() {
             file_size: 2_000_000_000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .expect("failed to insert media item");
@@ -245,6 +246,7 @@ async fn test_subtitle_migration_and_repository() {
             file_size: 1_000_000_000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .expect("failed to insert second media item");

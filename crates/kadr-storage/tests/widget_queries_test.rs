@@ -54,6 +54,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 poster_path: Some("/media/movies/inception-poster.jpg".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -74,6 +75,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 poster_path: Some("/media/movies/interstellar-poster.jpg".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -93,6 +95,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 backdrop_path: Some("/media/movies/memento-backdrop.jpg".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -112,6 +115,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 backdrop_path: Some("/media/movies/prestige-backdrop.jpg".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -131,6 +135,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 backdrop_path: None,
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -149,6 +154,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 genres: vec!["Sci-Fi".to_string(), "Thriller".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -170,6 +176,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 episode: Some(2),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -191,6 +198,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 episode: Some(1),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -212,6 +220,7 @@ async fn setup_test_data() -> (MediaItemRepository, LibraryRepository) {
                 episode: Some(1),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
     ];
 
@@ -797,6 +806,7 @@ async fn test_catalog_queries_exclude_loose_episodes() {
             genres: vec!["Sci-Fi".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let show = MediaItem {
@@ -816,6 +826,7 @@ async fn test_catalog_queries_exclude_loose_episodes() {
             genres: vec!["Sci-Fi".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let ep1 = MediaItem {
@@ -838,6 +849,7 @@ async fn test_catalog_queries_exclude_loose_episodes() {
             genres: vec!["Sci-Fi".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let ep2 = MediaItem {
@@ -860,6 +872,7 @@ async fn test_catalog_queries_exclude_loose_episodes() {
             genres: vec!["Sci-Fi".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let ep3 = MediaItem {
@@ -882,6 +895,7 @@ async fn test_catalog_queries_exclude_loose_episodes() {
             genres: vec!["Sci-Fi".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     repo.upsert_batch(&[movie, show, ep1, ep2, ep3])

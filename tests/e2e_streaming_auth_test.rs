@@ -70,6 +70,7 @@ async fn test_full_milestone_2_user_stream_and_scrobble_journey() {
                 ..Default::default()
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();

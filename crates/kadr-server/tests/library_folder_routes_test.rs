@@ -191,6 +191,7 @@ async fn setup_test_context() -> TestContext {
                 rating: Some(8.5),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -208,6 +209,7 @@ async fn setup_test_context() -> TestContext {
                 rating: Some(9.0),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -225,6 +227,7 @@ async fn setup_test_context() -> TestContext {
                 rating: Some(8.8),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -242,6 +245,7 @@ async fn setup_test_context() -> TestContext {
                 rating: Some(9.5),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -259,6 +263,7 @@ async fn setup_test_context() -> TestContext {
                 rating: Some(7.5),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
     ];
     media_repo

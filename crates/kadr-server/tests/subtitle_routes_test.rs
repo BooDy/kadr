@@ -111,6 +111,7 @@ async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -705,6 +706,7 @@ async fn test_lazy_embedded_mkv_discovery_and_webvtt_extraction() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();

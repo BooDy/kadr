@@ -121,6 +121,7 @@ async fn setup_test_context(mock_base_url: Option<String>) -> TestContext {
             file_size: 1000,
             technical,
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -362,6 +363,7 @@ async fn test_ingest_worker_flush_emits_library_updated_event() {
         file_size: 4096,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
 
     tx.send(IngestMessage::Upsert(new_item, vec![]))

@@ -805,10 +805,23 @@ impl WidgetResolver {
                 _ => (Some(item.library_id.clone()), None),
             };
 
+        let tmdb_id = item.metadata.extra.get("tmdb_id").and_then(|v| v.as_i64());
+
         Ok(Some(ItemDetailsPayload {
             card,
+            original_title: item.original_title.clone(),
             overview,
             genres,
+            director: item.metadata.director.clone(),
+            writers: item.metadata.writers.clone(),
+            actors: item.metadata.actors.clone(),
+            tags: item.metadata.tags.clone(),
+            studio: item.metadata.studio.clone(),
+            country: item.metadata.country.clone(),
+            language: item.metadata.language.clone(),
+            series_title: item.metadata.series_title.clone(),
+            tmdb_id,
+            locked_fields: item.locked_fields.clone(),
             duration_seconds,
             technical,
             stream_url,

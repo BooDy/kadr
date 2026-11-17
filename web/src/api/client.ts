@@ -1,6 +1,7 @@
 import type {
   AddPlaylistItemsPayload,
   AddPlaylistItemsResponse,
+  ApplyTmdbPayload,
   ApprovePluginResponse,
   CardViewModel,
   CreateLibraryPayload,
@@ -9,10 +10,12 @@ import type {
   CreateUserPayload,
   DiscoveryResponse,
   DownloadSubtitleRequest,
+  EnrichLibraryResponse,
   FsBrowseResponse,
   ItemDetailsPayload,
   Library,
   LibraryFolderResponse,
+  MetadataSettings,
   OnlineSubtitleSearchResponse,
   PlaybackSessionResponse,
   PlaybackState,
@@ -34,9 +37,12 @@ import type {
   SubtitleTrack,
   SystemConfig,
   TelemetrySnapshot,
+  TmdbSearchResponse,
   UnlockLibraryResponse,
   UpdateConfigPayload,
+  UpdateItemMetadataPayload,
   UpdateLibraryPayload,
+  UpdateMetadataSettingsPayload,
   UpdatePlaylistPayload,
   UpdatePluginSettingsPayload,
   User,
@@ -406,6 +412,74 @@ export class ApiClient {
       query.set('limit', String(params.limit));
     }
     return this.request<SearchResponse>(`/api/v1/search?${query.toString()}`);
+  }
+
+  // Metadata & TMDb
+  public async updateItemMetadata(
+    itemId: number,
+    payload: UpdateItemMetadataPayload
+  ): Promise<ItemDetailsPayload> {
+    return this.request<ItemDetailsPayload>(`/api/v1/items/${itemId}/metadata`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getMetadataSettings(): Promise<MetadataSettings> {
+    return this.request<MetadataSettings>('/api/v1/admin/settings/metadata');
+  }
+
+  public async updateMetadataSettings(
+    payload: UpdateMetadataSettingsPayload
+  ): Promise<MetadataSettings> {
+    return this.request<MetadataSettings>('/api/v1/admin/settings/metadata', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async searchItemTmdb(
+    itemId: number,
+    params?: { q?: string; year?: number; media_type?: 'movie' | 'tv' | string }
+  ): Promise<TmdbSearchResponse> {
+    const qs = new URLSearchParams();
+    if (params?.q !== undefined && params.q.trim() !== '') {
+      qs.set('q', params.q.trim());
+    }
+    if (params?.year !== undefined && Number.isFinite(params.year)) {
+      qs.set('year', String(params.year));
+    }
+    if (params?.media_type) {
+      qs.set('media_type', params.media_type);
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<TmdbSearchResponse>(
+      `/api/v1/items/${itemId}/tmdb/search${suffix}`
+    );
+  }
+
+  public async applyItemTmdb(
+    itemId: number,
+    payload: ApplyTmdbPayload
+  ): Promise<ItemDetailsPayload> {
+    return this.request<ItemDetailsPayload>(
+      `/api/v1/items/${itemId}/tmdb/apply`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  public async enrichLibraryTmdb(
+    libraryId: string
+  ): Promise<EnrichLibraryResponse> {
+    return this.request<EnrichLibraryResponse>(
+      `/api/v1/admin/libraries/${encodeURIComponent(libraryId)}/tmdb/enrich`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
   // Subtitles

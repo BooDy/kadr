@@ -114,6 +114,7 @@ async fn setup_test_app() -> TestContext {
                 genres: vec!["Sci-Fi".to_string(), "Adventure".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // In-progress movie
         MediaItem {
@@ -138,6 +139,7 @@ async fn setup_test_app() -> TestContext {
                 genres: vec!["Sci-Fi".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Show
         MediaItem {
@@ -157,6 +159,7 @@ async fn setup_test_app() -> TestContext {
                 genres: vec!["Drama".to_string(), "Sci-Fi".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Episode 1
         MediaItem {
@@ -181,6 +184,7 @@ async fn setup_test_app() -> TestContext {
                 episode: Some(1),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Episode 2
         MediaItem {
@@ -205,6 +209,7 @@ async fn setup_test_app() -> TestContext {
                 episode: Some(2),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
     ];
 
@@ -227,6 +232,7 @@ async fn setup_test_app() -> TestContext {
                 rating: Some(7.0 + (i as f32 * 0.1)),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         });
     }
 
@@ -1031,6 +1037,7 @@ async fn test_show_details_returns_hydrated_episodes_with_season() {
         file_size: 0,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     let tv_ep1 = MediaItem {
         id: None,
@@ -1050,6 +1057,7 @@ async fn test_show_details_returns_hydrated_episodes_with_season() {
             episode: Some(1),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     let tv_ep2 = MediaItem {
         id: None,
@@ -1069,6 +1077,7 @@ async fn test_show_details_returns_hydrated_episodes_with_season() {
             episode: Some(2),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     ctx.media_repo
         .upsert_batch(&[tv_show, tv_ep1, tv_ep2])
@@ -1284,6 +1293,7 @@ async fn test_get_item_details_includes_library_and_folder_path() {
             overview: Some("Mind-bending thriller".to_string()),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[item]).await.unwrap();
     let created_item = media_repo.find_by_path(&video_file).await.unwrap().unwrap();
@@ -1319,6 +1329,7 @@ async fn test_get_item_details_includes_library_and_folder_path() {
         file_size: 1000,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[root_item]).await.unwrap();
     let root_created = media_repo
@@ -1368,6 +1379,7 @@ async fn test_get_item_details_includes_library_and_folder_path() {
         file_size: 1000,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[multi_item]).await.unwrap();
     let multi_created = media_repo

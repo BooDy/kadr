@@ -20,15 +20,25 @@ import {
   Layout,
   Activity,
   Puzzle,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import type { Library, MediaType, SystemConfig, User } from '../../types';
+import type { Library, MediaType, MetadataSettings, SystemConfig, User } from '../../types';
 import { FolderPickerModal } from './FolderPickerModal';
 import { LayoutStudio } from '../studio/LayoutStudio';
 import { TelemetryDashboard } from '../telemetry/TelemetryDashboard';
 import { PluginsPanel } from './PluginsPanel';
+import { MetadataSettingsPanel } from './MetadataSettingsPanel';
 
-export type AdminTab = 'libraries' | 'users' | 'studio' | 'telemetry' | 'config' | 'plugins';
+export type AdminTab =
+  | 'libraries'
+  | 'users'
+  | 'studio'
+  | 'telemetry'
+  | 'config'
+  | 'plugins'
+  | 'metadata';
 
 export interface AdminDashboardProps {
   onClose?: () => void;
@@ -81,6 +91,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editDebounce, setEditDebounce] = useState(500);
   const [editFfprobe, setEditFfprobe] = useState(true);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [metadataSettings, setMetadataSettings] = useState<MetadataSettings | null>(null);
+  const [enrichingLibId, setEnrichingLibId] = useState<string | null>(null);
 
   // Load initial data
   const loadData = async () => {
@@ -93,6 +105,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ]);
       setLibraries(libs);
       setUsers(userList);
+      if (typeof api.getMetadataSettings === 'function') {
+        void Promise.resolve(api.getMetadataSettings())
+          .then((ms) => {
+            if (ms) setMetadataSettings(ms);
+          })
+          .catch(() => {});
+      }
       if (cfg) {
         setConfig(cfg);
         setEditName(cfg.name || 'Kadr Media Server');
@@ -273,6 +292,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleEnrichLibrary = async (id: string, name: string) => {
+    setEnrichingLibId(id);
+    try {
+      const res = await api.enrichLibraryTmdb(id);
+      showStatus(
+        'success',
+        `Metadata enrichment for "${name}": matched ${res.matched} of ${res.scanned} items (${res.skipped} skipped).`
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch missing metadata';
+      showStatus('error', msg);
+    } finally {
+      setEnrichingLibId(null);
+    }
+  };
+
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingConfig(true);
@@ -438,6 +473,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <Puzzle className="w-4 h-4" />
           Plugins
+        </button>
+        <button
+          onClick={() => setActiveTab('metadata')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight shrink-0 ${
+            activeTab === 'metadata'
+              ? 'bg-accent text-canvas font-semibold rounded-xl shadow-md'
+              : 'text-muted hover:text-text-main hover:bg-panel-hover rounded-xl'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          Metadata & TMDb
         </button>
       </div>
 
@@ -616,6 +662,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       Added: {new Date(lib.created_at * 1000).toLocaleDateString()}
                     </span>
                     <div className="flex items-center gap-2">
+                      {metadataSettings?.enabled && (
+                        <button
+                          type="button"
+                          disabled={enrichingLibId === lib.id}
+                          onClick={() => handleEnrichLibrary(lib.id, lib.name)}
+                          title="Fetch missing TMDb metadata and artwork"
+                          className="flex items-center gap-1 px-3 py-1.5 bg-accent/15 hover:bg-accent/25 text-accent border border-accent/30 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-highlight"
+                        >
+                          {enrichingLibId === lib.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3.5 h-3.5" />
+                          )}
+                          Fetch Missing Metadata
+                        </button>
+                      )}
                       <button
                         onClick={() => handleScanLibrary(lib.id, lib.name)}
                         title="Re-scan directory for new media"
@@ -698,6 +760,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Tab 5: Server Configuration */}
       {activeTab === 'plugins' && <PluginsPanel />}
+
+      {activeTab === 'metadata' && (
+        <MetadataSettingsPanel
+          initialSettings={metadataSettings}
+          onSettingsChange={setMetadataSettings}
+        />
+      )}
 
       {activeTab === 'config' && (
         <div className="mt-8 max-w-3xl space-y-6">

@@ -74,6 +74,7 @@ async fn test_user_and_playback_repositories() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -205,6 +206,7 @@ async fn test_get_states_for_items_batch() {
                 file_size: 1000,
                 technical: TechnicalInfo::default(),
                 metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
             },
             MediaItem {
                 id: None,
@@ -219,6 +221,7 @@ async fn test_get_states_for_items_batch() {
                 file_size: 1000,
                 technical: TechnicalInfo::default(),
                 metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
             },
             MediaItem {
                 id: None,
@@ -233,6 +236,7 @@ async fn test_get_states_for_items_batch() {
                 file_size: 1000,
                 technical: TechnicalInfo::default(),
                 metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
             },
         ])
         .await

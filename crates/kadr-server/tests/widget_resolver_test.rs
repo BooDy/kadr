@@ -54,6 +54,7 @@ fn test_card_normalization_movie_and_episode() {
             genres: vec!["Sci-Fi".to_string(), "Adventure".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let card_4k = to_card_view_model(&movie_4k, None);
@@ -106,6 +107,7 @@ fn test_card_normalization_movie_and_episode() {
             ..Default::default()
         },
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     let card_recent = to_card_view_model(&movie_recent, None);
     assert_eq!(card_recent.badge.as_deref(), Some("NEW"));
@@ -134,6 +136,7 @@ fn test_card_normalization_movie_and_episode() {
             episode: Some(1),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     let card_ep = to_card_view_model(&episode, None);
     assert_eq!(card_ep.title, "Good News About Hell");
@@ -158,6 +161,7 @@ fn test_card_normalization_movie_and_episode() {
             episode: Some(2),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     let card_ep2 = to_card_view_model(&episode_no_series, None);
     assert_eq!(card_ep2.subtitle.as_deref(), Some("S01E02"));
@@ -260,6 +264,7 @@ async fn setup_test_environment_with_pool(
                 genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Item 2: Movie in progress for user-1
         MediaItem {
@@ -284,6 +289,7 @@ async fn setup_test_environment_with_pool(
                 genres: vec!["Thriller".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Item 3: Show container
         MediaItem {
@@ -304,6 +310,7 @@ async fn setup_test_environment_with_pool(
                 genres: vec!["Sci-Fi".to_string(), "Drama".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Item 4: Dark Matter Episode 1
         MediaItem {
@@ -331,6 +338,7 @@ async fn setup_test_environment_with_pool(
                 genres: vec!["Sci-Fi".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         // Item 5: Dark Matter Episode 2
         MediaItem {
@@ -358,6 +366,7 @@ async fn setup_test_environment_with_pool(
                 genres: vec!["Sci-Fi".to_string()],
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
     ];
 
@@ -637,6 +646,7 @@ async fn test_resolve_widget_data_recently_added_exclude_genres() {
             genres: vec!["Horror".to_string(), "Mystery".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[horror_movie]).await.unwrap();
 
@@ -750,6 +760,7 @@ async fn test_resolve_widget_data_exclude_private_even_when_unlocked() {
         file_size: 5_000_000_000,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[private_item]).await.unwrap();
 
@@ -866,6 +877,7 @@ async fn test_continue_watching_cursor_advances_by_page_states_len() {
         file_size: 1_000_000_000,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[second_item]).await.unwrap();
     let paths_map = media_repo.find_by_paths(&[&second_path]).await.unwrap();
