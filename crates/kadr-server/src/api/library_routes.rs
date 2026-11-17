@@ -1083,6 +1083,7 @@ pub async fn browse_library_folders(
                 file_size: 0,
                 technical: Default::default(),
                 metadata: Default::default(),
+                locked_fields: Vec::new(),
             };
             let rel_path = if current_path.is_empty() {
                 file_name.clone()

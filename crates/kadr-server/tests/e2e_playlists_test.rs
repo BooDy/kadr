@@ -219,6 +219,7 @@ async fn setup_env() -> TestEnv {
                     ..Default::default()
                 },
                 metadata: meta,
+                locked_fields: Vec::new(),
             }
         };
 

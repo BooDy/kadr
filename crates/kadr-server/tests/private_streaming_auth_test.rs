@@ -105,6 +105,7 @@ async fn setup_app_with_private_item() -> (axum::Router, String, i64, String) {
             genres: vec!["Documentary".to_string()],
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
     media_repo
         .upsert_batch(&[private_item])

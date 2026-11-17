@@ -7,7 +7,7 @@ use std::path::PathBuf;
 pub const SELECT_JOINED_COLUMNS: &str =
     "m.id, m.library_id, m.item_type, m.title, m.original_title, m.release_year, \
  m.duration_seconds, m.added_at, m.file_path, m.file_name, m.file_size, \
- m.resolution, m.video_codec, m.audio_codec, m.audio_channels, m.container, m.metadata";
+ m.resolution, m.video_codec, m.audio_codec, m.audio_channels, m.container, m.metadata, m.locked_fields";
 
 fn current_epoch_secs() -> i64 {
     std::time::SystemTime::now()
@@ -116,6 +116,11 @@ pub fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
     let audio_channels: Option<u8> = row.get(14)?;
     let container: Option<String> = row.get(15)?;
     let metadata_str: String = row.get(16)?;
+    let locked_fields: Vec<String> = row
+        .get::<_, String>("locked_fields")
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .unwrap_or_default();
 
     let item_type: MediaType =
         serde_json::from_str(&format!("\"{}\"", item_type_str)).unwrap_or(MediaType::Unknown);
@@ -141,6 +146,7 @@ pub fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
             container,
         },
         metadata,
+        locked_fields,
     })
 }
 

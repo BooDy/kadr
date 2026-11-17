@@ -127,8 +127,19 @@ export interface TechnicalInfo {
 
 export interface ItemDetailsPayload {
   card: CardViewModel;
+  original_title?: string;
   overview?: string;
   genres: string[];
+  director?: string;
+  writers?: string[];
+  actors?: string[];
+  tags?: string[];
+  studio?: string;
+  country?: string;
+  language?: string;
+  series_title?: string;
+  tmdb_id?: number;
+  locked_fields?: string[];
   duration_seconds?: number;
   technical?: TechnicalInfo;
   stream_url: string;
@@ -136,6 +147,72 @@ export interface ItemDetailsPayload {
   episodes?: CardViewModel[];
   library_id?: string;
   folder_path?: string;
+}
+
+export interface UpdateItemMetadataPayload {
+  title?: string;
+  original_title?: string | null;
+  release_year?: number | null;
+  overview?: string | null;
+  director?: string | null;
+  writers?: string[];
+  actors?: string[];
+  genres?: string[];
+  tags?: string[];
+  studio?: string | null;
+  country?: string | null;
+  language?: string | null;
+  rating?: number | null;
+  poster_url?: string | null;
+  backdrop_url?: string | null;
+  series_title?: string | null;
+  season?: number | null;
+  episode?: number | null;
+  reset_locks?: boolean;
+}
+
+export interface MetadataSettings {
+  enabled: boolean;
+  auto_fetch_on_scan: boolean;
+  language: string;
+  api_key_configured: boolean;
+  api_key_hint?: string | null;
+}
+
+export interface UpdateMetadataSettingsPayload {
+  enabled?: boolean;
+  auto_fetch_on_scan?: boolean;
+  language?: string;
+  api_key?: string;
+}
+
+export interface TmdbSearchMatch {
+  tmdb_id: number;
+  media_type: 'movie' | 'tv' | string;
+  title: string;
+  original_title?: string;
+  release_year?: number;
+  overview?: string;
+  rating?: number;
+  poster_url?: string;
+  backdrop_url?: string;
+}
+
+export interface TmdbSearchResponse {
+  results: TmdbSearchMatch[];
+}
+
+export interface ApplyTmdbPayload {
+  tmdb_id: number;
+  media_type: 'movie' | 'tv' | string;
+  download_artwork?: boolean;
+}
+
+export interface EnrichLibraryResponse {
+  scanned: number;
+  matched: number;
+  skipped: number;
+  errors: number;
 }
 
 export interface ScreenLayout {

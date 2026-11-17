@@ -124,6 +124,7 @@ async fn test_worker_flushes_batch_and_creates_parent_show() {
         file_size: 1024,
         technical: Default::default(),
         metadata: ep1_meta,
+        locked_fields: Vec::new(),
     };
 
     let ep2_meta = MediaMetadata {
@@ -146,6 +147,7 @@ async fn test_worker_flushes_batch_and_creates_parent_show() {
         file_size: 1024,
         technical: Default::default(),
         metadata: ep2_meta,
+        locked_fields: Vec::new(),
     };
 
     tx.send(IngestMessage::Upsert(ep1, vec![])).await.unwrap();
@@ -211,6 +213,7 @@ async fn test_worker_preserves_existing_parent_show() {
         file_size: 0,
         technical: Default::default(),
         metadata: custom_meta,
+        locked_fields: Vec::new(),
     };
     repo.upsert_batch(&[existing_show]).await.unwrap();
 
@@ -238,6 +241,7 @@ async fn test_worker_preserves_existing_parent_show() {
         file_size: 1024,
         technical: Default::default(),
         metadata: ep_meta,
+        locked_fields: Vec::new(),
     };
 
     tx.send(IngestMessage::Upsert(ep, vec![])).await.unwrap();
@@ -322,6 +326,7 @@ async fn test_worker_handles_multiple_flat_shows_in_shared_dir_without_collision
             episode: Some(1),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let ep2 = MediaItem {
@@ -342,6 +347,7 @@ async fn test_worker_handles_multiple_flat_shows_in_shared_dir_without_collision
             episode: Some(1),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     tx.send(IngestMessage::Upsert(ep1, vec![])).await.unwrap();
@@ -409,6 +415,7 @@ async fn test_worker_deduplicates_case_variation_series_titles_in_same_batch() {
             episode: Some(1),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let ep2 = MediaItem {
@@ -429,6 +436,7 @@ async fn test_worker_deduplicates_case_variation_series_titles_in_same_batch() {
             episode: Some(2),
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     // Both sent in the same batch

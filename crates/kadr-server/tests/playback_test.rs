@@ -87,6 +87,7 @@ async fn setup_test_context() -> (
                     ..Default::default()
                 },
                 metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
             },
             MediaItem {
                 id: None,
@@ -104,6 +105,7 @@ async fn setup_test_context() -> (
                     ..Default::default()
                 },
                 metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
             },
         ])
         .await

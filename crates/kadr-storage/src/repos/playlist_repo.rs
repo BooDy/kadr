@@ -663,6 +663,7 @@ mod tests {
                 poster_path: poster.map(ToOwned::to_owned),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         }
     }
 

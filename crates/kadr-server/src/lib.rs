@@ -4,6 +4,7 @@ pub mod config;
 pub mod events;
 pub mod identity;
 pub mod layout;
+pub mod metadata;
 pub mod playback;
 pub mod plugins;
 pub mod resolver;

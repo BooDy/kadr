@@ -9,6 +9,9 @@ import {
   Loader2,
   Folder,
   ListPlus,
+  Pencil,
+  Sparkles,
+  Lock,
 } from 'lucide-react';
 import type {
   CardViewModel,
@@ -16,9 +19,12 @@ import type {
   OnlineSubtitleMatch,
   PlaylistAddTarget,
   SubtitleTrack,
+  User,
 } from '../../types';
 import { api } from '../../api/client';
 import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
+import { MetadataEditorModal } from './MetadataEditorModal';
+import { IdentifyTmdbModal } from './IdentifyTmdbModal';
 
 export interface ItemDetailsModalProps {
   itemId: number | null;
@@ -28,6 +34,7 @@ export interface ItemDetailsModalProps {
   onPlayItem?: (itemId: number) => void;
   initialDetails?: ItemDetailsPayload;
   onNavigateToFolder?: (libraryId: string, folderPath: string) => void;
+  currentUser?: User | null;
 }
 
 interface EpisodeCardProps {
@@ -178,6 +185,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   onPlayItem,
   initialDetails,
   onNavigateToFolder,
+  currentUser,
 }) => {
   const [details, setDetails] = useState<ItemDetailsPayload | null>(initialDetails ?? null);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
@@ -193,10 +201,16 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null);
 
-  // Artwork error state
+  // Artwork & child modal state
   const [backdropFailed, setBackdropFailed] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
+  const [artworkRev, setArtworkRev] = useState(0);
   const [playlistTarget, setPlaylistTarget] = useState<PlaylistAddTarget | null>(null);
+  const [isMetadataEditorOpen, setIsMetadataEditorOpen] = useState(false);
+  const [isIdentifyOpen, setIsIdentifyOpen] = useState(false);
+
+  const effectiveUser = currentUser !== undefined ? currentUser : api.getUser();
+  const isAdmin = effectiveUser?.role === 'admin';
 
   useEffect(() => {
     if (!isOpen || itemId === null) {
@@ -210,6 +224,8 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
       setPosterFailed(false);
       setSelectedSeason(null);
       setPlaylistTarget(null);
+      setIsMetadataEditorOpen(false);
+      setIsIdentifyOpen(false);
       return;
     }
 
@@ -244,13 +260,19 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && playlistTarget === null) {
-        onClose();
+      if (e.key === 'Escape' && isOpen) {
+        if (isMetadataEditorOpen) {
+          setIsMetadataEditorOpen(false);
+        } else if (isIdentifyOpen) {
+          setIsIdentifyOpen(false);
+        } else if (playlistTarget === null) {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, playlistTarget]);
+  }, [isOpen, onClose, playlistTarget, isMetadataEditorOpen, isIdentifyOpen]);
 
   const episodesBySeason = useMemo(() => {
     if (!details?.episodes || details.episodes.length === 0) {
@@ -338,9 +360,24 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   const card = details?.card;
   const duration =
     details?.duration_seconds || details?.technical?.duration_seconds;
-  const backdropUrl =
+  const baseBackdropUrl =
     card?.backdrop_url || api.getArtworkUrl(itemId, 'backdrop');
-  const posterUrl = card?.poster_url || api.getArtworkUrl(itemId, 'poster');
+  const basePosterUrl = card?.poster_url || api.getArtworkUrl(itemId, 'poster');
+  const backdropUrl =
+    artworkRev > 0
+      ? `${baseBackdropUrl}${baseBackdropUrl.includes('?') ? '&' : '?'}v=${artworkRev}`
+      : baseBackdropUrl;
+  const posterUrl =
+    artworkRev > 0
+      ? `${basePosterUrl}${basePosterUrl.includes('?') ? '&' : '?'}v=${artworkRev}`
+      : basePosterUrl;
+
+  const handleMetadataUpdated = (updated: ItemDetailsPayload) => {
+    setDetails(updated);
+    setPosterFailed(false);
+    setBackdropFailed(false);
+    setArtworkRev((r) => r + 1);
+  };
 
   return (
     <div
@@ -454,6 +491,26 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
 
                 {/* Quick Play & Actions */}
                 <div className="self-center sm:self-end flex flex-wrap items-center gap-3">
+                  {isAdmin && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsMetadataEditorOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-panel hover:bg-panel-hover text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                      >
+                        <Pencil className="w-4 h-4 text-accent" />
+                        <span>Edit Metadata</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsIdentifyOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-panel hover:bg-panel-hover text-text-main border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                      >
+                        <Sparkles className="w-4 h-4 text-highlight" />
+                        <span>Identify</span>
+                      </button>
+                    </>
+                  )}
                   {details.library_id && onNavigateToFolder && (
                     <button
                       type="button"
@@ -546,6 +603,57 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                           </span>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Credits & Production Metadata */}
+                  {(details.director ||
+                    (details.actors && details.actors.length > 0) ||
+                    details.studio ||
+                    details.country ||
+                    (details.locked_fields && details.locked_fields.length > 0)) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm pt-2 border-t border-border-subtle">
+                      {details.director && (
+                        <div>
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted block">
+                            Director
+                          </span>
+                          <span className="text-text-main">{details.director}</span>
+                        </div>
+                      )}
+                      {details.studio && (
+                        <div>
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted block">
+                            Studio
+                          </span>
+                          <span className="text-text-main">{details.studio}</span>
+                        </div>
+                      )}
+                      {details.country && (
+                        <div>
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted block">
+                            Country
+                          </span>
+                          <span className="text-text-main">{details.country}</span>
+                        </div>
+                      )}
+                      {details.actors && details.actors.length > 0 && (
+                        <div className="sm:col-span-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted block">
+                            Cast
+                          </span>
+                          <span className="text-text-main">{details.actors.join(', ')}</span>
+                        </div>
+                      )}
+                      {details.locked_fields && details.locked_fields.length > 0 && (
+                        <div className="sm:col-span-2 flex items-center gap-1.5 text-xs text-highlight">
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>
+                            {details.locked_fields.length} locked metadata field
+                            {details.locked_fields.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -836,6 +944,25 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
         target={playlistTarget}
         onClose={() => setPlaylistTarget(null)}
       />
+
+      {details && (
+        <>
+          <MetadataEditorModal
+            isOpen={isMetadataEditorOpen}
+            itemId={itemId}
+            details={details}
+            onClose={() => setIsMetadataEditorOpen(false)}
+            onSaved={handleMetadataUpdated}
+          />
+          <IdentifyTmdbModal
+            isOpen={isIdentifyOpen}
+            itemId={itemId}
+            details={details}
+            onClose={() => setIsIdentifyOpen(false)}
+            onApplied={handleMetadataUpdated}
+          />
+        </>
+      )}
     </div>
   );
 };

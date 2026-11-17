@@ -66,6 +66,7 @@ async fn test_library_and_media_item_repositories() {
             release_group: None,
             ..Default::default()
         },
+        locked_fields: Vec::new(),
     };
 
     let count = media_repo
@@ -178,6 +179,7 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
                 container: Some("mkv".to_string()),
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         })
         .collect::<Vec<_>>();
 
@@ -278,6 +280,7 @@ async fn test_media_item_get_by_ids_batch() {
                 overview: Some("Alpha overview".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -295,6 +298,7 @@ async fn test_media_item_get_by_ids_batch() {
                 overview: Some("Beta overview".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -312,6 +316,7 @@ async fn test_media_item_get_by_ids_batch() {
                 overview: Some("Gamma overview".to_string()),
                 ..Default::default()
             },
+            locked_fields: Vec::new(),
         },
     ];
 
@@ -389,6 +394,7 @@ async fn test_media_item_find_by_paths_batch() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         },
         MediaItem {
             id: None,
@@ -403,6 +409,7 @@ async fn test_media_item_find_by_paths_batch() {
             file_size: 2000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         },
     ];
 
@@ -465,6 +472,7 @@ async fn test_deduplicate_media_items() {
         file_size: 1000,
         technical: TechnicalInfo::default(),
         metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     media_repo.upsert_batch(&[item1]).await.unwrap();
 
@@ -489,6 +497,7 @@ async fn test_deduplicate_media_items() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         };
         media_repo.upsert_batch(&[item2]).await.unwrap();
 

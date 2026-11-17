@@ -68,6 +68,7 @@ async fn test_http_206_range_streaming() {
                 ..Default::default()
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -181,6 +182,7 @@ async fn test_range_edge_cases_and_416() {
                 ..Default::default()
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -361,6 +363,7 @@ async fn test_streaming_mime_types_for_all_video_containers() {
                 ..Default::default()
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         });
     }
     media_repo.upsert_batch(&batch).await.unwrap();

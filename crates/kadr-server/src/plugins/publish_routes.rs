@@ -184,6 +184,7 @@ fn build_item(
             container: p.container,
         },
         metadata,
+        locked_fields: Vec::new(),
     })
 }
 

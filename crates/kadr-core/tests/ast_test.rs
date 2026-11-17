@@ -315,6 +315,7 @@ fn test_widget_node_item_details() {
         episodes: None,
         library_id: None,
         folder_path: None,
+        ..Default::default()
     };
 
     let node = WidgetNode::ItemDetails {
@@ -361,6 +362,7 @@ fn test_item_details_payload_with_library_and_folder_path() {
         episodes: None,
         library_id: Some("lib-movies-1".to_string()),
         folder_path: Some("Sci-Fi/Inception (2010)".to_string()),
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&payload).unwrap();

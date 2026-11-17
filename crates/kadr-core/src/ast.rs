@@ -107,7 +107,7 @@ impl From<String> for ScreenId {
 }
 
 /// Normalized card view model for UI presentation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CardViewModel {
     pub id: i64,
     pub title: String,
@@ -217,6 +217,7 @@ impl WidgetQueryBinding {
 }
 
 /// Declarative widget node in a screen layout AST.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WidgetNode {
@@ -288,13 +289,35 @@ impl WidgetNode {
 }
 
 /// Comprehensive details payload for single item view inspection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ItemDetailsPayload {
     pub card: CardViewModel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overview: Option<String>,
     #[serde(default)]
     pub genres: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub director: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub writers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub studio: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmdb_id: Option<i64>,
+    #[serde(default)]
+    pub locked_fields: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

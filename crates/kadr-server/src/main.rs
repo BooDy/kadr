@@ -174,17 +174,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let event_bus = Arc::new(EventBus::default_bus());
+    let shared_config = Arc::new(tokio::sync::RwLock::new(config.clone()));
 
     let storyboard_service = Arc::new(kadr_server::storyboard::StoryboardService::new(
         config.server.data_dir.join("storyboards"),
         config.storyboard.clone(),
         config.transcoding.ffmpeg_path.clone(),
     ));
+    let metadata_service = Arc::new(kadr_server::metadata::MetadataService::new(
+        media_repo.clone(),
+        shared_config.clone(),
+    ));
 
     let (ingest_tx, ingest_rx) = tokio::sync::mpsc::channel(200);
     let bus_for_worker = event_bus.clone();
+    let bus_for_enrich = event_bus.clone();
     let sb_for_delete = storyboard_service.clone();
     let sb_for_upsert = storyboard_service.clone();
+    let meta_for_upsert = metadata_service.clone();
     let worker = IngestWorker::new(ingest_rx, media_repo.clone())
         .with_subtitles(subtitle_repo.clone())
         .with_event_callback(move |ev| {
@@ -197,23 +204,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         })
         .with_upsert_callback(move |items| {
-            if !sb_for_upsert.settings().generate_on_scan || !sb_for_upsert.is_available() {
-                return;
-            }
-            for item in items {
-                if kadr_server::storyboard::has_video_stream(&item) {
-                    let sb = sb_for_upsert.clone();
-                    tokio::spawn(async move {
-                        let _ = sb
-                            .get_or_enqueue_manifest(
-                                item.id.unwrap_or(0),
-                                &item.file_path,
-                                item.technical.duration_seconds,
-                            )
-                            .await;
-                    });
+            if sb_for_upsert.settings().generate_on_scan && sb_for_upsert.is_available() {
+                for item in &items {
+                    if kadr_server::storyboard::has_video_stream(item) {
+                        let sb = sb_for_upsert.clone();
+                        let item_clone = item.clone();
+                        tokio::spawn(async move {
+                            let _ = sb
+                                .get_or_enqueue_manifest(
+                                    item_clone.id.unwrap_or(0),
+                                    &item_clone.file_path,
+                                    item_clone.technical.duration_seconds,
+                                )
+                                .await;
+                        });
+                    }
                 }
             }
+
+            let meta_svc = meta_for_upsert.clone();
+            let bus = bus_for_enrich.clone();
+            tokio::spawn(async move {
+                meta_svc.enrich_ingested_batch(&items, &bus).await;
+            });
         });
     let worker_handle = tokio::spawn(worker.run());
 
@@ -396,7 +409,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let server_identity = Arc::new(ServerIdentity { id: server_id });
 
-    let shared_config = Arc::new(tokio::sync::RwLock::new(config.clone()));
     let plugin_service = kadr_server::plugins::PluginService::new(
         pool.clone(),
         jwt_secret.as_bytes(),
@@ -428,7 +440,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared_config,
         server_identity,
     )
-    .layer(axum::Extension(storyboard_service));
+    .layer(axum::Extension(storyboard_service))
+    .layer(axum::Extension(metadata_service));
 
     // Mount static web SPA serving if assets exist
     let env_web = std::env::var("KADR_WEB_DIR")

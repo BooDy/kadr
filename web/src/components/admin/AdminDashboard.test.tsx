@@ -49,6 +49,13 @@ describe('AdminDashboard Component', () => {
     vi.spyOn(api, 'getLibraries').mockResolvedValue(mockLibraries);
     vi.spyOn(api, 'getSystemConfig').mockResolvedValue(mockConfig);
     vi.spyOn(api, 'getProfiles').mockResolvedValue(mockUsers);
+    vi.spyOn(api, 'getMetadataSettings').mockResolvedValue({
+      enabled: false,
+      auto_fetch_on_scan: false,
+      language: 'en-US',
+      api_key_configured: false,
+      api_key_hint: null,
+    });
     vi.spyOn(api, 'browseFilesystem').mockResolvedValue({
       current_path: '/media/docs',
       parent_path: '/media',

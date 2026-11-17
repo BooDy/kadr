@@ -284,6 +284,7 @@ async fn test_ingest_worker_persists_subtitles() {
         file_size: 1024,
         technical: Default::default(),
         metadata: Default::default(),
+        locked_fields: Vec::new(),
     };
 
     let discovered_subs = vec![

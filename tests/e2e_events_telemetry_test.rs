@@ -162,6 +162,7 @@ async fn test_milestone_5a_realtime_events_and_telemetry_e2e() {
             ..Default::default()
         },
         metadata: kadr_core::models::MediaMetadata::default(),
+        locked_fields: Vec::new(),
     };
     media_repo
         .upsert_batch(&[initial_item])

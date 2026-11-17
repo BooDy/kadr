@@ -62,6 +62,7 @@ async fn setup_test_context() -> (
                 container: Some("mp4".to_string()),
             },
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -525,6 +526,7 @@ async fn test_embedded_mkv_extraction_and_caching() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -639,6 +641,7 @@ async fn test_singleflight_concurrent_extractions() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -824,6 +827,7 @@ async fn test_singleflight_concurrent_list_or_probe_subtitles() {
             file_size: 1000,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();
@@ -950,6 +954,7 @@ async fn test_embedded_mov_text_subtitles_probe_and_extract_across_mov_m4v_3gp_a
                 file_size: 1024,
                 technical: TechnicalInfo::default(),
                 metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
             }])
             .await
             .unwrap();
@@ -1012,6 +1017,7 @@ async fn test_embedded_mov_text_subtitles_probe_and_extract_across_mov_m4v_3gp_a
             file_size: 1024,
             technical: TechnicalInfo::default(),
             metadata: MediaMetadata::default(),
+            locked_fields: Vec::new(),
         }])
         .await
         .unwrap();

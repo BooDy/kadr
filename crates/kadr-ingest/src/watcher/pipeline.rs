@@ -183,6 +183,7 @@ impl IngestPipeline {
                 file_size,
                 technical,
                 metadata: meta,
+                locked_fields: Vec::new(),
             },
             subtitles,
         )))

@@ -182,6 +182,7 @@ impl IngestWorker {
                         file_size: 0,
                         technical: TechnicalInfo::default(),
                         metadata: meta,
+                        locked_fields: Vec::new(),
                     };
                     parent_shows_to_create.push(show_item);
                 }
