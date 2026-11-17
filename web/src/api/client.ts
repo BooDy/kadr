@@ -29,6 +29,8 @@ import type {
   ScanResultResponse,
   ScreenLayout,
   ScreenSummary,
+  SearchParams,
+  SearchResponse,
   SubtitleTrack,
   SystemConfig,
   TelemetrySnapshot,
@@ -389,6 +391,21 @@ export class ApiClient {
 
   public async getItemDetails(itemId: number): Promise<ItemDetailsPayload> {
     return this.request<ItemDetailsPayload>(`/api/v1/items/${itemId}/details`);
+  }
+
+  public async search(params: SearchParams): Promise<SearchResponse> {
+    const query = new URLSearchParams();
+    query.set('q', params.q);
+    if (params.item_type && params.item_type !== 'all') {
+      query.set('item_type', params.item_type);
+    }
+    if (params.library_id) {
+      query.set('library_id', params.library_id);
+    }
+    if (params.limit !== undefined) {
+      query.set('limit', String(params.limit));
+    }
+    return this.request<SearchResponse>(`/api/v1/search?${query.toString()}`);
   }
 
   // Subtitles

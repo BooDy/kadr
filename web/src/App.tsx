@@ -14,15 +14,18 @@ import {
   Settings,
   Lock,
   Unlock,
+  Search,
 } from 'lucide-react';
 import { api } from './api/client';
 import type { Library, MediaType, PlaylistItemView, User } from './types';
 import { ProfileSelect } from './components/auth/ProfileSelect';
 import { PinKeypad } from './components/auth/PinKeypad';
 import { BrowseScreen } from './components/browse/BrowseScreen';
+import { ItemDetailsModal } from './components/browse/ItemDetailsModal';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { PlaylistsScreen } from './components/playlists/PlaylistsScreen';
+import { GlobalSearchModal } from './components/search/GlobalSearchModal';
 
 export type NavView = 'home' | `library-${string}` | 'playlists' | 'player' | 'admin';
 
@@ -68,6 +71,8 @@ export const App: FC = () => {
   const [activeLibrary, setActiveLibrary] = useState<Library | null>(null);
   const [pendingFolderNav, setPendingFolderNav] = useState<{ libraryId: string; folderPath: string } | null>(null);
   const [activeFolderNav, setActiveFolderNav] = useState<{ libraryId: string; folderPath: string } | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchSelectedItemId, setSearchSelectedItemId] = useState<number | null>(null);
 
   const refreshLibraries = useCallback(() => {
     api.getLibraries().then(setLibraries).catch(() => []);
@@ -82,6 +87,56 @@ export const App: FC = () => {
     }
   }, [refreshLibraries]);
 
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+        return;
+      }
+
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === '/') {
+        const target = e.target as HTMLElement | null;
+        const active =
+          typeof document !== 'undefined'
+            ? (document.activeElement as HTMLElement | null)
+            : null;
+        const isEditableElement = (el: HTMLElement | null): boolean => {
+          if (!el || typeof el.tagName !== 'string') return false;
+          const tag = el.tagName.toLowerCase();
+          if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+            return true;
+          }
+          if (
+            el.isContentEditable ||
+            el.getAttribute?.('contenteditable') === 'true' ||
+            el.getAttribute?.('contenteditable') === '' ||
+            Boolean(el.closest?.('[contenteditable="true"], [contenteditable=""]'))
+          ) {
+            return true;
+          }
+          return false;
+        };
+
+        if (isEditableElement(target) || isEditableElement(active)) {
+          return;
+        }
+
+        if (isSearchOpen || isAuthModalOpen || libraryToUnlock !== null) {
+          return;
+        }
+
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [currentUser, isSearchOpen, isAuthModalOpen, libraryToUnlock]);
+
   const handleAuthSuccess = (token: string, user: User) => {
     api.clearUnlockedTokens();
     setUnlockedLibraryIds([]);
@@ -93,6 +148,8 @@ export const App: FC = () => {
     setActivePlayingItemId(null);
     setPlayerQueue(null);
     setPlayerQueueIndex(0);
+    setIsSearchOpen(false);
+    setSearchSelectedItemId(null);
     setPreviousView('home');
     setCurrentView('home');
     api.setToken(token);
@@ -114,6 +171,8 @@ export const App: FC = () => {
     setActivePlayingItemId(null);
     setPlayerQueue(null);
     setPlayerQueueIndex(0);
+    setIsSearchOpen(false);
+    setSearchSelectedItemId(null);
     setPreviousView('home');
     setCurrentView('home');
     setIsAuthModalOpen(false);
@@ -288,6 +347,21 @@ export const App: FC = () => {
           <div className="flex items-center gap-3">
             {currentUser ? (
               <div className="flex items-center gap-2 sm:gap-3">
+                {/* Global Search Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen(true)}
+                  aria-label="Search"
+                  title="Search (Ctrl+K or /)"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium text-text-main hover:text-accent bg-canvas/60 hover:bg-panel-hover border border-border-subtle transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                >
+                  <Search className="h-3.5 w-3.5 text-accent" />
+                  <span className="hidden sm:inline">Search</span>
+                  <kbd className="hidden lg:inline-block rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted border border-border-subtle">
+                    /
+                  </kbd>
+                </button>
+
                 {/* Active user avatar chip */}
                 <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-panel border border-border-subtle">
                   <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-accent to-highlight flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
@@ -390,6 +464,35 @@ export const App: FC = () => {
               <AdminDashboard onPlayItem={handlePlayItem} onLibrariesChange={refreshLibraries} />
             )}
           </>
+        )}
+
+        {/* Global Search Modal */}
+        {currentUser && (
+          <GlobalSearchModal
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            onSelectItem={(item) => {
+              setIsSearchOpen(false);
+              setSearchSelectedItemId(item.id);
+            }}
+          />
+        )}
+
+        {/* Item Details Modal launched from Global Search */}
+        {currentUser && searchSelectedItemId !== null && (
+          <ItemDetailsModal
+            itemId={searchSelectedItemId}
+            isOpen={true}
+            onClose={() => setSearchSelectedItemId(null)}
+            onPlayItem={(id) => {
+              setSearchSelectedItemId(null);
+              handlePlayItem(id);
+            }}
+            onNavigateToFolder={(libId, folderPath) => {
+              setSearchSelectedItemId(null);
+              handleNavigateToFolder(libId, folderPath);
+            }}
+          />
         )}
 
         {/* Switch Profile Modal (when already authenticated and user clicked Switch Profile) */}
