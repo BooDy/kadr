@@ -3,7 +3,7 @@ use kadr_core::ast::{
     CardViewModel, ItemDetailsPayload, QueryMacro, ScreenId, ScreenLayout, WidgetFilterConfig,
     WidgetNode, WidgetQueryBinding,
 };
-use kadr_core::models::{MediaItem, MediaType};
+use kadr_core::models::{MediaItem, MediaType, WatchState};
 use kadr_storage::error::Result;
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
@@ -756,9 +756,13 @@ impl WidgetResolver {
         };
         let technical = Some(item.technical.clone());
         let stream_url = format!("/api/v1/stream/{item_id}");
-        let resume_position_seconds = playback
-            .as_ref()
-            .map(|p| p.playback_position_seconds.max(0) as u64);
+        let resume_position_seconds = playback.as_ref().and_then(|p| {
+            if p.watch_state == WatchState::InProgress && p.playback_position_seconds > 0 {
+                Some(p.playback_position_seconds as u64)
+            } else {
+                None
+            }
+        });
 
         let episodes = if item.item_type == MediaType::Show {
             let episode_items = self.media_repo.find_episodes_by_series(&item.title).await?;

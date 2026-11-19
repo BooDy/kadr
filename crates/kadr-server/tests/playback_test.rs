@@ -497,3 +497,342 @@ async fn test_session_registry_prune_stale() {
     assert_eq!(pruned, 2);
     assert_eq!(registry.len().await, 0);
 }
+
+#[tokio::test]
+async fn test_manual_set_playback_state_single_and_zero_duration() {
+    let (user_repo, playback_repo, media_repo, lib_repo, jwt, item1_id, _, token, _) =
+        setup_test_context().await;
+
+    // Insert a zero-duration item and a live channel item in the same public library
+    let item1 = media_repo.get_by_id(item1_id).await.unwrap().unwrap();
+    let mut zero_item = item1.clone();
+    zero_item.id = None;
+    zero_item.file_path = PathBuf::from("/tmp/zero_duration_ep.mkv");
+    zero_item.file_name = "zero_duration_ep.mkv".to_string();
+    zero_item.title = "Zero Duration Ep".to_string();
+    zero_item.technical.duration_seconds = 0;
+
+    let mut live_item = item1.clone();
+    live_item.id = None;
+    live_item.item_type = MediaType::LiveChannel;
+    live_item.file_path = PathBuf::from("/tmp/live_channel_1");
+    live_item.file_name = "live_channel_1".to_string();
+    live_item.title = "Live News".to_string();
+    live_item.technical.duration_seconds = 0;
+    live_item
+        .metadata
+        .extra
+        .insert("live".to_string(), serde_json::json!(true));
+
+    media_repo
+        .batch_upsert(&[zero_item, live_item])
+        .await
+        .unwrap();
+    let zero_id = media_repo
+        .find_by_path("/tmp/zero_duration_ep.mkv")
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .unwrap();
+    let live_id = media_repo
+        .find_by_path("/tmp/live_channel_1")
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .unwrap();
+
+    playback_repo
+        .upsert_progress("u1", item1_id, 300, WatchState::InProgress, 1700000100)
+        .await
+        .unwrap();
+
+    let session_registry = Arc::new(SessionRegistry::new());
+    let app = create_router(
+        user_repo,
+        playback_repo.clone(),
+        media_repo,
+        lib_repo,
+        jwt,
+        RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300)),
+        session_registry,
+    );
+
+    // Live item does not support manual watch state -> 400 BAD_REQUEST
+    let live_req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/playback/states/{}", live_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"watched":true}"#))
+        .unwrap();
+    let live_res = app.clone().oneshot(live_req).await.unwrap();
+    assert_eq!(live_res.status(), StatusCode::BAD_REQUEST);
+
+    // 1. Mark item1 watched
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/playback/states/{}", item1_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"watched":true}"#))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["watch_state"], "completed");
+    assert_eq!(json["play_count"], 1);
+    assert_eq!(json["playback_position_seconds"], 5000);
+
+    // Continue watching should now be empty
+    let cw_req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/playback/continue-watching")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let cw_res = app.clone().oneshot(cw_req).await.unwrap();
+    let cw_bytes = axum::body::to_bytes(cw_res.into_body(), 4096).await.unwrap();
+    let cw_list: Vec<Value> = serde_json::from_slice(&cw_bytes).unwrap();
+    assert!(cw_list.is_empty());
+
+    // Item details should report playback_progress = 1.0 and resume_position_seconds = null
+    let det_req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/items/{}/details", item1_id))
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let det_res = app.clone().oneshot(det_req).await.unwrap();
+    let det_bytes = axum::body::to_bytes(det_res.into_body(), 8192).await.unwrap();
+    let det_json: Value = serde_json::from_slice(&det_bytes).unwrap();
+    assert_eq!(det_json["card"]["playback_progress"], 1.0);
+    assert!(det_json["resume_position_seconds"].is_null());
+
+    // 2. Mark zero-duration item watched -> card.playback_progress == 1.0
+    let z_req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/playback/states/{}", zero_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"watched":true}"#))
+        .unwrap();
+    let z_res = app.clone().oneshot(z_req).await.unwrap();
+    assert_eq!(z_res.status(), StatusCode::OK);
+
+    let z_det_req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/items/{}/details", zero_id))
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let z_det_res = app.clone().oneshot(z_det_req).await.unwrap();
+    let z_det_bytes = axum::body::to_bytes(z_det_res.into_body(), 8192).await.unwrap();
+    let z_det_json: Value = serde_json::from_slice(&z_det_bytes).unwrap();
+    assert_eq!(z_det_json["card"]["playback_progress"], 1.0);
+
+    // 3. Mark item1 unwatched -> watch_state = unwatched, play_count preserved at 1, progress = null
+    let unw_req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/playback/states/{}", item1_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"watched":false}"#))
+        .unwrap();
+    let unw_res = app.clone().oneshot(unw_req).await.unwrap();
+    assert_eq!(unw_res.status(), StatusCode::OK);
+    let unw_bytes = axum::body::to_bytes(unw_res.into_body(), 4096).await.unwrap();
+    let unw_json: Value = serde_json::from_slice(&unw_bytes).unwrap();
+    assert_eq!(unw_json["watch_state"], "unwatched");
+    assert_eq!(unw_json["playback_position_seconds"], 0);
+    assert_eq!(unw_json["play_count"], 1);
+
+    let det2_req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/items/{}/details", item1_id))
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let det2_res = app.clone().oneshot(det2_req).await.unwrap();
+    let det2_bytes = axum::body::to_bytes(det2_res.into_body(), 8192).await.unwrap();
+    let det2_json: Value = serde_json::from_slice(&det2_bytes).unwrap();
+    assert!(det2_json["card"]["playback_progress"].is_null());
+    assert!(det2_json["resume_position_seconds"].is_null());
+}
+
+#[tokio::test]
+async fn test_manual_set_playback_states_batch_and_private_library_guard() {
+    let (user_repo, playback_repo, media_repo, lib_repo, jwt, item1_id, item2_id, token, _) =
+        setup_test_context().await;
+
+    // Create a private library with PIN "1234" and a private media item
+    let pin_hash = kadr_server::auth::pin::hash_pin("1234").unwrap();
+    lib_repo
+        .create(
+            "lib-priv-watch",
+            "Private Vault",
+            "/tmp/private-vault",
+            MediaType::Movie,
+            true,
+            Some(&pin_hash),
+        )
+        .await
+        .unwrap();
+
+    let item1 = media_repo.get_by_id(item1_id).await.unwrap().unwrap();
+    let mut priv_item = item1.clone();
+    priv_item.id = None;
+    priv_item.library_id = "lib-priv-watch".to_string();
+    priv_item.file_path = PathBuf::from("/tmp/private-vault/secret.mkv");
+    priv_item.file_name = "secret.mkv".to_string();
+    priv_item.title = "Secret Film".to_string();
+
+    let mut live_item = item1.clone();
+    live_item.id = None;
+    live_item.item_type = MediaType::LiveChannel;
+    live_item.file_path = PathBuf::from("/tmp/live_batch_skip");
+    live_item.file_name = "live_batch_skip".to_string();
+    live_item.title = "Live Batch Skip".to_string();
+    live_item.technical.duration_seconds = 0;
+    live_item
+        .metadata
+        .extra
+        .insert("live".to_string(), serde_json::json!(true));
+
+    media_repo
+        .batch_upsert(&[priv_item, live_item])
+        .await
+        .unwrap();
+    let priv_id = media_repo
+        .find_by_path("/tmp/private-vault/secret.mkv")
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .unwrap();
+    let live_id = media_repo
+        .find_by_path("/tmp/live_batch_skip")
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .unwrap();
+
+    let session_registry = Arc::new(SessionRegistry::new());
+    let app = create_router(
+        user_repo,
+        playback_repo.clone(),
+        media_repo,
+        lib_repo,
+        jwt,
+        RateLimiter::new(5, Duration::from_secs(300), Duration::from_secs(300)),
+        session_registry,
+    );
+
+    // 1. Empty batch -> 400 BAD_REQUEST
+    let empty_req = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/playback/states")
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"item_ids":[],"watched":true}"#))
+        .unwrap();
+    let empty_res = app.clone().oneshot(empty_req).await.unwrap();
+    assert_eq!(empty_res.status(), StatusCode::BAD_REQUEST);
+
+    // 2. Batch mark item1 + item2 + live_id watched -> live item is skipped, updated == 2
+    let batch_req = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/playback/states")
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"item_ids":[{},{},{}],"watched":true}}"#,
+            item1_id, item2_id, live_id
+        )))
+        .unwrap();
+    let batch_res = app.clone().oneshot(batch_req).await.unwrap();
+    assert_eq!(batch_res.status(), StatusCode::OK);
+    let batch_bytes = axum::body::to_bytes(batch_res.into_body(), 4096).await.unwrap();
+    let batch_json: Value = serde_json::from_slice(&batch_bytes).unwrap();
+    assert_eq!(batch_json["updated"], 2);
+    assert_eq!(batch_json["watched"], true);
+
+    assert_eq!(
+        playback_repo
+            .get_state("u1", item1_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .watch_state,
+        WatchState::Completed
+    );
+    assert_eq!(
+        playback_repo
+            .get_state("u1", item2_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .watch_state,
+        WatchState::Completed
+    );
+    assert!(playback_repo.get_state("u1", live_id).await.unwrap().is_none());
+
+    // 3. Locked private library item -> 403 LIBRARY_LOCKED on both single and batch PUT
+    let locked_single = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/playback/states/{}", priv_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"watched":true}"#))
+        .unwrap();
+    let locked_res = app.clone().oneshot(locked_single).await.unwrap();
+    assert_eq!(locked_res.status(), StatusCode::FORBIDDEN);
+    let locked_bytes = axum::body::to_bytes(locked_res.into_body(), 4096).await.unwrap();
+    let locked_json: Value = serde_json::from_slice(&locked_bytes).unwrap();
+    assert_eq!(locked_json["error"], "LIBRARY_LOCKED");
+
+    let locked_batch = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/playback/states")
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"item_ids":[{}],"watched":true}}"#,
+            priv_id
+        )))
+        .unwrap();
+    let locked_batch_res = app.clone().oneshot(locked_batch).await.unwrap();
+    assert_eq!(locked_batch_res.status(), StatusCode::FORBIDDEN);
+    let locked_batch_bytes = axum::body::to_bytes(locked_batch_res.into_body(), 4096)
+        .await
+        .unwrap();
+    let locked_batch_json: Value = serde_json::from_slice(&locked_batch_bytes).unwrap();
+    assert_eq!(locked_batch_json["error"], "LIBRARY_LOCKED");
+
+    // 4. Unlock private library and retry -> 200 OK
+    let unlock_req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/libraries/lib-priv-watch/unlock")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"pin":"1234"}"#))
+        .unwrap();
+    let unlock_res = app.clone().oneshot(unlock_req).await.unwrap();
+    assert_eq!(unlock_res.status(), StatusCode::OK);
+    let unlock_bytes = axum::body::to_bytes(unlock_res.into_body(), 4096).await.unwrap();
+    let unlock_json: Value = serde_json::from_slice(&unlock_bytes).unwrap();
+    let unlock_token = unlock_json["unlock_token"].as_str().unwrap();
+
+    let unlocked_single = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/playback/states/{}", priv_id))
+        .header("authorization", format!("Bearer {}", token))
+        .header("x-kadr-unlocked", unlock_token)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"watched":true}"#))
+        .unwrap();
+    let unlocked_res = app.clone().oneshot(unlocked_single).await.unwrap();
+    assert_eq!(unlocked_res.status(), StatusCode::OK);
+}

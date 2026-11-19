@@ -148,8 +148,12 @@ pub fn create_router_with_ingest(
             post(playback::progress_heartbeat),
         )
         .route(
+            "/api/v1/playback/states",
+            axum::routing::put(playback::set_playback_states_batch),
+        )
+        .route(
             "/api/v1/playback/states/{item_id}",
-            get(playback::get_playback_state),
+            get(playback::get_playback_state).put(playback::set_playback_state),
         )
         .route(
             "/api/v1/playback/continue-watching",

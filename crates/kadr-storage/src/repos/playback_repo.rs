@@ -75,6 +75,56 @@ impl PlaybackRepository {
         }).await?
     }
 
+    /// Manually sets watch states (`completed` or `unwatched`) for a batch of `(media_item_id, duration_seconds)`
+    /// entries within a single SQLite transaction.
+    pub async fn set_watch_states_batch(
+        &self,
+        user_id: &str,
+        entries: &[(i64, i64)],
+        watched: bool,
+        now: i64,
+    ) -> Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
+        let user_id = user_id.to_string();
+        let entries = entries.to_vec();
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            let tx = c.unchecked_transaction()?;
+            let state_str = if watched { "completed" } else { "unwatched" };
+            let mut count = 0usize;
+            {
+                let mut stmt = tx.prepare(
+                    "INSERT INTO user_playback_states (
+                        user_id, media_item_id, playback_position_seconds, watch_state, last_watched_at, play_count
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, CASE WHEN ?4 = 'completed' THEN 1 ELSE 0 END)
+                     ON CONFLICT(user_id, media_item_id) DO UPDATE SET
+                        playback_position_seconds = excluded.playback_position_seconds,
+                        watch_state = excluded.watch_state,
+                        last_watched_at = excluded.last_watched_at,
+                        play_count = CASE
+                            WHEN excluded.watch_state = 'completed' AND user_playback_states.watch_state != 'completed'
+                            THEN user_playback_states.play_count + 1
+                            ELSE user_playback_states.play_count
+                        END",
+                )?;
+                for (media_item_id, duration_seconds) in entries {
+                    let pos = if watched {
+                        duration_seconds.max(1)
+                    } else {
+                        0
+                    };
+                    stmt.execute(params![user_id, media_item_id, pos, state_str, now])?;
+                    count += 1;
+                }
+            }
+            tx.commit()?;
+            Ok(count)
+        })
+        .await?
+    }
+
     pub async fn get_state(
         &self,
         user_id: &str,

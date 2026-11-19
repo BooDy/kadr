@@ -1,16 +1,18 @@
+use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
 use crate::events::EventBus;
 use crate::playback::session::SessionRegistry;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use kadr_core::events::SystemEvent;
 use kadr_core::models::{PlaybackSession, WatchState};
-use kadr_storage::repos::{MediaItemRepository, PlaybackRepository};
+use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -234,6 +236,210 @@ pub async fn close_session(
         }
     }
     StatusCode::NOT_FOUND.into_response()
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SetWatchStateRequest {
+    pub watched: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SetBatchWatchStateRequest {
+    pub item_ids: Vec<i64>,
+    pub watched: bool,
+}
+
+async fn check_library_unlocked(
+    lib_repo: &LibraryRepository,
+    unlocked: &UnlockedLibraries,
+    library_id: &str,
+) -> Option<Response> {
+    match lib_repo.get_by_id(library_id).await {
+        Ok(Some(lib)) if lib.is_private && !unlocked.is_unlocked(library_id) => Some(
+            (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "LIBRARY_LOCKED" })),
+            )
+                .into_response(),
+        ),
+        Ok(_) => None,
+        Err(e) => Some(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+        ),
+    }
+}
+
+fn publish_home_layout_changed(event_bus: Option<&Extension<Arc<EventBus>>>, timestamp: i64) {
+    if let Some(Extension(bus)) = event_bus {
+        bus.publish(SystemEvent::LayoutChanged {
+            screen_id: "home".to_string(),
+            timestamp,
+        });
+    }
+}
+
+/// Manually sets the watch state (`completed` or `unwatched`) for a single media item.
+#[allow(clippy::too_many_arguments)]
+pub async fn set_playback_state(
+    auth_user: AuthUser,
+    unlocked: UnlockedLibraries,
+    Path(item_id): Path<i64>,
+    Extension(media_repo): Extension<MediaItemRepository>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(playback_repo): Extension<PlaybackRepository>,
+    event_bus: Option<Extension<Arc<EventBus>>>,
+    Json(payload): Json<SetWatchStateRequest>,
+) -> impl IntoResponse {
+    let item = match media_repo.get_by_id(item_id).await {
+        Ok(Some(i)) => i,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Media item not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    if item.is_live() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Live items do not support watch state" })),
+        )
+            .into_response();
+    }
+
+    if let Some(resp) = check_library_unlocked(&lib_repo, &unlocked, &item.library_id).await {
+        return resp;
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    if let Err(e) = playback_repo
+        .set_watch_states_batch(
+            &auth_user.id,
+            &[(item_id, item.technical.duration_seconds)],
+            payload.watched,
+            now,
+        )
+        .await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+
+    publish_home_layout_changed(event_bus.as_ref(), now);
+
+    match playback_repo.get_state(&auth_user.id, item_id).await {
+        Ok(Some(s)) => (StatusCode::OK, Json(s)).into_response(),
+        Ok(None) => StatusCode::OK.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// Manually sets the watch state (`completed` or `unwatched`) for up to 500 media items in a single batch.
+pub async fn set_playback_states_batch(
+    auth_user: AuthUser,
+    unlocked: UnlockedLibraries,
+    Extension(media_repo): Extension<MediaItemRepository>,
+    Extension(lib_repo): Extension<LibraryRepository>,
+    Extension(playback_repo): Extension<PlaybackRepository>,
+    event_bus: Option<Extension<Arc<EventBus>>>,
+    Json(payload): Json<SetBatchWatchStateRequest>,
+) -> impl IntoResponse {
+    let mut seen = HashSet::new();
+    let unique_ids: Vec<i64> = payload
+        .item_ids
+        .into_iter()
+        .filter(|id| seen.insert(*id))
+        .collect();
+
+    if unique_ids.is_empty() || unique_ids.len() > 500 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "item_ids must contain 1..=500 items" })),
+        )
+            .into_response();
+    }
+
+    let items_map = match media_repo.get_by_ids(&unique_ids).await {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let mut checked_libs = HashSet::new();
+    for item in items_map.values() {
+        if checked_libs.insert(item.library_id.clone()) {
+            if let Some(resp) =
+                check_library_unlocked(&lib_repo, &unlocked, &item.library_id).await
+            {
+                return resp;
+            }
+        }
+    }
+
+    let entries: Vec<(i64, i64)> = unique_ids
+        .into_iter()
+        .filter_map(|id| items_map.get(&id).map(|it| (id, it)))
+        .filter(|(_, it)| !it.is_live())
+        .map(|(id, it)| (id, it.technical.duration_seconds))
+        .collect();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    match playback_repo
+        .set_watch_states_batch(&auth_user.id, &entries, payload.watched, now)
+        .await
+    {
+        Ok(updated) => {
+            if updated > 0 {
+                publish_home_layout_changed(event_bus.as_ref(), now);
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "updated": updated,
+                    "watched": payload.watched,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 #[cfg(test)]

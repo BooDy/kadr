@@ -300,3 +300,191 @@ async fn test_get_states_for_items_batch() {
         300
     );
 }
+
+#[tokio::test]
+async fn test_set_watch_states_batch() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let playback_repo = PlaybackRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    assert_eq!(
+        playback_repo
+            .set_watch_states_batch("user1", &[], true, 1700000000)
+            .await
+            .unwrap(),
+        0
+    );
+
+    user_repo
+        .create(&User {
+            id: "user1".to_string(),
+            username: "user1".to_string(),
+            pin_hash: "hash1".to_string(),
+            role: UserRole::Standard,
+            created_at: 1700000000,
+        })
+        .await
+        .unwrap();
+
+    lib_repo
+        .insert(&Library {
+            id: "lib1".to_string(),
+            name: "Films".to_string(),
+            path: PathBuf::from("/media"),
+            media_type: MediaType::Movie,
+            created_at: 1700000000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    media_repo
+        .upsert_batch(&[
+            MediaItem {
+                id: None,
+                library_id: "lib1".to_string(),
+                item_type: MediaType::Movie,
+                title: "Item 1".to_string(),
+                original_title: None,
+                release_year: Some(2020),
+                added_at: 1700000000,
+                file_path: PathBuf::from("/media/batch1.mp4"),
+                file_name: "batch1.mp4".to_string(),
+                file_size: 1000,
+                technical: TechnicalInfo {
+                    duration_seconds: 3600,
+                    ..Default::default()
+                },
+                metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
+            },
+            MediaItem {
+                id: None,
+                library_id: "lib1".to_string(),
+                item_type: MediaType::Movie,
+                title: "Item 2".to_string(),
+                original_title: None,
+                release_year: Some(2021),
+                added_at: 1700000000,
+                file_path: PathBuf::from("/media/batch2.mp4"),
+                file_name: "batch2.mp4".to_string(),
+                file_size: 1000,
+                technical: TechnicalInfo {
+                    duration_seconds: 0,
+                    ..Default::default()
+                },
+                metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
+            },
+            MediaItem {
+                id: None,
+                library_id: "lib1".to_string(),
+                item_type: MediaType::Movie,
+                title: "Item 3".to_string(),
+                original_title: None,
+                release_year: Some(2022),
+                added_at: 1700000000,
+                file_path: PathBuf::from("/media/batch3.mp4"),
+                file_name: "batch3.mp4".to_string(),
+                file_size: 1000,
+                technical: TechnicalInfo {
+                    duration_seconds: 1800,
+                    ..Default::default()
+                },
+                metadata: MediaMetadata::default(),
+                locked_fields: Vec::new(),
+            },
+        ])
+        .await
+        .unwrap();
+
+    let items = media_repo.list_by_library("lib1", 10, 0).await.unwrap();
+    let id1 = items
+        .iter()
+        .find(|i| i.title == "Item 1")
+        .unwrap()
+        .id
+        .unwrap();
+    let id2 = items
+        .iter()
+        .find(|i| i.title == "Item 2")
+        .unwrap()
+        .id
+        .unwrap();
+    let id3 = items
+        .iter()
+        .find(|i| i.title == "Item 3")
+        .unwrap()
+        .id
+        .unwrap();
+
+    // Item 1 starts InProgress (play_count 0); Item 3 starts Completed (play_count 1)
+    playback_repo
+        .upsert_progress("user1", id1, 250, WatchState::InProgress, 1700000100)
+        .await
+        .unwrap();
+    playback_repo
+        .upsert_progress("user1", id3, 1800, WatchState::Completed, 1700000150)
+        .await
+        .unwrap();
+
+    // 1. Mark all three completed in a single batch
+    let updated = playback_repo
+        .set_watch_states_batch(
+            "user1",
+            &[(id1, 3600), (id2, 0), (id3, 1800)],
+            true,
+            1700000200,
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated, 3);
+
+    let s1 = playback_repo.get_state("user1", id1).await.unwrap().unwrap();
+    assert_eq!(s1.watch_state, WatchState::Completed);
+    assert_eq!(s1.playback_position_seconds, 3600);
+    assert_eq!(s1.play_count, 1);
+
+    let s2 = playback_repo.get_state("user1", id2).await.unwrap().unwrap();
+    assert_eq!(s2.watch_state, WatchState::Completed);
+    assert_eq!(s2.playback_position_seconds, 1); // duration.max(1)
+    assert_eq!(s2.play_count, 1);
+
+    let s3 = playback_repo.get_state("user1", id3).await.unwrap().unwrap();
+    assert_eq!(s3.watch_state, WatchState::Completed);
+    assert_eq!(s3.playback_position_seconds, 1800);
+    assert_eq!(s3.play_count, 1); // Already completed -> not double-incremented
+
+    // 2. Mark id1 and id2 unwatched -> position = 0, play_count preserved at 1
+    let updated_unwatched = playback_repo
+        .set_watch_states_batch("user1", &[(id1, 3600), (id2, 0)], false, 1700000300)
+        .await
+        .unwrap();
+    assert_eq!(updated_unwatched, 2);
+
+    let s1_unw = playback_repo.get_state("user1", id1).await.unwrap().unwrap();
+    assert_eq!(s1_unw.watch_state, WatchState::Unwatched);
+    assert_eq!(s1_unw.playback_position_seconds, 0);
+    assert_eq!(s1_unw.play_count, 1);
+
+    let s2_unw = playback_repo.get_state("user1", id2).await.unwrap().unwrap();
+    assert_eq!(s2_unw.watch_state, WatchState::Unwatched);
+    assert_eq!(s2_unw.playback_position_seconds, 0);
+    assert_eq!(s2_unw.play_count, 1);
+
+    // 3. Multi-item batch atomicity: invalid foreign key rolls back entire transaction
+    let err = playback_repo
+        .set_watch_states_batch("user1", &[(id1, 3600), (999_999, 1000)], true, 1700000400)
+        .await;
+    assert!(err.is_err());
+
+    // id1 must still be Unwatched from step 2
+    let s1_after_fail = playback_repo.get_state("user1", id1).await.unwrap().unwrap();
+    assert_eq!(s1_after_fail.watch_state, WatchState::Unwatched);
+    assert_eq!(s1_after_fail.playback_position_seconds, 0);
+    assert_eq!(s1_after_fail.play_count, 1);
+}

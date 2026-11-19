@@ -332,7 +332,9 @@ impl SearchRepository {
                     serde_json::from_str(&metadata_str).unwrap_or_default();
 
                 let playback_progress = match (playback_position_seconds, watch_state.as_deref()) {
-                    (Some(pos), Some(_)) if duration_seconds > 0 => {
+                    (_, Some("completed")) => Some(1.0),
+                    (_, Some("unwatched")) => None,
+                    (Some(pos), Some("in_progress")) if duration_seconds > 0 => {
                         Some((pos as f32 / duration_seconds as f32).clamp(0.0, 1.0))
                     }
                     _ => None,

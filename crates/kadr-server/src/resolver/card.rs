@@ -80,13 +80,20 @@ pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) ->
     .to_string();
 
     let playback_progress = if let Some(p) = playback {
-        if item.technical.duration_seconds > 0 {
-            Some(
-                (p.playback_position_seconds as f32 / item.technical.duration_seconds as f32)
-                    .clamp(0.0, 1.0),
-            )
-        } else {
-            None
+        match p.watch_state {
+            WatchState::Completed => Some(1.0),
+            WatchState::Unwatched => None,
+            WatchState::InProgress => {
+                if item.technical.duration_seconds > 0 {
+                    Some(
+                        (p.playback_position_seconds as f32
+                            / item.technical.duration_seconds as f32)
+                            .clamp(0.0, 1.0),
+                    )
+                } else {
+                    None
+                }
+            }
         }
     } else {
         None
