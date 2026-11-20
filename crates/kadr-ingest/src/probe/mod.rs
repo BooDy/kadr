@@ -2,8 +2,8 @@ pub mod ffprobe;
 pub mod pure_rust;
 
 pub use ffprobe::{
-    parse_embedded_subtitles_from_json, probe_embedded_subtitles, run_ffprobe, run_ffprobe_full,
-    FfprobeOutput, ProbedMedia,
+    parse_audio_streams_from_json, parse_embedded_subtitles_from_json, probe_audio_streams,
+    probe_embedded_subtitles, run_ffprobe, run_ffprobe_full, FfprobeOutput, ProbedMedia,
 };
 
 use crate::error::Result;
@@ -49,6 +49,9 @@ impl TechnicalProber {
                 }
                 if probed.technical.audio_channels.is_some() {
                     base_info.audio_channels = probed.technical.audio_channels;
+                }
+                if !probed.technical.audio_tracks.is_empty() {
+                    base_info.audio_tracks = probed.technical.audio_tracks;
                 }
                 embedded_subtitles = probed.embedded_subtitles;
             }

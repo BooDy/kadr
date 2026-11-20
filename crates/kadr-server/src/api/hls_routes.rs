@@ -56,6 +56,7 @@ pub async fn master_playlist(
     unlocked: UnlockedLibraries,
     auth_user: Option<AuthUser>,
     plugins: Option<Extension<PluginService>>,
+    audio_probe: Option<Extension<Arc<crate::api::audio_routes::AudioProbeService>>>,
     Extension(media_repo): Extension<MediaItemRepository>,
     Extension(lib_repo): Extension<LibraryRepository>,
     Extension(session_mgr): Extension<Arc<HlsSessionManager>>,
@@ -148,11 +149,36 @@ pub async fn master_playlist(
     };
 
     let params = TranscodeParameters::from(query);
+    let mut effective_tech = item.technical.clone();
+    if params.audio_track_index > 0
+        && effective_tech.audio_tracks.is_empty()
+        && item.plugin_ref().is_none()
+        && !item.is_live()
+    {
+        if let Some(Extension(audio_probe_svc)) = audio_probe {
+            effective_tech.audio_tracks = audio_probe_svc
+                .list_or_probe_audio_tracks(&media_repo, &item)
+                .await;
+        }
+    }
+    if !effective_tech.audio_tracks.is_empty()
+        && !effective_tech
+            .audio_tracks
+            .iter()
+            .any(|t| t.audio_index == params.audio_track_index)
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid audio_track index" })),
+        )
+            .into_response();
+    }
+
     let session = match session_mgr
         .get_or_create_session_for_source(
             item.id.unwrap_or(item_id),
             &source,
-            &item.technical,
+            &effective_tech,
             &params,
         )
         .await

@@ -22,6 +22,7 @@ fn test_media_item_serialization_roundtrip() {
             audio_codec: Some("aac".to_string()),
             audio_channels: Some(2),
             container: Some("mkv".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             director: Some("Youssef Chahine".to_string()),

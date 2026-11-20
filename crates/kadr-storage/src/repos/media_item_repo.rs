@@ -2,7 +2,9 @@ use crate::error::Result;
 use crate::repos::widget_queries::WidgetQueries;
 use deadpool_sqlite::Pool;
 use kadr_core::ast::WidgetFilterConfig;
-use kadr_core::models::{MediaItem, MediaMetadata, MediaType, MetadataUpdate, TechnicalInfo};
+use kadr_core::models::{
+    AudioStreamInfo, MediaItem, MediaMetadata, MediaType, MetadataUpdate, TechnicalInfo,
+};
 use rusqlite::{params, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -51,8 +53,8 @@ impl MediaItemRepository {
                         library_id, item_type, title, original_title, release_year,
                         duration_seconds, added_at, file_path, file_name, file_size,
                         resolution, video_codec, audio_codec, audio_channels, container, metadata,
-                        locked_fields
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                        locked_fields, audio_tracks_json
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
                      ON CONFLICT(file_path) DO UPDATE SET
                         library_id = excluded.library_id,
                         item_type = excluded.item_type,
@@ -68,7 +70,8 @@ impl MediaItemRepository {
                         audio_channels = excluded.audio_channels,
                         container = excluded.container,
                         metadata = excluded.metadata,
-                        locked_fields = excluded.locked_fields",
+                        locked_fields = excluded.locked_fields,
+                        audio_tracks_json = COALESCE(excluded.audio_tracks_json, media_items.audio_tracks_json)",
                 )?;
 
                 struct ExistingMetadataRow {
@@ -210,6 +213,12 @@ impl MediaItemRepository {
                         serde_json::to_string(&final_meta).unwrap_or_else(|_| "{}".to_string());
                     let locks_json =
                         serde_json::to_string(&final_locks).unwrap_or_else(|_| "[]".to_string());
+                    let audio_tracks_json: Option<String> =
+                        if item.technical.audio_tracks.is_empty() {
+                            None
+                        } else {
+                            serde_json::to_string(&item.technical.audio_tracks).ok()
+                        };
 
                     stmt.execute(params![
                         item.library_id,
@@ -229,12 +238,34 @@ impl MediaItemRepository {
                         item.technical.container,
                         meta_json,
                         locks_json,
+                        audio_tracks_json,
                     ])?;
                     count += 1;
                 }
             }
             tx.commit()?;
             Ok(count)
+        })
+        .await?
+    }
+
+    pub async fn update_audio_tracks(
+        &self,
+        item_id: i64,
+        tracks: &[AudioStreamInfo],
+    ) -> Result<()> {
+        let tracks_json: Option<String> = if tracks.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(tracks)?)
+        };
+        let conn = self.pool.get().await?;
+        conn.interact(move |c| {
+            c.execute(
+                "UPDATE media_items SET audio_tracks_json = ?1 WHERE id = ?2",
+                params![tracks_json, item_id],
+            )?;
+            Ok(())
         })
         .await?
     }
@@ -880,7 +911,7 @@ impl MediaItemRepository {
 pub(crate) const SELECT_COLUMNS: &str =
     "id, library_id, item_type, title, original_title, release_year, \
  duration_seconds, added_at, file_path, file_name, file_size, \
- resolution, video_codec, audio_codec, audio_channels, container, metadata, locked_fields";
+ resolution, video_codec, audio_codec, audio_channels, container, metadata, locked_fields, audio_tracks_json";
 
 pub(crate) fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
     let id: i64 = row.get(0)?;
@@ -905,6 +936,12 @@ pub(crate) fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaI
         .ok()
         .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
         .unwrap_or_default();
+    let audio_tracks: Vec<AudioStreamInfo> = row
+        .get::<_, Option<String>>("audio_tracks_json")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
 
     let item_type: MediaType =
         serde_json::from_str(&format!("\"{}\"", item_type_str)).unwrap_or(MediaType::Unknown);
@@ -928,6 +965,7 @@ pub(crate) fn map_media_item_row(row: &rusqlite::Row) -> rusqlite::Result<MediaI
             audio_codec,
             audio_channels,
             container,
+            audio_tracks,
         },
         metadata,
         locked_fields,

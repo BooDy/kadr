@@ -54,6 +54,7 @@ async fn update_metadata_locks_edited_fields_and_preserves_across_rescan() {
             audio_codec: Some("aac".to_string()),
             audio_channels: Some(2),
             container: Some("mkv".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             overview: Some("Scanner parsed overview".to_string()),
@@ -123,6 +124,7 @@ async fn update_metadata_locks_edited_fields_and_preserves_across_rescan() {
             audio_codec: Some("truehd".to_string()),
             audio_channels: Some(8),
             container: Some("mkv".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             overview: Some("Noisy NFO plot".to_string()),

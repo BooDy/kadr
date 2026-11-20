@@ -60,6 +60,7 @@ async fn setup_test_context() -> (
                 audio_codec: Some("aac".to_string()),
                 audio_channels: Some(2),
                 container: Some("mp4".to_string()),
+                ..Default::default()
             },
             metadata: MediaMetadata::default(),
             locked_fields: Vec::new(),

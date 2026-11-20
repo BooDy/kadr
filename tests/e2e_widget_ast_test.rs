@@ -118,6 +118,7 @@ async fn test_milestone_3_end_to_end_widget_ast_user_journey() {
             audio_codec: Some("eac3".to_string()),
             audio_channels: Some(6),
             container: Some("mkv".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             overview: Some(

@@ -46,6 +46,7 @@ fn test_card_normalization_movie_and_episode() {
             audio_codec: Some("aac".to_string()),
             audio_channels: Some(6),
             container: Some("mkv".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             poster_path: Some("/artwork/interstellar_poster.jpg".to_string()),
@@ -255,6 +256,7 @@ async fn setup_test_environment_with_pool(
                 audio_codec: Some("truehd".to_string()),
                 audio_channels: Some(8),
                 container: Some("mkv".to_string()),
+                ..Default::default()
             },
             metadata: MediaMetadata {
                 overview: Some("A breathtaking spotlight film.".to_string()),

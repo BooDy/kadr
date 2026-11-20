@@ -182,6 +182,7 @@ fn build_item(
             audio_codec: p.audio_codec,
             audio_channels: None,
             container: p.container,
+            ..Default::default()
         },
         metadata,
         locked_fields: Vec::new(),

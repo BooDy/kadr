@@ -58,6 +58,22 @@ impl Default for Library {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioStreamInfo {
+    pub audio_index: u32,
+    pub stream_index: u32,
+    pub codec: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<u8>,
+    pub language: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub is_default: bool,
+    #[serde(default)]
+    pub is_commentary: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TechnicalInfo {
     pub duration_seconds: i64,
     pub resolution: Option<String>,
@@ -65,6 +81,8 @@ pub struct TechnicalInfo {
     pub audio_codec: Option<String>,
     pub audio_channels: Option<u8>,
     pub container: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audio_tracks: Vec<AudioStreamInfo>,
 }
 
 impl TechnicalInfo {

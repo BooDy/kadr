@@ -105,6 +105,7 @@ async fn setup_test_app() -> TestContext {
                 audio_codec: Some("aac".to_string()),
                 audio_channels: Some(6),
                 container: Some("mkv".to_string()),
+                ..Default::default()
             },
             metadata: MediaMetadata {
                 overview: Some("Humanity explores the stars.".to_string()),

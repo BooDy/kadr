@@ -309,6 +309,7 @@ fn test_widget_node_item_details() {
             audio_codec: Some("aac".to_string()),
             audio_channels: Some(2),
             container: Some("mkv".to_string()),
+            ..Default::default()
         }),
         stream_url: "/api/v1/stream/42".to_string(),
         resume_position_seconds: Some(1386),

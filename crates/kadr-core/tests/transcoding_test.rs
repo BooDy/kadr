@@ -1,4 +1,4 @@
-use kadr_core::models::TechnicalInfo;
+use kadr_core::models::{AudioStreamInfo, TechnicalInfo};
 use kadr_core::transcoding::{
     build_ffmpeg_hls_args, evaluate_transcode, AudioAction, TranscodeDecision, TranscodeParameters,
     VideoAction,
@@ -256,4 +256,91 @@ fn test_file_source_wrapper_matches_path_function() {
     );
     assert!(!build_ffmpeg_hls_args(path, out, &decision, &params)
         .contains(&"-protocol_whitelist".to_string()));
+}
+
+#[test]
+fn test_evaluate_transcode_uses_selected_audio_track_codec() {
+    let tech = TechnicalInfo {
+        container: Some("mkv".to_string()),
+        video_codec: Some("h264".to_string()),
+        audio_codec: Some("aac".to_string()),
+        audio_channels: Some(2),
+        resolution: Some("1080p".to_string()),
+        duration_seconds: 3600,
+        audio_tracks: vec![
+            AudioStreamInfo {
+                audio_index: 0,
+                stream_index: 1,
+                codec: "aac".to_string(),
+                channels: Some(2),
+                language: "jpn".to_string(),
+                title: None,
+                is_default: true,
+                is_commentary: false,
+            },
+            AudioStreamInfo {
+                audio_index: 1,
+                stream_index: 2,
+                codec: "dts".to_string(),
+                channels: Some(6),
+                language: "eng".to_string(),
+                title: Some("English 5.1".to_string()),
+                is_default: false,
+                is_commentary: false,
+            },
+            AudioStreamInfo {
+                audio_index: 2,
+                stream_index: 3,
+                codec: "aac".to_string(),
+                channels: Some(2),
+                language: "eng".to_string(),
+                title: Some("Director's Commentary".to_string()),
+                is_default: false,
+                is_commentary: true,
+            },
+        ],
+    };
+
+    let base_params = TranscodeParameters {
+        video_codec: "h264".to_string(),
+        audio_codec: "aac".to_string(),
+        max_height: None,
+        audio_track_index: 0,
+        start_time: 0.0,
+    };
+
+    // Track 0 (aac) -> Copy
+    let d0 = evaluate_transcode(&tech, &base_params, None);
+    assert_eq!(d0.audio, AudioAction::Copy);
+
+    // Track 1 (dts) -> Transcode to aac
+    let p1 = TranscodeParameters {
+        audio_track_index: 1,
+        ..base_params.clone()
+    };
+    let d1 = evaluate_transcode(&tech, &p1, None);
+    match d1.audio {
+        AudioAction::Transcode { codec, .. } => assert_eq!(codec, "aac"),
+        other => panic!("Expected AudioAction::Transcode for dts track, got {other:?}"),
+    }
+
+    // Track 2 (aac commentary) -> Copy
+    let p2 = TranscodeParameters {
+        audio_track_index: 2,
+        ..base_params.clone()
+    };
+    let d2 = evaluate_transcode(&tech, &p2, None);
+    assert_eq!(d2.audio, AudioAction::Copy);
+
+    // When audio_tracks is empty and audio_track_index == 1 -> unknown secondary codec -> Transcode
+    let tech_empty_tracks = TechnicalInfo {
+        audio_codec: Some("aac".to_string()),
+        audio_tracks: Vec::new(),
+        ..tech
+    };
+    let d_unknown = evaluate_transcode(&tech_empty_tracks, &p1, None);
+    match d_unknown.audio {
+        AudioAction::Transcode { codec, .. } => assert_eq!(codec, "aac"),
+        other => panic!("Expected AudioAction::Transcode for unknown secondary track, got {other:?}"),
+    }
 }

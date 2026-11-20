@@ -1,4 +1,5 @@
 pub mod artwork_routes;
+pub mod audio_routes;
 pub mod auth_routes;
 pub mod config_routes;
 pub mod discovery_routes;
@@ -107,6 +108,7 @@ pub fn create_router_with_ingest(
         media_repo.clone(),
         config.clone(),
     ));
+    let audio_probe_service = Arc::new(audio_routes::AudioProbeService::new());
 
     let router = Router::new()
         .merge(hls_routes::hls_routes())
@@ -191,7 +193,11 @@ pub fn create_router_with_ingest(
             "/api/v1/artwork/{item_id}/backdrop",
             get(artwork_routes::get_backdrop),
         )
-        // Subtitle routes
+        // Audio track & Subtitle routes
+        .route(
+            "/api/v1/items/{item_id}/audio-tracks",
+            get(audio_routes::list_audio_tracks),
+        )
         .route(
             "/api/v1/items/{item_id}/subtitles",
             get(subtitle_routes::list_subtitles),
@@ -285,6 +291,7 @@ pub fn create_router_with_ingest(
                 let default_sb = storyboard_service.clone();
                 let default_ps = plugin_service.clone();
                 let default_meta = metadata_service.clone();
+                let default_audio_probe = audio_probe_service.clone();
                 async move {
                     if req
                         .extensions()
@@ -313,6 +320,13 @@ pub fn create_router_with_ingest(
                         .is_none()
                     {
                         req.extensions_mut().insert(default_meta);
+                    }
+                    if req
+                        .extensions()
+                        .get::<Arc<audio_routes::AudioProbeService>>()
+                        .is_none()
+                    {
+                        req.extensions_mut().insert(default_audio_probe);
                     }
                     next.run(req).await
                 }

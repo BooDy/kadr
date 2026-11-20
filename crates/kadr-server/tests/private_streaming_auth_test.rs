@@ -99,6 +99,7 @@ async fn setup_app_with_private_item() -> (axum::Router, String, i64, String) {
             audio_codec: Some("aac".to_string()),
             audio_channels: Some(2),
             container: Some("mp4".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             overview: Some("Top secret film".to_string()),

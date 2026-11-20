@@ -73,17 +73,29 @@ pub fn evaluate_transcode(
         }
     };
 
-    let source_audio_codec = tech.audio_codec.as_deref().unwrap_or("").to_lowercase();
     let target_audio_codec = params.audio_codec.to_lowercase();
+    let selected_source_audio_codec: Option<String> = tech
+        .audio_tracks
+        .iter()
+        .find(|t| t.audio_index == params.audio_track_index)
+        .map(|t| t.codec.to_lowercase())
+        .or_else(|| {
+            if params.audio_track_index == 0 {
+                tech.audio_codec.as_deref().map(|c| c.to_lowercase())
+            } else {
+                None
+            }
+        });
 
-    let audio_action = if source_audio_codec == target_audio_codec {
-        AudioAction::Copy
-    } else {
-        AudioAction::Transcode {
+    let audio_action = match selected_source_audio_codec {
+        Some(src_codec) if !src_codec.is_empty() && src_codec == target_audio_codec => {
+            AudioAction::Copy
+        }
+        _ => AudioAction::Transcode {
             codec: target_audio_codec,
             channels: 2,
             bitrate_kbps: 192,
-        }
+        },
     };
 
     TranscodeDecision {

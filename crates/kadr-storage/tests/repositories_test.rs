@@ -1,4 +1,4 @@
-use kadr_core::models::{Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
+use kadr_core::models::{AudioStreamInfo, Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
 use kadr_storage::error::StorageError;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
@@ -49,6 +49,7 @@ async fn test_library_and_media_item_repositories() {
             audio_codec: Some("aac".to_string()),
             audio_channels: Some(2),
             container: Some("mkv".to_string()),
+            ..Default::default()
         },
         metadata: MediaMetadata {
             director: Some("Henry Barakat".to_string()),
@@ -177,6 +178,7 @@ async fn test_media_item_batch_upsert_pagination_and_cascade() {
                 audio_codec: Some("aac".to_string()),
                 audio_channels: Some(2),
                 container: Some("mkv".to_string()),
+                ..Default::default()
             },
             metadata: MediaMetadata::default(),
             locked_fields: Vec::new(),
@@ -573,4 +575,99 @@ async fn test_library_update_name() {
         StorageError::NotFound(_) => {}
         other => panic!("Expected NotFound error, got: {:?}", other),
     }
+}
+
+#[tokio::test]
+async fn test_audio_tracks_persistence_and_rescan_coalesce_preservation() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    lib_repo
+        .insert(&Library {
+            id: "lib-audio".to_string(),
+            name: "Audio Test".to_string(),
+            path: PathBuf::from("/media/audio"),
+            media_type: MediaType::Movie,
+            created_at: 1700000000,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let tracks = vec![
+        AudioStreamInfo {
+            audio_index: 0,
+            stream_index: 1,
+            codec: "aac".to_string(),
+            channels: Some(2),
+            language: "jpn".to_string(),
+            title: Some("Japanese Stereo".to_string()),
+            is_default: true,
+            is_commentary: false,
+        },
+        AudioStreamInfo {
+            audio_index: 1,
+            stream_index: 2,
+            codec: "dts".to_string(),
+            channels: Some(6),
+            language: "eng".to_string(),
+            title: Some("English 5.1".to_string()),
+            is_default: false,
+            is_commentary: false,
+        },
+    ];
+
+    let file_path = PathBuf::from("/media/audio/multi_audio.mkv");
+    let item = MediaItem {
+        id: None,
+        library_id: "lib-audio".to_string(),
+        item_type: MediaType::Movie,
+        title: "Multi Audio Movie".to_string(),
+        original_title: None,
+        release_year: Some(2024),
+        added_at: 1700000100,
+        file_path: file_path.clone(),
+        file_name: "multi_audio.mkv".to_string(),
+        file_size: 4096,
+        technical: TechnicalInfo {
+            duration_seconds: 3600,
+            resolution: Some("1080p".to_string()),
+            video_codec: Some("h264".to_string()),
+            audio_codec: Some("aac".to_string()),
+            audio_channels: Some(2),
+            container: Some("mkv".to_string()),
+            audio_tracks: Vec::new(),
+        },
+        metadata: MediaMetadata::default(),
+        locked_fields: Vec::new(),
+    };
+
+    media_repo
+        .batch_upsert(std::slice::from_ref(&item))
+        .await
+        .unwrap();
+    let stored = media_repo.find_by_path(&file_path).await.unwrap().unwrap();
+    let item_id = stored.id.unwrap();
+    assert!(stored.technical.audio_tracks.is_empty());
+
+    // Update via update_audio_tracks and verify round-trip
+    media_repo
+        .update_audio_tracks(item_id, &tracks)
+        .await
+        .unwrap();
+    let loaded = media_repo.get_by_id(item_id).await.unwrap().unwrap();
+    assert_eq!(loaded.technical.audio_tracks, tracks);
+
+    // Re-scan via batch_upsert with empty audio_tracks (use_ffprobe = false) -> COALESCE must preserve!
+    let rescan_item = MediaItem {
+        file_size: 8192,
+        ..item
+    };
+    media_repo.batch_upsert(&[rescan_item]).await.unwrap();
+    let after_rescan = media_repo.get_by_id(item_id).await.unwrap().unwrap();
+    assert_eq!(after_rescan.file_size, 8192);
+    assert_eq!(after_rescan.technical.audio_tracks, tracks);
 }
