@@ -81,7 +81,7 @@ fn compile_inner(node: &FilterNode, now_epoch: i64, state: &mut CompiledFilter) 
                 .collect();
             let grouped = format!("({})", parts.join(joiner));
             if *negated {
-                format!("NOT {grouped}")
+                format!("NOT COALESCE({grouped}, 0)")
             } else {
                 grouped
             }
@@ -89,7 +89,7 @@ fn compile_inner(node: &FilterNode, now_epoch: i64, state: &mut CompiledFilter) 
         FilterNode::Rule { negated, condition } => {
             let expr = compile_condition(condition, now_epoch, state);
             if *negated {
-                format!("NOT ({expr})")
+                format!("NOT COALESCE(({expr}), 0)")
             } else {
                 expr
             }
@@ -102,7 +102,7 @@ fn compile_text_match(expr: &str, matcher: &TextMatch, params: &mut Vec<Value>) 
         TextMatch::IsEmpty => format!("({expr} IS NULL OR TRIM({expr}) = '')"),
         TextMatch::Eq { value } => {
             params.push(Value::Text(value.trim().to_lowercase()));
-            format!("COALESCE((LOWER({expr}) = ?), 0)")
+            format!("(LOWER({expr}) = ?)")
         }
         TextMatch::In { values } => {
             if values.is_empty() {
@@ -112,17 +112,17 @@ fn compile_text_match(expr: &str, matcher: &TextMatch, params: &mut Vec<Value>) 
             for v in values {
                 params.push(Value::Text(v.trim().to_lowercase()));
             }
-            format!("COALESCE((LOWER({expr}) IN ({ph})), 0)")
+            format!("(LOWER({expr}) IN ({ph}))")
         }
         TextMatch::Contains { value } => {
             let escaped = escape_like(&value.trim().to_lowercase());
             params.push(Value::Text(format!("%{escaped}%")));
-            format!("COALESCE((LOWER({expr}) LIKE ? ESCAPE '\\'), 0)")
+            format!("(LOWER({expr}) LIKE ? ESCAPE '\\')")
         }
         TextMatch::StartsWith { value } => {
             let escaped = escape_like(&value.trim().to_lowercase());
             params.push(Value::Text(format!("{escaped}%")));
-            format!("COALESCE((LOWER({expr}) LIKE ? ESCAPE '\\'), 0)")
+            format!("(LOWER({expr}) LIKE ? ESCAPE '\\')")
         }
     }
 }
@@ -165,20 +165,20 @@ fn compile_int_cmp(expr: &str, cmp: &IntComparison, params: &mut Vec<Value>) -> 
     match cmp {
         IntComparison::Eq { value } => {
             params.push(Value::Integer(*value));
-            format!("COALESCE(({expr} = ?), 0)")
+            format!("({expr} = ?)")
         }
         IntComparison::Gte { value } => {
             params.push(Value::Integer(*value));
-            format!("COALESCE(({expr} >= ?), 0)")
+            format!("({expr} >= ?)")
         }
         IntComparison::Lte { value } => {
             params.push(Value::Integer(*value));
-            format!("COALESCE(({expr} <= ?), 0)")
+            format!("({expr} <= ?)")
         }
         IntComparison::Between { min, max } => {
             params.push(Value::Integer(*min));
             params.push(Value::Integer(*max));
-            format!("COALESCE(({expr} BETWEEN ? AND ?), 0)")
+            format!("({expr} BETWEEN ? AND ?)")
         }
     }
 }
@@ -191,27 +191,27 @@ fn compile_time_cmp(
 ) -> String {
     match cmp {
         TimeComparison::WithinLastDays { days } => {
-            let cutoff = now_epoch.saturating_sub(*days as i64 * 86_400);
+            let cutoff = now_epoch.saturating_sub((*days as i64).saturating_mul(86_400));
             params.push(Value::Integer(cutoff));
-            format!("COALESCE(({expr} >= ?), 0)")
+            format!("({expr} >= ?)")
         }
         TimeComparison::OlderThanDays { days } => {
-            let cutoff = now_epoch.saturating_sub(*days as i64 * 86_400);
+            let cutoff = now_epoch.saturating_sub((*days as i64).saturating_mul(86_400));
             params.push(Value::Integer(cutoff));
-            format!("COALESCE(({expr} < ?), 0)")
+            format!("({expr} < ?)")
         }
         TimeComparison::AfterEpoch { timestamp } => {
             params.push(Value::Integer(*timestamp));
-            format!("COALESCE(({expr} >= ?), 0)")
+            format!("({expr} >= ?)")
         }
         TimeComparison::BeforeEpoch { timestamp } => {
             params.push(Value::Integer(*timestamp));
-            format!("COALESCE(({expr} <= ?), 0)")
+            format!("({expr} <= ?)")
         }
         TimeComparison::BetweenEpochs { min, max } => {
             params.push(Value::Integer(*min));
             params.push(Value::Integer(*max));
-            format!("COALESCE(({expr} BETWEEN ? AND ?), 0)")
+            format!("({expr} BETWEEN ? AND ?)")
         }
     }
 }
@@ -317,16 +317,16 @@ fn compile_condition(cond: &FilterCondition, now_epoch: i64, state: &mut Compile
             match cmp {
                 FloatComparison::Gte { value } => {
                     state.params.push(Value::Real(f32_to_sql_f64(*value)));
-                    format!("COALESCE(({expr} >= ?), 0)")
+                    format!("({expr} >= ?)")
                 }
                 FloatComparison::Lte { value } => {
                     state.params.push(Value::Real(f32_to_sql_f64(*value)));
-                    format!("COALESCE(({expr} <= ?), 0)")
+                    format!("({expr} <= ?)")
                 }
                 FloatComparison::Between { min, max } => {
                     state.params.push(Value::Real(f32_to_sql_f64(*min)));
                     state.params.push(Value::Real(f32_to_sql_f64(*max)));
-                    format!("COALESCE(({expr} BETWEEN ? AND ?), 0)")
+                    format!("({expr} BETWEEN ? AND ?)")
                 }
             }
         }
@@ -357,7 +357,7 @@ fn compile_condition(cond: &FilterCondition, now_epoch: i64, state: &mut Compile
                 WatchStateMatch::ProgressBetween { min, max } => {
                     state.params.push(Value::Real(f32_to_sql_f64(*min)));
                     state.params.push(Value::Real(f32_to_sql_f64(*max)));
-                    "COALESCE((m.duration_seconds > 0 AND (CAST(COALESCE(ups.playback_position_seconds, 0) AS REAL) / CAST(m.duration_seconds AS REAL)) BETWEEN ? AND ?), 0)".to_string()
+                    "(m.duration_seconds > 0 AND (CAST(COALESCE(ups.playback_position_seconds, 0) AS REAL) / CAST(m.duration_seconds AS REAL)) BETWEEN ? AND ?)".to_string()
                 }
             }
         }

@@ -860,4 +860,65 @@ describe('LayoutStudio Component', () => {
       apiRecord.getCatalogFacets = originalFacets;
     }
   });
+
+  it('disables Save Widget submit button while an invalid JSON AST draft error is active and re-enables once valid', async () => {
+    vi.spyOn(api, 'getCatalogFacets').mockResolvedValue({
+      genres: [],
+      countries: [],
+      languages: [],
+      studios: [],
+      directors: [],
+      tags: [],
+      resolutions: [],
+      video_codecs: [],
+      audio_codecs: [],
+      containers: [],
+      year_min: null,
+      year_max: null,
+    });
+    vi.spyOn(api, 'previewWidget').mockResolvedValue({
+      items: [],
+      total_count: 0,
+      execution_ms: 1,
+    });
+
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ add widget/i }));
+    const dialog = screen.getByRole('dialog', { name: /add widget/i });
+
+    fireEvent.change(within(dialog).getByLabelText(/query macro/i), {
+      target: { value: 'custom_query' },
+    });
+
+    const saveWidgetBtn = within(dialog).getByRole('button', {
+      name: /save widget/i,
+    }) as HTMLButtonElement;
+    expect(saveWidgetBtn.disabled).toBe(false);
+
+    // Switch to JSON AST and enter malformed JSON
+    fireEvent.click(within(dialog).getByRole('tab', { name: /json ast/i }));
+    const jsonEditor = within(dialog).getByLabelText(/filter json ast/i);
+    fireEvent.change(jsonEditor, { target: { value: '{ invalid json' } });
+
+    expect(within(dialog).getByRole('alert')).toBeDefined();
+    expect(saveWidgetBtn.disabled).toBe(true);
+
+    // Fix JSON AST (including 'unknown' MediaType) -> Save Widget re-enables
+    fireEvent.change(jsonEditor, {
+      target: {
+        value: JSON.stringify({
+          kind: 'rule',
+          condition: { field: 'item_type', op: 'in', values: ['unknown'] },
+        }),
+      },
+    });
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(saveWidgetBtn.disabled).toBe(false);
+  });
 });

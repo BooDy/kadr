@@ -331,4 +331,39 @@ describe('RuleBuilderEditor', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/Invalid JSON syntax/i);
     expect(onEmit).toHaveBeenCalledTimes(callCountBeforeBadJson);
   });
+
+  it('accepts "unknown" item_type in JSON AST and emits onValidationErrorChange updates', () => {
+    const onChange = vi.fn();
+    const onValidationErrorChange = vi.fn();
+    render(
+      <RuleBuilderEditor
+        value={null}
+        onChange={onChange}
+        libraries={mockLibraries}
+        facets={mockFacets}
+        onValidationErrorChange={onValidationErrorChange}
+      />
+    );
+
+    expect(onValidationErrorChange).toHaveBeenLastCalledWith(null);
+
+    fireEvent.click(screen.getByRole('tab', { name: /JSON AST/i }));
+    const jsonEditor = screen.getByLabelText(/Filter JSON AST/i);
+
+    fireEvent.change(jsonEditor, { target: { value: '{ broken' } });
+    expect(onValidationErrorChange).toHaveBeenLastCalledWith(
+      expect.stringMatching(/Invalid JSON syntax/i)
+    );
+
+    const unknownTypeAst: FilterNode = {
+      kind: 'rule',
+      condition: { field: 'item_type', op: 'in', values: ['unknown'] },
+    };
+    fireEvent.change(jsonEditor, {
+      target: { value: JSON.stringify(unknownTypeAst, null, 2) },
+    });
+
+    expect(onValidationErrorChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(unknownTypeAst);
+  });
 });

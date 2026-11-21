@@ -456,8 +456,12 @@ fn eval_time_cmp(actual: Option<i64>, cmp: &TimeComparison, now_epoch: i64) -> b
         return false;
     };
     match cmp {
-        TimeComparison::WithinLastDays { days } => ts >= now_epoch - (*days as i64 * 86_400),
-        TimeComparison::OlderThanDays { days } => ts < now_epoch - (*days as i64 * 86_400),
+        TimeComparison::WithinLastDays { days } => {
+            ts >= now_epoch.saturating_sub((*days as i64).saturating_mul(86_400))
+        }
+        TimeComparison::OlderThanDays { days } => {
+            ts < now_epoch.saturating_sub((*days as i64).saturating_mul(86_400))
+        }
         TimeComparison::AfterEpoch { timestamp } => ts >= *timestamp,
         TimeComparison::BeforeEpoch { timestamp } => ts <= *timestamp,
         TimeComparison::BetweenEpochs { min, max } => ts >= *min && ts <= *max,
@@ -569,7 +573,9 @@ fn eval_condition(
     now_epoch: i64,
 ) -> bool {
     match condition {
-        FilterCondition::LibraryId { values, .. } => values.iter().any(|v| v == &item.library_id),
+        FilterCondition::LibraryId { values, .. } => {
+            values.iter().any(|v| v.trim() == item.library_id)
+        }
         FilterCondition::ItemType { values, .. } => values.contains(&item.item_type),
 
         FilterCondition::Title { matcher } => eval_text_match(Some(&item.title), matcher),

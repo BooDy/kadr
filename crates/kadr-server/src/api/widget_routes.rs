@@ -226,8 +226,7 @@ pub struct WidgetPreviewResponse {
 /// Handler for `POST /api/v1/widgets/preview`.
 /// Evaluates a widget query binding (including custom_query filter ASTs) without persisting layout state.
 pub async fn preview_widget(
-    _admin: RequireAdmin,
-    auth_user: AuthUser,
+    RequireAdmin(auth_user): RequireAdmin,
     unlocked: UnlockedLibraries,
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,

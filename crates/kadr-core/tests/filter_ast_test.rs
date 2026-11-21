@@ -446,3 +446,33 @@ fn test_evaluator_or_groups_unwatched_defaults_and_zero_duration() {
     };
     assert!(!progress_any.matches(&item, Some(&playback), now));
 }
+
+#[test]
+fn test_library_id_trim_parity_and_time_cmp_saturation() {
+    let item = sample_egyptian_classic();
+    let padded_lib_rule = FilterNode::Rule {
+        negated: false,
+        condition: FilterCondition::LibraryId {
+            op: SetOp::In,
+            values: vec![format!("  {}  ", item.library_id)],
+        },
+    };
+    assert!(padded_lib_rule.matches(&item, None, 1_700_086_400));
+
+    // Extreme days/epoch values must saturate rather than panic on i64 underflow/overflow
+    let extreme_within = FilterNode::Rule {
+        negated: false,
+        condition: FilterCondition::AddedAt {
+            cmp: TimeComparison::WithinLastDays { days: u32::MAX },
+        },
+    };
+    assert!(extreme_within.matches(&item, None, i64::MIN + 10));
+
+    let extreme_older = FilterNode::Rule {
+        negated: false,
+        condition: FilterCondition::AddedAt {
+            cmp: TimeComparison::OlderThanDays { days: u32::MAX },
+        },
+    };
+    assert!(!extreme_older.matches(&item, None, i64::MIN + 10));
+}

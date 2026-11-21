@@ -8,7 +8,8 @@ use kadr_core::models::{
 };
 use kadr_storage::pool::{create_pool, initialize_database};
 use kadr_storage::repos::{
-    LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
+    build_filter_envelope, compile_filter_node, LibraryRepository, MediaItemRepository,
+    PlaybackRepository, UserRepository,
 };
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -874,5 +875,217 @@ async fn test_preset_for_user_queries_sort_options_indexes_and_full_operator_par
         }
         rust_ids.sort();
         assert_eq!(sql_ids, rust_ids, "Mismatch on extra tree: {tree:?}");
+    }
+}
+
+#[tokio::test]
+async fn test_explain_query_plan_uses_filter_ast_indexes_and_negated_null_groups_match_rust() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("test_filter_ast_eqp.db");
+    let pool = create_pool(&db_path, 4).unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+
+    user_repo
+        .create(&User {
+            id: "u1".to_string(),
+            username: "viewer".to_string(),
+            pin_hash: "hash".to_string(),
+            role: UserRole::Admin,
+            created_at: 1_700_000_000,
+        })
+        .await
+        .unwrap();
+
+    lib_repo
+        .insert(&Library {
+            id: "lib-main".to_string(),
+            name: "Main Library".to_string(),
+            path: PathBuf::from("/main"),
+            paths: vec![PathBuf::from("/main")],
+            media_type: MediaType::Movie,
+            is_private: false,
+            pin_hash: None,
+            created_at: 1_700_000_000,
+        })
+        .await
+        .unwrap();
+
+    let now = 1_700_000_000_i64;
+    let seed_items = vec![
+        MediaItem {
+            id: None,
+            library_id: "lib-main".to_string(),
+            item_type: MediaType::Movie,
+            title: "The Mummy (Al-Mummia)".to_string(),
+            original_title: None,
+            release_year: Some(1969),
+            added_at: now - 86_400,
+            file_path: PathBuf::from("/main/mummy.mkv"),
+            file_name: "mummy.mkv".to_string(),
+            file_size: 1000,
+            technical: TechnicalInfo {
+                duration_seconds: 6120,
+                resolution: Some("1080p".to_string()),
+                video_codec: Some("hevc".to_string()),
+                audio_codec: Some("flac".to_string()),
+                audio_channels: Some(2),
+                container: Some("mkv".to_string()),
+                audio_tracks: vec![],
+            },
+            metadata: MediaMetadata {
+                country: Some("Egypt".to_string()),
+                ..Default::default()
+            },
+            locked_fields: vec![],
+        },
+        MediaItem {
+            id: None,
+            library_id: "lib-main".to_string(),
+            item_type: MediaType::Movie,
+            title: "Mystery Null Metadata Film".to_string(),
+            original_title: None,
+            release_year: None,
+            added_at: now - 172_800,
+            file_path: PathBuf::from("/main/mystery.mkv"),
+            file_name: "mystery.mkv".to_string(),
+            file_size: 800,
+            technical: TechnicalInfo {
+                duration_seconds: 4800,
+                resolution: None,
+                video_codec: None,
+                audio_codec: None,
+                audio_channels: None,
+                container: None,
+                audio_tracks: vec![],
+            },
+            metadata: MediaMetadata::default(),
+            locked_fields: vec![],
+        },
+    ];
+    media_repo.upsert_batch(&seed_items).await.unwrap();
+
+    let country_rule = FilterNode::Rule {
+        negated: false,
+        condition: FilterCondition::Country {
+            matcher: TextMatch::Eq {
+                value: "Egypt".to_string(),
+            },
+        },
+    };
+    let year_rule = FilterNode::Rule {
+        negated: false,
+        condition: FilterCondition::ReleaseYear {
+            cmp: IntComparison::Gte { value: 1960 },
+        },
+    };
+
+    // Assert EXPLAIN QUERY PLAN uses idx_media_country_lower and idx_media_release_year
+    {
+        let conn = pool.get().await.unwrap();
+        let country_tree = country_rule.clone();
+        let year_tree = year_rule.clone();
+        conn.interact(move |c| {
+            let explain_plan = |node: &FilterNode| -> String {
+                let compiled = compile_filter_node(node, now);
+                let sql = format!(
+                    "EXPLAIN QUERY PLAN SELECT m.id FROM media_items m \
+                     JOIN libraries l ON m.library_id = l.id \
+                     WHERE {}",
+                    compiled.sql
+                );
+                let mut stmt = c.prepare(&sql).unwrap();
+                let details: Vec<String> = stmt
+                    .query_map(rusqlite::params_from_iter(compiled.params), |r| {
+                        r.get::<_, String>(3)
+                    })
+                    .unwrap()
+                    .map(|r| r.unwrap())
+                    .collect();
+                details.join(" | ")
+            };
+
+            let country_plan = explain_plan(&country_tree);
+            assert!(
+                country_plan.contains("SEARCH m USING INDEX idx_media_country_lower"),
+                "Expected idx_media_country_lower in EXPLAIN QUERY PLAN, got: {country_plan}"
+            );
+
+            let year_plan = explain_plan(&year_tree);
+            assert!(
+                year_plan.contains("SEARCH m USING INDEX idx_media_release_year"),
+                "Expected idx_media_release_year in EXPLAIN QUERY PLAN, got: {year_plan}"
+            );
+
+            // Also verify full envelope query for Country = 'Egypt' uses idx_media_country_lower
+            let env = build_filter_envelope(
+                Some(&WidgetFilterConfig {
+                    rule_tree: Some(country_tree),
+                    ..Default::default()
+                }),
+                &[],
+                now,
+            );
+            let env_sql = format!(
+                "EXPLAIN QUERY PLAN SELECT m.id FROM media_items m \
+                 JOIN libraries l ON m.library_id = l.id \
+                 WHERE m.item_type != 'episode' AND {}",
+                env.sql
+            );
+            let env_details: Vec<String> = c
+                .prepare(&env_sql)
+                .unwrap()
+                .query_map(rusqlite::params_from_iter(env.params), |r| {
+                    r.get::<_, String>(3)
+                })
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            let env_plan = env_details.join(" | ");
+            assert!(
+                env_plan.contains("SEARCH m USING INDEX idx_media_country_lower"),
+                "Expected idx_media_country_lower in envelope EXPLAIN QUERY PLAN, got: {env_plan}"
+            );
+        })
+        .await
+        .unwrap();
+    }
+
+    // Verify negated Group over NULL-producing rules retains 100% parity with Rust evaluator
+    let stored = media_repo.list_all_by_library("lib-main").await.unwrap();
+    let negated_null_trees = vec![
+        FilterNode::Group {
+            op: LogicalOp::Or,
+            negated: true,
+            children: vec![country_rule.clone(), year_rule.clone()],
+        },
+        FilterNode::Group {
+            op: LogicalOp::And,
+            negated: true,
+            children: vec![country_rule, year_rule],
+        },
+    ];
+    for tree in negated_null_trees {
+        let cfg = WidgetFilterConfig {
+            rule_tree: Some(tree.clone()),
+            ..Default::default()
+        };
+        let (sql_items, _) = media_repo
+            .find_custom_paginated(None, "u1", 50, 0, None, &[], Some(&cfg))
+            .await
+            .unwrap();
+        let mut sql_ids: Vec<i64> = sql_items.iter().filter_map(|i| i.id).collect();
+        sql_ids.sort();
+
+        let mut rust_ids: Vec<i64> = stored
+            .iter()
+            .filter(|i| tree.matches(i, None, now))
+            .filter_map(|i| i.id)
+            .collect();
+        rust_ids.sort();
+        assert_eq!(sql_ids, rust_ids, "Negated NULL parity mismatch: {tree:?}");
     }
 }

@@ -39,6 +39,7 @@ export interface RuleBuilderEditorProps {
   onChange: (next: FilterNode | null) => void;
   libraries?: Library[];
   facets?: CatalogFacets | null;
+  onValidationErrorChange?: (error: string | null) => void;
 }
 
 interface QuickTemplate {
@@ -1420,6 +1421,7 @@ export const RuleBuilderEditor: React.FC<RuleBuilderEditorProps> = ({
   onChange,
   libraries = [],
   facets = null,
+  onValidationErrorChange,
 }) => {
   const jsonEditorId = useId();
   const initialDepth = getFilterTreeDepth(value);
@@ -1435,6 +1437,11 @@ export const RuleBuilderEditor: React.FC<RuleBuilderEditorProps> = ({
   );
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [depthNotice, setDepthNotice] = useState<string | null>(null);
+
+  const activeValidationError = mode === 'json' ? jsonError : null;
+  useEffect(() => {
+    onValidationErrorChange?.(activeValidationError);
+  }, [activeValidationError, onValidationErrorChange]);
 
   useEffect(() => {
     if (value?.kind === 'group') {

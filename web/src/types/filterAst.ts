@@ -15,7 +15,8 @@ export type FilterMediaType =
   | 'music'
   | 'home_videos'
   | 'audiobook'
-  | 'live_channel';
+  | 'live_channel'
+  | 'unknown';
 
 export type WatchStateValue = 'unwatched' | 'in_progress' | 'completed';
 
@@ -191,6 +192,7 @@ const MEDIA_TYPE_VALUES = new Set<string>([
   'home_videos',
   'audiobook',
   'live_channel',
+  'unknown',
 ]);
 const WATCH_STATE_VALUES = new Set<string>(['unwatched', 'in_progress', 'completed']);
 

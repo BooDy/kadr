@@ -89,10 +89,12 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   const [genreInputText, setGenreInputText] = useState<string>('');
   const [maxAgeDays, setMaxAgeDays] = useState<number | null>(null);
   const [ruleTree, setRuleTree] = useState<FilterNode | null>(null);
+  const [ruleValidationError, setRuleValidationError] = useState<string | null>(null);
   const [facets, setFacets] = useState<CatalogFacets | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
+    setRuleValidationError(null);
 
     if (initialWidget) {
       if (initialWidget.type === 'hero_banner' || initialWidget.type === 'carousel' || initialWidget.type === 'grid') {
@@ -412,9 +414,13 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   };
 
   const draftBinding = buildBinding();
+  const hasRuleValidationError = isFiltersOpen && Boolean(ruleValidationError);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (hasRuleValidationError) {
+      return;
+    }
 
     const binding = buildBinding();
     const bindingChanged =
@@ -759,6 +765,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                   onChange={setRuleTree}
                   libraries={libraries}
                   facets={facets}
+                  onValidationErrorChange={setRuleValidationError}
                 />
 
                 {/* Library Scope */}
@@ -961,7 +968,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl text-sm font-bold bg-cta hover:bg-cta-hover text-white shadow-md flex items-center gap-2 transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+              disabled={hasRuleValidationError}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold bg-cta hover:bg-cta-hover disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-md flex items-center gap-2 transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
             >
               <Check className="w-4 h-4" aria-hidden="true" />
               Save Widget
