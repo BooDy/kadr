@@ -428,4 +428,436 @@ describe('LayoutStudio Component', () => {
       expect(screen.queryByRole('button', { name: /^anime channel$/i })).toBeNull();
     });
   });
+
+  it('creates a Custom Filter Query widget with a Country = Egypt rule and renders live preview items on the Studio canvas before saving layout', async () => {
+    const facetsSpy = vi.spyOn(api, 'getCatalogFacets').mockResolvedValue({
+      genres: ['Drama', 'Sci-Fi'],
+      countries: ['Egypt', 'France'],
+      languages: ['Arabic', 'English'],
+      studios: [],
+      directors: ['Youssef Chahine'],
+      tags: [],
+      resolutions: ['1080p', '2160p'],
+      video_codecs: ['hevc'],
+      audio_codecs: ['aac'],
+      containers: ['mkv'],
+      year_min: 1958,
+      year_max: 2025,
+    });
+    const previewSpy = vi.spyOn(api, 'previewWidget').mockResolvedValue({
+      items: [
+        {
+          id: 701,
+          title: 'Cairo Station',
+          media_type: 'movie',
+          release_year: 1958,
+        },
+        {
+          id: 702,
+          title: 'The Night of Counting the Years',
+          media_type: 'movie',
+          release_year: 1969,
+        },
+      ],
+      total_count: 2,
+      execution_ms: 4,
+    });
+    const saveSpy = vi.spyOn(api, 'saveScreen').mockImplementation(async (_id, nextLayout) => nextLayout);
+
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ add widget/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /add widget/i });
+    expect(dialog).toBeDefined();
+
+    await waitFor(() => {
+      expect(facetsSpy).toHaveBeenCalled();
+    });
+
+    fireEvent.change(within(dialog).getByLabelText(/^title$/i), {
+      target: { value: 'Egyptian Cinema' },
+    });
+
+    const macroSelect = within(dialog).getByLabelText(/query macro/i) as HTMLSelectElement;
+    fireEvent.change(macroSelect, { target: { value: 'custom_query' } });
+    expect(macroSelect.value).toBe('custom_query');
+
+    // Selecting Custom Filter Query auto-expands the Filters / Rule Builder section
+    expect(within(dialog).getByText(/declarative rule builder/i)).toBeDefined();
+
+    // Verify new sort options exist and select Duration (Shortest)
+    const sortSelect = within(dialog).getByLabelText(/^sort$/i) as HTMLSelectElement;
+    expect(within(sortSelect).getByRole('option', { name: 'Duration (Shortest)' })).toBeDefined();
+    expect(within(sortSelect).getByRole('option', { name: 'Duration (Longest)' })).toBeDefined();
+    expect(within(sortSelect).getByRole('option', { name: 'Last Watched (Recent)' })).toBeDefined();
+    fireEvent.change(sortSelect, { target: { value: 'duration_seconds:asc' } });
+
+    // Add a Country = Egypt rule
+    fireEvent.click(within(dialog).getByRole('button', { name: /^\+ add rule$/i }));
+
+    const ruleFieldSelect = within(dialog).getByLabelText('Rule 1 field');
+    fireEvent.change(ruleFieldSelect, { target: { value: 'country' } });
+
+    const ruleValueInput = within(dialog).getByLabelText('Rule 1 value') as HTMLInputElement;
+    fireEvent.change(ruleValueInput, { target: { value: 'Egypt' } });
+
+    // Save widget in modal (NOT yet saving screen layout to disk)
+    fireEvent.click(within(dialog).getByRole('button', { name: /save widget/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /add widget/i })).toBeNull();
+    });
+
+    // Studio canvas immediately previews the unsaved custom_query widget via api.previewWidget
+    const previewFrame = screen.getByTestId('viewport-frame');
+    await waitFor(() => {
+      expect(previewSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          screen_id: 'home',
+          binding: expect.objectContaining({
+            macro_type: 'custom_query',
+            sort: 'duration_seconds:asc',
+            filters: {
+              rule_tree: {
+                kind: 'group',
+                op: 'and',
+                children: [
+                  {
+                    kind: 'rule',
+                    condition: {
+                      field: 'country',
+                      op: 'eq',
+                      value: 'Egypt',
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+        }),
+        expect.any(AbortSignal)
+      );
+      expect(within(previewFrame).getByText('Cairo Station')).toBeDefined();
+      expect(within(previewFrame).getByText('The Night of Counting the Years')).toBeDefined();
+    });
+
+    // Layout has NOT been saved to disk yet
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(screen.getByText(/custom filter query/i)).toBeDefined();
+
+    // Clicking Save Layout persists the widget with macro_type: 'custom_query' and filters.rule_tree
+    fireEvent.click(screen.getByRole('button', { name: /save layout/i }));
+
+    await waitFor(() => {
+      expect(saveSpy).toHaveBeenCalledWith(
+        'home',
+        expect.objectContaining({
+          widgets: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'carousel',
+              title: 'Egyptian Cinema',
+              binding: expect.objectContaining({
+                macro_type: 'custom_query',
+                sort: 'duration_seconds:asc',
+                filters: {
+                  rule_tree: {
+                    kind: 'group',
+                    op: 'and',
+                    children: [
+                      {
+                        kind: 'rule',
+                        condition: {
+                          field: 'country',
+                          op: 'eq',
+                          value: 'Egypt',
+                        },
+                      },
+                    ],
+                  },
+                },
+              }),
+            }),
+          ]),
+        })
+      );
+    });
+  });
+
+  it('creates a Custom Filter Query widget from a Quick Template and previews live items on canvas', async () => {
+    vi.spyOn(api, 'getCatalogFacets').mockResolvedValue({
+      genres: [],
+      countries: [],
+      languages: [],
+      studios: [],
+      directors: [],
+      tags: [],
+      resolutions: [],
+      video_codecs: [],
+      audio_codecs: [],
+      containers: [],
+      year_min: null,
+      year_max: null,
+    });
+    const previewSpy = vi.spyOn(api, 'previewWidget').mockResolvedValue({
+      items: [{ id: 801, title: 'La Jetée', media_type: 'movie', release_year: 1962 }],
+      total_count: 1,
+      execution_ms: 3,
+    });
+
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_home')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ add widget/i }));
+    const dialog = screen.getByRole('dialog', { name: /add widget/i });
+
+    fireEvent.change(within(dialog).getByLabelText(/^title$/i), {
+      target: { value: 'Quick Shorts' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/query macro/i), {
+      target: { value: 'custom_query' },
+    });
+
+    // Click Quick Template "Short Films (< 90 min)"
+    fireEvent.click(within(dialog).getByRole('button', { name: /short films \(< 90 min\)/i }));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /save widget/i }));
+
+    const previewFrame = screen.getByTestId('viewport-frame');
+    await waitFor(() => {
+      expect(previewSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          binding: expect.objectContaining({
+            macro_type: 'custom_query',
+            filters: {
+              rule_tree: {
+                kind: 'group',
+                op: 'and',
+                children: [
+                  {
+                    kind: 'rule',
+                    condition: { field: 'item_type', op: 'in', values: ['movie'] },
+                  },
+                  {
+                    kind: 'rule',
+                    condition: { field: 'duration_seconds', op: 'lte', value: 5400 },
+                  },
+                ],
+              },
+            },
+          }),
+        }),
+        expect.any(AbortSignal)
+      );
+      expect(within(previewFrame).getByText('La Jetée')).toBeDefined();
+    });
+  });
+
+  it('loads existing filters.rule_tree when editing a widget and preserves or updates rule_tree on save', async () => {
+    const layoutWithRuleWidget: ScreenLayout = {
+      id: 'home',
+      title: 'Home',
+      widgets: [
+        ...mockHomeLayout.widgets,
+        {
+          type: 'carousel',
+          id: 'arab_classics_shelf',
+          display_type: 'carousel',
+          title: 'Arab Classics',
+          binding: {
+            macro_type: 'custom_query',
+            limit: 12,
+            sort: 'last_watched_at:desc',
+            filters: {
+              exclude_private: true,
+              rule_tree: {
+                kind: 'group',
+                op: 'and',
+                children: [
+                  {
+                    kind: 'rule',
+                    condition: {
+                      field: 'country',
+                      op: 'eq',
+                      value: 'Egypt',
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          items: [{ id: 901, title: 'Alexandria... Why?', media_type: 'movie' }],
+        },
+      ],
+    };
+
+    vi.spyOn(api, 'getScreen').mockResolvedValue(layoutWithRuleWidget);
+    vi.spyOn(api, 'getCatalogFacets').mockResolvedValue({
+      genres: [],
+      countries: ['Egypt', 'Lebanon'],
+      languages: [],
+      studios: [],
+      directors: [],
+      tags: [],
+      resolutions: [],
+      video_codecs: [],
+      audio_codecs: [],
+      containers: [],
+      year_min: 1950,
+      year_max: 2024,
+    });
+    const previewSpy = vi.spyOn(api, 'previewWidget').mockResolvedValue({
+      items: [{ id: 902, title: 'Capernaum', media_type: 'movie', release_year: 2018 }],
+      total_count: 1,
+      execution_ms: 2,
+    });
+    const saveSpy = vi.spyOn(api, 'saveScreen').mockImplementation(async (_id, nextLayout) => nextLayout);
+
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('arab_classics_shelf')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /edit arab_classics_shelf/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /edit widget/i });
+    expect(dialog).toBeDefined();
+
+    // Verify macro, sort, active filter badge, and rule_tree are loaded into modal
+    expect((within(dialog).getByLabelText(/query macro/i) as HTMLSelectElement).value).toBe(
+      'custom_query'
+    );
+    expect((within(dialog).getByLabelText(/^sort$/i) as HTMLSelectElement).value).toBe(
+      'last_watched_at:desc'
+    );
+    expect(within(dialog).getByText(/2 filters active/i)).toBeDefined();
+
+    const ruleFieldSelect = within(dialog).getByLabelText('Rule 1 field') as HTMLSelectElement;
+    const ruleValueInput = within(dialog).getByLabelText('Rule 1 value') as HTMLInputElement;
+    expect(ruleFieldSelect.value).toBe('country');
+    expect(ruleValueInput.value).toBe('Egypt');
+
+    // Update the rule value from Egypt -> Lebanon and save widget
+    fireEvent.change(ruleValueInput, { target: { value: 'Lebanon' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /save widget/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /edit widget/i })).toBeNull();
+    });
+
+    // Canvas refreshes preview with updated rule_tree
+    const previewFrame = screen.getByTestId('viewport-frame');
+    await waitFor(() => {
+      expect(previewSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          binding: expect.objectContaining({
+            macro_type: 'custom_query',
+            sort: 'last_watched_at:desc',
+            filters: {
+              exclude_private: true,
+              rule_tree: {
+                kind: 'group',
+                op: 'and',
+                children: [
+                  {
+                    kind: 'rule',
+                    condition: {
+                      field: 'country',
+                      op: 'eq',
+                      value: 'Lebanon',
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+        }),
+        expect.any(AbortSignal)
+      );
+      expect(within(previewFrame).getByText('Capernaum')).toBeDefined();
+    });
+
+    // Save layout and verify updated rule_tree + preserved exclude_private
+    fireEvent.click(screen.getByRole('button', { name: /save layout/i }));
+
+    await waitFor(() => {
+      expect(saveSpy).toHaveBeenCalledWith(
+        'home',
+        expect.objectContaining({
+          widgets: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'arab_classics_shelf',
+              binding: expect.objectContaining({
+                macro_type: 'custom_query',
+                sort: 'last_watched_at:desc',
+                filters: {
+                  exclude_private: true,
+                  rule_tree: {
+                    kind: 'group',
+                    op: 'and',
+                    children: [
+                      {
+                        kind: 'rule',
+                        condition: {
+                          field: 'country',
+                          op: 'eq',
+                          value: 'Lebanon',
+                        },
+                      },
+                    ],
+                  },
+                },
+              }),
+            }),
+          ]),
+        })
+      );
+    });
+  });
+
+  it('falls back cleanly to api.getWidgetData for unhydrated canvas widgets when api.previewWidget is absent', async () => {
+    const apiRecord = api as unknown as Record<string, unknown>;
+    const originalPreview = apiRecord.previewWidget;
+    const originalFacets = apiRecord.getCatalogFacets;
+    delete apiRecord.previewWidget;
+    delete apiRecord.getCatalogFacets;
+
+    try {
+      vi.spyOn(api, 'getScreen').mockResolvedValue({
+        id: 'home',
+        title: 'Home',
+        widgets: [
+          {
+            type: 'carousel',
+            id: 'unhydrated_legacy_row',
+            display_type: 'carousel',
+            title: 'Legacy Fallback Shelf',
+            binding: { macro_type: 'top_rated', limit: 10 },
+          },
+        ],
+      });
+      const widgetDataSpy = vi
+        .spyOn(api, 'getWidgetData')
+        .mockResolvedValue([{ id: 990, title: 'Fallback Cinema', media_type: 'movie' }]);
+
+      render(<LayoutStudio />);
+
+      const previewFrame = screen.getByTestId('viewport-frame');
+      await waitFor(() => {
+        expect(widgetDataSpy).toHaveBeenCalledWith('unhydrated_legacy_row', 0, 10);
+        expect(within(previewFrame).getByText('Fallback Cinema')).toBeDefined();
+      });
+    } finally {
+      apiRecord.previewWidget = originalPreview;
+      apiRecord.getCatalogFacets = originalFacets;
+    }
+  });
 });

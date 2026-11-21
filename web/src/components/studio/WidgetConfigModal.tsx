@@ -1,19 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { X, Sliders, Check, ChevronDown, ChevronRight, Filter, Lock } from 'lucide-react';
-import type {
-  Library,
-  PlaylistSummary,
-  WidgetNode,
-  QueryMacro,
-  WidgetQueryBinding,
-  WidgetFilterConfig,
+import {
+  countFilterTreeRules,
+  type CatalogFacets,
+  type FilterNode,
+  type Library,
+  type PlaylistSummary,
+  type WidgetNode,
+  type QueryMacro,
+  type WidgetQueryBinding,
+  type WidgetFilterConfig,
 } from '../../types';
 import { api } from '../../api/client';
+import { RuleBuilderEditor } from './RuleBuilderEditor';
+import { WidgetLivePreview } from './WidgetLivePreview';
 
 export interface WidgetConfigModalProps {
   isOpen: boolean;
   initialWidget?: WidgetNode | null;
   libraries: Library[];
+  screenId?: string;
   onSave: (widget: WidgetNode) => void;
   onClose: () => void;
 }
@@ -22,6 +28,7 @@ type MacroTypeOption =
   | 'recently_added'
   | 'top_rated'
   | 'continue_watching'
+  | 'custom_query'
   | 'library_items'
   | 'genre_shelf'
   | 'spotlight_item'
@@ -37,6 +44,9 @@ const SORT_OPTIONS = [
   { value: 'added_at:asc', label: 'Oldest Added' },
   { value: 'release_year:desc', label: 'Release Year (Newest)' },
   { value: 'release_year:asc', label: 'Release Year (Oldest)' },
+  { value: 'duration_seconds:asc', label: 'Duration (Shortest)' },
+  { value: 'duration_seconds:desc', label: 'Duration (Longest)' },
+  { value: 'last_watched_at:desc', label: 'Last Watched (Recent)' },
 ];
 
 const POPULAR_GENRES = ['Horror', 'Romance', 'Kids', 'Animation', 'Documentary', 'Drama'];
@@ -53,6 +63,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   isOpen,
   initialWidget,
   libraries,
+  screenId,
   onSave,
   onClose,
 }) => {
@@ -68,7 +79,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   const [limit, setLimit] = useState<number>(20);
   const [sort, setSort] = useState<string>('');
 
-  // Advanced Filters State
+  // Advanced Filters & Rule Builder State
   const [isFiltersOpen, setIsFiltersOpen] = useState<boolean>(false);
   const [scopeMode, setScopeMode] = useState<'default' | 'all' | 'specific'>('default');
   const [specificLibraryId, setSpecificLibraryId] = useState<string>('');
@@ -77,6 +88,8 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   const [excludeGenres, setExcludeGenres] = useState<string[]>([]);
   const [genreInputText, setGenreInputText] = useState<string>('');
   const [maxAgeDays, setMaxAgeDays] = useState<number | null>(null);
+  const [ruleTree, setRuleTree] = useState<FilterNode | null>(null);
+  const [facets, setFacets] = useState<CatalogFacets | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -97,32 +110,37 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         setSort(typeof binding.sort === 'string' ? binding.sort : '');
 
         const macro = binding.macro_type;
+        let resolvedInitialMacro: MacroTypeOption = 'recently_added';
         if (typeof macro === 'string') {
           if (
             macro === 'recently_added' ||
             macro === 'top_rated' ||
             macro === 'continue_watching' ||
+            macro === 'custom_query' ||
             macro === 'library_items' ||
             macro === 'genre_shelf' ||
             macro === 'spotlight_item' ||
             macro === 'playlist_items'
           ) {
-            setMacroType(macro as MacroTypeOption);
-          } else {
-            setMacroType('recently_added');
+            resolvedInitialMacro = macro as MacroTypeOption;
           }
+          setMacroType(resolvedInitialMacro);
         } else if (typeof macro === 'object' && macro !== null) {
           const m = macro as Record<string, any>;
           if ('library_items' in m && m.library_items) {
+            resolvedInitialMacro = 'library_items';
             setMacroType('library_items');
             setSelectedLibraryId(m.library_items.library_id || libraries[0]?.id || '');
           } else if ('playlist_items' in m && m.playlist_items) {
+            resolvedInitialMacro = 'playlist_items';
             setMacroType('playlist_items');
             setSelectedPlaylistId(m.playlist_items.playlist_id || '');
           } else if ('genre_shelf' in m && m.genre_shelf) {
+            resolvedInitialMacro = 'genre_shelf';
             setMacroType('genre_shelf');
             setGenre(m.genre_shelf.genre || 'Action');
           } else if ('spotlight_item' in m && m.spotlight_item) {
+            resolvedInitialMacro = 'spotlight_item';
             setMacroType('spotlight_item');
             setItemId(
               m.spotlight_item.item_id !== undefined ? String(m.spotlight_item.item_id) : ''
@@ -144,13 +162,18 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
           setSpecificLibraryId('');
         }
 
+        const initialRuleTree = filters?.rule_tree ?? null;
+        setRuleTree(initialRuleTree);
+
         const hasActiveFilters = Boolean(
           filters?.exclude_private ||
           (filters?.exclude_library_ids && filters.exclude_library_ids.length > 0) ||
           (filters?.exclude_genres && filters.exclude_genres.length > 0) ||
           (filters?.max_age_days && filters.max_age_days > 0) ||
           filters?.all_libraries ||
-          filters?.library_id
+          filters?.library_id ||
+          initialRuleTree !== null ||
+          resolvedInitialMacro === 'custom_query'
         );
 
         setIsFiltersOpen(hasActiveFilters);
@@ -168,6 +191,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         setExcludeGenres([]);
         setGenreInputText('');
         setMaxAgeDays(null);
+        setRuleTree(null);
       }
     } else {
       setWidgetType('carousel');
@@ -188,8 +212,27 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       setExcludeGenres([]);
       setGenreInputText('');
       setMaxAgeDays(null);
+      setRuleTree(null);
     }
   }, [isOpen, initialWidget, libraries]);
+
+  useEffect(() => {
+    if (!isOpen || typeof api.getCatalogFacets !== 'function') {
+      return;
+    }
+    let mounted = true;
+    api
+      .getCatalogFacets()
+      .then((res) => {
+        if (mounted && res) {
+          setFacets(res);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || macroType !== 'playlist_items') return;
@@ -252,12 +295,15 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
     }
   };
 
+  const hasRuleTree = Boolean(ruleTree && countFilterTreeRules(ruleTree) > 0);
+
   const activeFilterCount =
     (excludePrivate ? 1 : 0) +
     (excludeLibraryIds.length > 0 ? 1 : 0) +
     (excludeGenres.length > 0 ? 1 : 0) +
     (maxAgeDays !== null && maxAgeDays > 0 ? 1 : 0) +
-    (scopeMode !== 'default' ? 1 : 0);
+    (scopeMode !== 'default' ? 1 : 0) +
+    (hasRuleTree ? 1 : 0);
 
   // Handle escape key
   useEffect(() => {
@@ -277,9 +323,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const buildBinding = (): WidgetQueryBinding => {
     let resolvedMacro: QueryMacro;
     switch (macroType) {
       case 'continue_watching':
@@ -287,6 +331,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         break;
       case 'top_rated':
         resolvedMacro = 'top_rated';
+        break;
+      case 'custom_query':
+        resolvedMacro = 'custom_query';
         break;
       case 'library_items':
         resolvedMacro = {
@@ -351,12 +398,29 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       hasFilters = true;
     }
 
-    const binding: WidgetQueryBinding = {
+    if (ruleTree && countFilterTreeRules(ruleTree) > 0) {
+      filterConfig.rule_tree = ruleTree;
+      hasFilters = true;
+    }
+
+    return {
       macro_type: resolvedMacro,
       limit: Math.max(1, Number(limit) || 20),
       ...(sort.trim() ? { sort: sort.trim() } : {}),
       ...(hasFilters ? { filters: filterConfig } : {}),
     };
+  };
+
+  const draftBinding = buildBinding();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const binding = buildBinding();
+    const bindingChanged =
+      !initialWidget ||
+      !('binding' in initialWidget) ||
+      JSON.stringify(initialWidget.binding) !== JSON.stringify(binding);
 
     const id = initialWidget?.id || `${widgetType}_${Date.now()}`;
 
@@ -365,7 +429,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         type: 'hero_banner',
         id,
         binding,
-        ...(initialWidget && 'data' in initialWidget && initialWidget.data ? { data: initialWidget.data } : {}),
+        ...(!bindingChanged && initialWidget && 'data' in initialWidget && initialWidget.data
+          ? { data: initialWidget.data }
+          : {}),
         ...(initialWidget?.display_type ? { display_type: initialWidget.display_type } : {}),
       };
       onSave(heroNode);
@@ -376,7 +442,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         title: title.trim(),
         columns: Math.max(1, Number(columns) || 4),
         binding,
-        ...(initialWidget && 'items' in initialWidget && initialWidget.items ? { items: initialWidget.items } : {}),
+        ...(!bindingChanged && initialWidget && 'items' in initialWidget && initialWidget.items
+          ? { items: initialWidget.items }
+          : {}),
         ...(initialWidget?.display_type ? { display_type: initialWidget.display_type } : {}),
       };
       onSave(gridNode);
@@ -386,7 +454,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         id,
         title: title.trim(),
         binding,
-        ...(initialWidget && 'items' in initialWidget && initialWidget.items ? { items: initialWidget.items } : {}),
+        ...(!bindingChanged && initialWidget && 'items' in initialWidget && initialWidget.items
+          ? { items: initialWidget.items }
+          : {}),
         ...(initialWidget?.display_type ? { display_type: initialWidget.display_type } : {}),
       };
       onSave(carouselNode);
@@ -401,15 +471,15 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={initialWidget ? 'Edit Widget' : 'Add Widget'}
+      aria-labelledby="widget-config-modal-title"
       className="fixed inset-0 z-50 bg-canvas/80 backdrop-blur-sm flex items-center justify-center p-4"
     >
-      <div className="bg-panel border border-border-subtle rounded-2xl max-w-xl w-full p-6 shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-panel border border-border-subtle rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-border-subtle">
           <div className="flex items-center gap-2.5">
-            <Sliders className="w-5 h-5 text-accent" />
-            <h3 className="text-lg font-bold text-text-main">
+            <Sliders className="w-5 h-5 text-accent" aria-hidden="true" />
+            <h3 id="widget-config-modal-title" className="text-lg font-bold text-text-main">
               {initialWidget ? 'Edit Widget' : 'Add Widget'}
             </h3>
           </div>
@@ -419,7 +489,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             aria-label="Close modal"
             className="p-1.5 text-muted hover:text-text-main hover:bg-panel-hover rounded-lg transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -489,12 +559,19 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               id="widget-macro"
               aria-label="Query Macro"
               value={macroType}
-              onChange={(e) => setMacroType(e.target.value as MacroTypeOption)}
+              onChange={(e) => {
+                const nextMacro = e.target.value as MacroTypeOption;
+                setMacroType(nextMacro);
+                if (nextMacro === 'custom_query') {
+                  setIsFiltersOpen(true);
+                }
+              }}
               className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
             >
               <option value="recently_added">Recently Added</option>
               <option value="top_rated">Top Rated</option>
               <option value="continue_watching">Continue Watching</option>
+              <option value="custom_query">Custom Filter Query</option>
               <option value="library_items">Library Items</option>
               <option value="playlist_items">Playlist Items</option>
               <option value="genre_shelf">Genre Shelf</option>
@@ -659,7 +736,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               className="w-full flex items-center justify-between py-2.5 px-3 bg-canvas/60 hover:bg-panel-hover border border-border-subtle rounded-xl text-sm font-medium text-text-main transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
             >
               <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-accent" />
+                <Filter className="w-4 h-4 text-accent" aria-hidden="true" />
                 <span>Advanced Filters</span>
                 {activeFilterCount > 0 && (
                   <span className="bg-accent/20 text-accent font-semibold px-2 py-0.5 rounded text-xs">
@@ -668,14 +745,22 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                 )}
               </div>
               {isFiltersOpen ? (
-                <ChevronDown className="w-4 h-4 text-muted" />
+                <ChevronDown className="w-4 h-4 text-muted" aria-hidden="true" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-muted" />
+                <ChevronRight className="w-4 h-4 text-muted" aria-hidden="true" />
               )}
             </button>
 
             {isFiltersOpen && (
               <div id="advanced-filters-panel" className="mt-4 space-y-4 pl-1">
+                {/* Declarative Filter AST Rule Builder */}
+                <RuleBuilderEditor
+                  value={ruleTree}
+                  onChange={setRuleTree}
+                  libraries={libraries}
+                  facets={facets}
+                />
+
                 {/* Library Scope */}
                 <div>
                   <label htmlFor="widget-library-scope" className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
@@ -862,6 +947,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             )}
           </div>
 
+          {/* Live Query Preview */}
+          <WidgetLivePreview binding={draftBinding} screenId={screenId} />
+
           {/* Actions */}
           <div className="pt-4 border-t border-border-subtle flex items-center justify-end gap-3">
             <button
@@ -875,7 +963,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               type="submit"
               className="px-5 py-2.5 rounded-xl text-sm font-bold bg-cta hover:bg-cta-hover text-white shadow-md flex items-center gap-2 transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
             >
-              <Check className="w-4 h-4" />
+              <Check className="w-4 h-4" aria-hidden="true" />
               Save Widget
             </button>
           </div>

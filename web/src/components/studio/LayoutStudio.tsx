@@ -19,12 +19,14 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import type {
-  ScreenLayout,
-  ScreenSummary,
-  WidgetNode,
-  CardViewModel,
-  Library,
+import {
+  countFilterTreeRules,
+  type ScreenLayout,
+  type ScreenSummary,
+  type WidgetNode,
+  type WidgetQueryBinding,
+  type CardViewModel,
+  type Library,
 } from '../../types';
 import { SpotlightWidget } from '../browse/SpotlightWidget';
 import { CarouselWidget } from '../browse/CarouselWidget';
@@ -40,13 +42,32 @@ export interface LayoutStudioProps {
   onPlayItem?: (itemId: number) => void;
 }
 
+function formatWidgetBindingSummary(binding?: WidgetQueryBinding): string | null {
+  if (!binding) return null;
+  const macro = binding.macro_type;
+  const ruleCount = countFilterTreeRules(binding.filters?.rule_tree);
+  const ruleSuffix =
+    ruleCount > 0 ? ` · ${ruleCount} ${ruleCount === 1 ? 'rule' : 'rules'}` : '';
+
+  if (macro === 'custom_query') {
+    return `Custom Filter Query${ruleSuffix}`;
+  }
+  if (ruleCount > 0) {
+    return `${ruleCount} filter ${ruleCount === 1 ? 'rule' : 'rules'}`;
+  }
+  return null;
+}
+
 // Hydrated spotlight helper for LayoutStudio preview
 const HydratedSpotlight: FC<{
   widget: Extract<WidgetNode, { type: 'hero_banner' }>;
+  screenId: string;
+  isDirty: boolean;
   onPlay?: (itemId: number) => void;
   onMoreInfo: (itemId: number) => void;
-}> = ({ widget, onPlay, onMoreInfo }) => {
+}> = ({ widget, screenId, isDirty, onPlay, onMoreInfo }) => {
   const [item, setItem] = useState<CardViewModel | undefined>(widget.data);
+  const bindingKey = JSON.stringify(widget.binding);
 
   useEffect(() => {
     if (widget.data) {
@@ -55,19 +76,49 @@ const HydratedSpotlight: FC<{
     }
 
     let isMounted = true;
-    api
-      .getWidgetData(widget.id, 0, 1)
-      .then((items) => {
-        if (isMounted && items && items.length > 0) {
-          setItem(items[0]);
-        }
-      })
-      .catch(() => {});
+    const controller = new AbortController();
+
+    const fetchFallback = () => {
+      if (typeof api.getWidgetData !== 'function') return;
+      api
+        .getWidgetData(widget.id, 0, 1)
+        .then((items) => {
+          if (isMounted && items && items.length > 0) {
+            setItem(items[0]);
+          }
+        })
+        .catch(() => {});
+    };
+
+    if (typeof api.previewWidget === 'function') {
+      api
+        .previewWidget(
+          {
+            binding: JSON.parse(bindingKey) as WidgetQueryBinding,
+            screen_id: screenId,
+            limit: 1,
+          },
+          controller.signal
+        )
+        .then((res) => {
+          if (!isMounted || controller.signal.aborted) return;
+          if (res && Array.isArray(res.items)) {
+            setItem(res.items[0]);
+          }
+        })
+        .catch(() => {
+          if (!isMounted || controller.signal.aborted) return;
+          fetchFallback();
+        });
+    } else {
+      fetchFallback();
+    }
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [widget.id, widget.data]);
+  }, [widget.id, widget.data, bindingKey, screenId, isDirty]);
 
   const previewItem: CardViewModel = item || {
     id: 9997,
@@ -88,10 +139,13 @@ const HydratedSpotlight: FC<{
 // Studio preview carousel wrapper providing fallback preview items
 const StudioCarousel: FC<{
   widget: Extract<WidgetNode, { type: 'carousel' }>;
+  screenId: string;
+  isDirty: boolean;
   onSelectItem: (item: CardViewModel) => void;
   onPlayItem?: (id: number) => void;
-}> = ({ widget, onSelectItem, onPlayItem }) => {
+}> = ({ widget, screenId, isDirty, onSelectItem, onPlayItem }) => {
   const [items, setItems] = useState<CardViewModel[]>(widget.items || []);
+  const bindingKey = JSON.stringify(widget.binding);
 
   useEffect(() => {
     if (widget.items && widget.items.length > 0) {
@@ -100,19 +154,50 @@ const StudioCarousel: FC<{
     }
 
     let isMounted = true;
-    api
-      .getWidgetData(widget.id, 0, 10)
-      .then((data) => {
-        if (isMounted && data && data.length > 0) {
-          setItems(data);
-        }
-      })
-      .catch(() => {});
+    const controller = new AbortController();
+
+    const fetchFallback = () => {
+      if (typeof api.getWidgetData !== 'function') return;
+      api
+        .getWidgetData(widget.id, 0, 10)
+        .then((data) => {
+          if (isMounted && data && data.length > 0) {
+            setItems(data);
+          }
+        })
+        .catch(() => {});
+    };
+
+    if (typeof api.previewWidget === 'function') {
+      const parsedBinding = JSON.parse(bindingKey) as WidgetQueryBinding;
+      api
+        .previewWidget(
+          {
+            binding: parsedBinding,
+            screen_id: screenId,
+            limit: Math.min(Math.max(1, parsedBinding.limit || 10), 20),
+          },
+          controller.signal
+        )
+        .then((res) => {
+          if (!isMounted || controller.signal.aborted) return;
+          if (res && Array.isArray(res.items)) {
+            setItems(res.items);
+          }
+        })
+        .catch(() => {
+          if (!isMounted || controller.signal.aborted) return;
+          fetchFallback();
+        });
+    } else {
+      fetchFallback();
+    }
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [widget.id, widget.items]);
+  }, [widget.id, widget.items, bindingKey, screenId, isDirty]);
 
   const previewItems: CardViewModel[] =
     items.length > 0
@@ -141,31 +226,70 @@ const StudioCarousel: FC<{
 // Studio preview grid wrapper providing fallback preview items
 const StudioGrid: FC<{
   widget: Extract<WidgetNode, { type: 'grid' }>;
+  screenId: string;
+  isDirty: boolean;
   onSelectItem: (item: CardViewModel) => void;
   onPlayItem?: (id: number) => void;
-}> = ({ widget, onSelectItem, onPlayItem }) => {
+}> = ({ widget, screenId, isDirty, onSelectItem, onPlayItem }) => {
   const [items, setItems] = useState<CardViewModel[]>(widget.items || []);
+  const [previewTotalCount, setPreviewTotalCount] = useState<number | undefined>(
+    widget.total_count
+  );
+  const bindingKey = JSON.stringify(widget.binding);
 
   useEffect(() => {
     if (widget.items && widget.items.length > 0) {
       setItems(widget.items);
+      setPreviewTotalCount(widget.total_count);
       return;
     }
 
     let isMounted = true;
-    api
-      .getWidgetData(widget.id, 0, 24)
-      .then((data) => {
-        if (isMounted && data && data.length > 0) {
-          setItems(data);
-        }
-      })
-      .catch(() => {});
+    const controller = new AbortController();
+
+    const fetchFallback = () => {
+      if (typeof api.getWidgetData !== 'function') return;
+      api
+        .getWidgetData(widget.id, 0, 24)
+        .then((data) => {
+          if (isMounted && data && data.length > 0) {
+            setItems(data);
+          }
+        })
+        .catch(() => {});
+    };
+
+    if (typeof api.previewWidget === 'function') {
+      const parsedBinding = JSON.parse(bindingKey) as WidgetQueryBinding;
+      api
+        .previewWidget(
+          {
+            binding: parsedBinding,
+            screen_id: screenId,
+            limit: Math.min(Math.max(1, parsedBinding.limit || 24), 24),
+          },
+          controller.signal
+        )
+        .then((res) => {
+          if (!isMounted || controller.signal.aborted) return;
+          if (res && Array.isArray(res.items)) {
+            setItems(res.items);
+            setPreviewTotalCount(res.total_count);
+          }
+        })
+        .catch(() => {
+          if (!isMounted || controller.signal.aborted) return;
+          fetchFallback();
+        });
+    } else {
+      fetchFallback();
+    }
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [widget.id, widget.items]);
+  }, [widget.id, widget.items, widget.total_count, bindingKey, screenId, isDirty]);
 
   const previewItems: CardViewModel[] =
     items.length > 0
@@ -186,7 +310,7 @@ const StudioGrid: FC<{
       title={widget.title}
       columns={widget.columns}
       items={previewItems}
-      totalCount={widget.total_count}
+      totalCount={previewTotalCount ?? widget.total_count}
       nextCursor={widget.next_cursor}
       onSelectItem={onSelectItem}
       onPlayItem={onPlayItem}
@@ -643,6 +767,9 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                   widget.type;
                 const widgetTitle =
                   'title' in widget ? (widget.title as string) : null;
+                const bindingSummary = formatWidgetBindingSummary(
+                  'binding' in widget ? widget.binding : undefined
+                );
 
                 return (
                   <div
@@ -667,6 +794,11 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                         {widgetTitle && (
                           <p className="text-[11px] text-muted truncate">
                             {widgetTitle}
+                          </p>
+                        )}
+                        {bindingSummary && (
+                          <p className="text-[10px] text-accent/90 font-sans font-medium truncate">
+                            {bindingSummary}
                           </p>
                         )}
                         <span className="text-[10px] text-muted font-mono">
@@ -780,6 +912,8 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                       <HydratedSpotlight
                         key={widget.id}
                         widget={widget as Extract<WidgetNode, { type: 'hero_banner' }>}
+                        screenId={selectedScreenId}
+                        isDirty={isDirty}
                         onPlay={onPlayItem}
                         onMoreInfo={(id) => setSelectedItemId(id)}
                       />
@@ -791,6 +925,8 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                       <StudioCarousel
                         key={widget.id}
                         widget={widget as Extract<WidgetNode, { type: 'carousel' }>}
+                        screenId={selectedScreenId}
+                        isDirty={isDirty}
                         onSelectItem={(item) => setSelectedItemId(item.id)}
                         onPlayItem={(id) => onPlayItem?.(id)}
                       />
@@ -802,6 +938,8 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
                       <StudioGrid
                         key={widget.id}
                         widget={widget as Extract<WidgetNode, { type: 'grid' }>}
+                        screenId={selectedScreenId}
+                        isDirty={isDirty}
                         onSelectItem={(item) => setSelectedItemId(item.id)}
                         onPlayItem={(id) => onPlayItem?.(id)}
                       />
@@ -825,6 +963,7 @@ export const LayoutStudio: FC<LayoutStudioProps> = ({ onPlayItem }) => {
             : null
         }
         libraries={libraries}
+        screenId={selectedScreenId}
         onSave={handleSaveWidget}
         onClose={() => {
           setIsConfigModalOpen(false);
