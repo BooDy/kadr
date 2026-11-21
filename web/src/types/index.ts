@@ -1,4 +1,6 @@
 // User & Authentication Types
+import type { FilterNode } from './filterAst';
+
 export type UserRole = 'admin' | 'standard';
 
 export interface User {
@@ -58,6 +60,7 @@ export type QueryMacro =
   | 'continue_watching'
   | 'recently_added'
   | 'top_rated'
+  | 'custom_query'
   | { library_items: { library_id: string } }
   | { genre_shelf: { genre: string } }
   | { spotlight_item: { item_id?: number } }
@@ -71,6 +74,7 @@ export interface WidgetFilterConfig {
   max_age_days?: number;
   all_libraries?: boolean;
   library_id?: string;
+  rule_tree?: FilterNode;
 }
 
 export interface WidgetQueryBinding {
@@ -615,5 +619,6 @@ export type PlaylistAddTarget =
   | { kind: 'folder'; libraryId: string; path: string; recursive: boolean; title: string };
 
 export * from './search';
+export * from './filterAst';
 
 

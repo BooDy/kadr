@@ -4,6 +4,7 @@ import type {
   ApplyTmdbPayload,
   ApprovePluginResponse,
   CardViewModel,
+  CatalogFacets,
   CreateLibraryPayload,
   CreatePlaylistPayload,
   CreateScreenPayload,
@@ -47,6 +48,8 @@ import type {
   UpdatePluginSettingsPayload,
   User,
   WidgetDataResponse,
+  WidgetPreviewRequest,
+  WidgetPreviewResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -393,6 +396,22 @@ export class ApiClient {
     }
     const res = await this.request<WidgetDataResponse>(url);
     return res.items || [];
+  }
+
+  public async getCatalogFacets(libraryId?: string): Promise<CatalogFacets> {
+    const qs = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : '';
+    return this.request<CatalogFacets>(`/api/v1/catalog/facets${qs}`);
+  }
+
+  public async previewWidget(
+    payload: WidgetPreviewRequest,
+    signal?: AbortSignal
+  ): Promise<WidgetPreviewResponse> {
+    return this.request<WidgetPreviewResponse>('/api/v1/widgets/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    });
   }
 
   public async getItemDetails(itemId: number): Promise<ItemDetailsPayload> {
