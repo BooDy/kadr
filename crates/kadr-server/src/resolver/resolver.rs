@@ -696,6 +696,7 @@ impl WidgetResolver {
 
                 Ok((cards, next_cursor, Some(total)))
             }
+            QueryMacro::CustomQuery => Ok((Vec::new(), None, Some(0))),
         }
     }
 

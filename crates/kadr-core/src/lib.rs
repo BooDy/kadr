@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod error;
 pub mod events;
+pub mod filter_ast;
 pub mod models;
 pub mod playlists;
 pub mod plugin;
@@ -12,6 +13,7 @@ pub mod video_formats;
 pub use ast::*;
 pub use error::CoreError;
 pub use events::*;
+pub use filter_ast::*;
 pub use models::*;
 pub use playlists::*;
 pub use plugin::*;

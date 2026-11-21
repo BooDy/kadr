@@ -475,6 +475,7 @@ fn test_widget_filter_config_full() {
         max_age_days: Some(30),
         all_libraries: true,
         library_id: Some("lib-custom".to_string()),
+        rule_tree: None,
     };
 
     let serialized = serde_json::to_string(&config).expect("serialization failed");

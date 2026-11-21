@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::str::FromStr;
 
+use crate::filter_ast::FilterNode;
 use crate::models::TechnicalInfo;
 
 /// Represents high-level screen identifiers in the application.
@@ -144,10 +145,11 @@ pub enum QueryMacro {
     SpotlightItem { item_id: Option<i64> },
     ItemDetails { item_id: i64 },
     PlaylistItems { playlist_id: String },
+    CustomQuery,
 }
 
 /// Configuration for filtering items returned by a widget query.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WidgetFilterConfig {
     /// When true, always excludes items from private libraries, even if unlocked.
     #[serde(default)]
@@ -172,10 +174,14 @@ pub struct WidgetFilterConfig {
     /// Explicit library ID to filter to. Overrides the screen's default library.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub library_id: Option<String>,
+
+    /// Recursive declarative filter rule tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_tree: Option<FilterNode>,
 }
 
 /// Query binding configuration linking a widget to a data source.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WidgetQueryBinding {
     pub macro_type: QueryMacro,
     #[serde(default = "default_widget_limit")]
