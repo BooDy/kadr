@@ -141,8 +141,16 @@ pub async fn get_screen(
         Ok(Json(layout))
     } else {
         let unlocked_ids = unlocked.to_vec();
+        let default_library_id = resolver
+            .resolve_library_id_for_screen_with_registry(&parsed_id, &registry)
+            .await;
         let hydrated = resolver
-            .resolve_screen_with_unlocked(layout, &auth_user.id, &unlocked_ids)
+            .resolve_screen_with_library(
+                layout,
+                &auth_user.id,
+                &unlocked_ids,
+                default_library_id.as_deref(),
+            )
             .await;
         Ok(Json(hydrated))
     }

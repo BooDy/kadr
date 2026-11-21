@@ -1111,6 +1111,21 @@ async fn continue_watching_and_canonical_library_screen_preview_apply_rule_tree(
         .await
         .unwrap();
 
+    let indie_binding = json!({
+        "macro_type": "custom_query",
+        "limit": 10,
+        "filters": {
+            "rule_tree": {
+                "kind": "rule",
+                "condition": {
+                    "field": "genres",
+                    "op": "contains_any",
+                    "values": ["Drama"]
+                }
+            }
+        }
+    });
+
     let (status, _) = send_json(
         &env.app,
         "PUT",
@@ -1120,12 +1135,21 @@ async fn continue_watching_and_canonical_library_screen_preview_apply_rule_tree(
         Some(json!({
             "id": "indie_hub",
             "title": "Indie Cinema",
-            "widgets": []
+            "widgets": [
+                {
+                    "type": "grid",
+                    "id": "indie_drama",
+                    "title": "Indie Drama",
+                    "columns": 4,
+                    "binding": indie_binding
+                }
+            ]
         })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
 
+    // 1. Live preview matches total_count == 1 ("Past Lives") for both canonical and UUID screen_ids
     for target_sid in ["indie_hub", "lib-indie-uuid"] {
         let (status, indie_res) = send_json(
             &env.app,
@@ -1134,20 +1158,7 @@ async fn continue_watching_and_canonical_library_screen_preview_apply_rule_tree(
             Some(&env.admin_jwt),
             None,
             Some(json!({
-                "binding": {
-                    "macro_type": "custom_query",
-                    "limit": 10,
-                    "filters": {
-                        "rule_tree": {
-                            "kind": "rule",
-                            "condition": {
-                                "field": "genres",
-                                "op": "contains_any",
-                                "values": ["Drama"]
-                            }
-                        }
-                    }
-                },
+                "binding": indie_binding,
                 "screen_id": target_sid
             })),
         )
@@ -1155,5 +1166,61 @@ async fn continue_watching_and_canonical_library_screen_preview_apply_rule_tree(
         assert_eq!(status, StatusCode::OK);
         assert_eq!(indie_res["total_count"], 1);
         assert_eq!(indie_res["items"][0]["title"], "Past Lives");
+    }
+
+    // 2. Hydrated GET /api/v1/screens/{screen_id} matches preview (total_count == 1, "Past Lives")
+    for screen_path in [
+        "/api/v1/screens/indie_hub",
+        "/api/v1/screens/lib-indie-uuid",
+    ] {
+        let (status, screen_body) = send_json(
+            &env.app,
+            "GET",
+            screen_path,
+            Some(&env.user_jwt),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let screen_layout: ScreenLayout = serde_json::from_value(screen_body).unwrap();
+        assert_eq!(screen_layout.widgets.len(), 1);
+        match &screen_layout.widgets[0] {
+            WidgetNode::Grid {
+                id,
+                items,
+                total_count,
+                ..
+            } => {
+                assert_eq!(id, "indie_drama");
+                assert_eq!(
+                    *total_count,
+                    Some(1),
+                    "GET {screen_path} must scope to Indie Cinema library"
+                );
+                let cards = items.as_ref().unwrap();
+                assert_eq!(cards.len(), 1);
+                assert_eq!(cards[0].title, "Past Lives");
+            }
+            other => panic!("Expected Grid widget, got {other:?}"),
+        }
+    }
+
+    // 3. Paginated GET /api/v1/widgets/indie_drama/data matches preview across screen_id variants
+    for data_uri in [
+        "/api/v1/widgets/indie_drama/data?screen_id=indie_hub",
+        "/api/v1/widgets/indie_drama/data?screen_id=lib-indie-uuid",
+        "/api/v1/widgets/indie_drama/data",
+    ] {
+        let (status, data_body) =
+            send_json(&env.app, "GET", data_uri, Some(&env.user_jwt), None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            data_body["total_count"], 1,
+            "GET {data_uri} must scope to Indie Cinema library"
+        );
+        let data_items = data_body["items"].as_array().unwrap();
+        assert_eq!(data_items.len(), 1);
+        assert_eq!(data_items[0]["title"], "Past Lives");
     }
 }

@@ -10,6 +10,7 @@ use kadr_storage::repos::{
 };
 
 use super::card::to_card_view_model;
+use crate::layout::LayoutRegistry;
 
 /// Concurrent async resolver for Declarative Widget AST layouts and queries.
 #[derive(Clone)]
@@ -39,25 +40,25 @@ impl WidgetResolver {
             ScreenId::Home => None,
             ScreenId::Movies => {
                 if let Ok(libs) = self.lib_repo.get_all().await {
-                    libs.into_iter()
-                        .find(|l| {
-                            l.media_type == MediaType::Movie
-                                || l.name.eq_ignore_ascii_case("movies")
-                        })
-                        .map(|l| l.id)
+                    libs.iter()
+                        .find(|l| l.name.eq_ignore_ascii_case("movies"))
+                        .or_else(|| libs.iter().find(|l| l.media_type == MediaType::Movie))
+                        .map(|l| l.id.clone())
                 } else {
                     None
                 }
             }
             ScreenId::Shows => {
                 if let Ok(libs) = self.lib_repo.get_all().await {
-                    libs.into_iter()
+                    libs.iter()
                         .find(|l| {
-                            l.media_type == MediaType::Show
-                                || l.name.eq_ignore_ascii_case("shows")
+                            l.name.eq_ignore_ascii_case("shows")
                                 || l.name.eq_ignore_ascii_case("tv shows")
+                                || l.name.eq_ignore_ascii_case("tv_shows")
+                                || l.name.eq_ignore_ascii_case("tv-shows")
                         })
-                        .map(|l| l.id)
+                        .or_else(|| libs.iter().find(|l| l.media_type == MediaType::Show))
+                        .map(|l| l.id.clone())
                 } else {
                     None
                 }
@@ -74,6 +75,82 @@ impl WidgetResolver {
                 }
             }
         }
+    }
+
+    /// Resolves the associated library UUID for a concrete `ScreenLayout`, including canonical
+    /// custom screens matched by screen title or `LibraryItems` widget binding.
+    pub async fn resolve_library_id_for_layout(&self, screen: &ScreenLayout) -> Option<String> {
+        if screen.id == ScreenId::Home {
+            return None;
+        }
+        if let Some(lib_id) = self.resolve_library_id_for_screen(&screen.id).await {
+            return Some(lib_id);
+        }
+
+        let Ok(libs) = self.lib_repo.get_all().await else {
+            return None;
+        };
+
+        if let Some(lib) = libs
+            .iter()
+            .find(|l| l.name.eq_ignore_ascii_case(&screen.title))
+        {
+            return Some(lib.id.clone());
+        }
+
+        for widget in &screen.widgets {
+            if let WidgetNode::Grid { binding, .. } | WidgetNode::Carousel { binding, .. } = widget
+            {
+                if let QueryMacro::LibraryItems { ref library_id } = binding.macro_type {
+                    if libs.iter().any(|l| &l.id == library_id) {
+                        return Some(library_id.clone());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Resolves the associated library UUID for a `ScreenId` using both library metadata
+    /// and canonical screen mappings in `LayoutRegistry`.
+    pub async fn resolve_library_id_for_screen_with_registry(
+        &self,
+        screen_id: &ScreenId,
+        registry: &LayoutRegistry,
+    ) -> Option<String> {
+        if *screen_id == ScreenId::Home {
+            return None;
+        }
+
+        if let ScreenId::Custom(ref id_str) = screen_id {
+            if let Ok(Some(lib)) = self.lib_repo.get_by_id(id_str).await {
+                return Some(lib.id);
+            }
+        }
+
+        if let Some(lib_id) = self.resolve_library_id_for_screen(screen_id).await {
+            return Some(lib_id);
+        }
+
+        if let Some(screen) = registry.get_screen(screen_id) {
+            if let Some(lib_id) = self.resolve_library_id_for_layout(&screen).await {
+                return Some(lib_id);
+            }
+        }
+
+        if let Ok(libs) = self.lib_repo.get_all().await {
+            for lib in libs {
+                if registry
+                    .find_screen_for_library(&lib.id, &lib.name)
+                    .is_some_and(|canonical| &canonical.id == screen_id)
+                {
+                    return Some(lib.id);
+                }
+            }
+        }
+
+        None
     }
 
     /// Determines the effective library ID for a widget binding given the screen's default library.
@@ -235,10 +312,29 @@ impl WidgetResolver {
         user_id: &str,
         unlocked_ids: &[String],
     ) -> ScreenLayout {
-        let default_library_id = self.resolve_library_id_for_screen(&screen.id).await;
-        let futures = screen.widgets.into_iter().map(|widget| {
-            self.resolve_widget(widget, user_id, unlocked_ids, default_library_id.as_deref())
-        });
+        let default_library_id = self.resolve_library_id_for_layout(&screen).await;
+        self.resolve_screen_with_library(
+            screen,
+            user_id,
+            unlocked_ids,
+            default_library_id.as_deref(),
+        )
+        .await
+    }
+
+    /// Resolves an entire screen layout concurrently with unlocked private libraries
+    /// and an explicit default library scope.
+    pub async fn resolve_screen_with_library(
+        &self,
+        screen: ScreenLayout,
+        user_id: &str,
+        unlocked_ids: &[String],
+        default_library_id: Option<&str>,
+    ) -> ScreenLayout {
+        let futures = screen
+            .widgets
+            .into_iter()
+            .map(|widget| self.resolve_widget(widget, user_id, unlocked_ids, default_library_id));
         let widgets = join_all(futures).await;
 
         ScreenLayout {

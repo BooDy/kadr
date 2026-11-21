@@ -127,7 +127,9 @@ pub async fn get_widget_data(
     }
 
     let default_library_id = if let Some(ref sid) = target_screen_id {
-        resolver.resolve_library_id_for_screen(sid).await
+        resolver
+            .resolve_library_id_for_screen_with_registry(sid, &registry)
+            .await
     } else {
         None
     };
@@ -221,46 +223,6 @@ pub struct WidgetPreviewResponse {
     pub execution_ms: u64,
 }
 
-async fn resolve_preview_screen_library_id(
-    sid_str: &str,
-    registry: &LayoutRegistry,
-    resolver: &WidgetResolver,
-    lib_repo: &LibraryRepository,
-) -> Option<String> {
-    let trimmed = sid_str.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let sid: ScreenId = trimmed.parse().unwrap();
-    if sid == ScreenId::Home {
-        return None;
-    }
-
-    if let ScreenId::Custom(ref id_str) = sid {
-        if let Ok(Some(lib)) = lib_repo.get_by_id(id_str).await {
-            return Some(lib.id);
-        }
-    }
-
-    if let Some(lib_id) = resolver.resolve_library_id_for_screen(&sid).await {
-        return Some(lib_id);
-    }
-
-    if let Ok(libs) = lib_repo.get_all().await {
-        for lib in libs {
-            if registry
-                .find_screen_for_library(&lib.id, &lib.name)
-                .is_some_and(|canonical| canonical.id == sid)
-            {
-                return Some(lib.id);
-            }
-        }
-    }
-
-    None
-}
-
 /// Handler for `POST /api/v1/widgets/preview`.
 /// Evaluates a widget query binding (including custom_query filter ASTs) without persisting layout state.
 pub async fn preview_widget(
@@ -269,7 +231,6 @@ pub async fn preview_widget(
     unlocked: UnlockedLibraries,
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,
-    Extension(lib_repo): Extension<LibraryRepository>,
     Json(payload): Json<WidgetPreviewRequest>,
 ) -> Result<Json<WidgetPreviewResponse>, (StatusCode, Json<serde_json::Value>)> {
     if let Some(tree) = payload
@@ -289,10 +250,19 @@ pub async fn preview_widget(
     let mut binding = payload.binding;
     binding.limit = payload.limit.unwrap_or(10).clamp(1, 24);
 
-    let default_library_id = if let Some(ref sid_str) = payload.screen_id {
-        resolve_preview_screen_library_id(sid_str, &registry, &resolver, &lib_repo).await
-    } else {
-        None
+    let default_library_id = match payload
+        .screen_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(sid_str) => {
+            let sid: ScreenId = sid_str.parse().unwrap();
+            resolver
+                .resolve_library_id_for_screen_with_registry(&sid, &registry)
+                .await
+        }
+        None => None,
     };
 
     let unlocked_ids = unlocked.to_vec();
