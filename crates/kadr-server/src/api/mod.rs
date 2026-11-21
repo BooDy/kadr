@@ -173,6 +173,14 @@ pub fn create_router_with_ingest(
                 .delete(screen_routes::delete_screen_handler),
         )
         .route(
+            "/api/v1/catalog/facets",
+            get(widget_routes::get_catalog_facets),
+        )
+        .route(
+            "/api/v1/widgets/preview",
+            post(widget_routes::preview_widget),
+        )
+        .route(
             "/api/v1/widgets/{widget_id}/data",
             get(widget_routes::get_widget_data),
         )

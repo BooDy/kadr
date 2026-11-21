@@ -3,7 +3,7 @@ use kadr_core::ast::{
     CardViewModel, ItemDetailsPayload, QueryMacro, ScreenId, ScreenLayout, WidgetFilterConfig,
     WidgetNode, WidgetQueryBinding,
 };
-use kadr_core::models::{MediaItem, MediaType, WatchState};
+use kadr_core::models::{MediaItem, MediaType, PlaybackState, WatchState};
 use kadr_storage::error::Result;
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
@@ -130,6 +130,8 @@ impl WidgetResolver {
         filters: Option<&WidgetFilterConfig>,
         unlocked_ids: &[String],
         effective_library_id: Option<&str>,
+        user_id: &str,
+        playback_override: Option<&PlaybackState>,
     ) -> bool {
         // Scoping check: if an effective library ID is present, item must belong to it
         if let Some(target_lib) = effective_library_id {
@@ -179,17 +181,40 @@ impl WidgetResolver {
                 }
             }
 
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+
             // 4. Max age cutoff
             if let Some(days) = f.max_age_days {
                 if days > 0 {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
                     let cutoff = now - (days as i64 * 86_400);
                     if item.added_at < cutoff {
                         return false;
                     }
+                }
+            }
+
+            // 5. Declarative filter rule tree
+            if let Some(ref tree) = f.rule_tree {
+                let fetched_playback = if playback_override.is_none() && tree.needs_playback_state()
+                {
+                    if let Some(id) = item.id {
+                        self.playback_repo
+                            .get_state(user_id, id)
+                            .await
+                            .ok()
+                            .flatten()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let playback_ref = playback_override.or(fetched_playback.as_ref());
+                if !tree.matches(item, playback_ref, now) {
+                    return false;
                 }
             }
         }
@@ -346,6 +371,8 @@ impl WidgetResolver {
                         binding.filters.as_ref(),
                         unlocked_ids,
                         effective_library_id,
+                        user_id,
+                        None,
                     )
                     .await
                 {
@@ -356,8 +383,9 @@ impl WidgetResolver {
             }
             QueryMacro::SpotlightItem { item_id: None } => self
                 .media_repo
-                .find_spotlight_candidate(
+                .find_spotlight_candidate_for_user(
                     effective_library_id,
+                    Some(user_id),
                     unlocked_ids,
                     binding.filters.as_ref(),
                 )
@@ -372,6 +400,8 @@ impl WidgetResolver {
                         binding.filters.as_ref(),
                         unlocked_ids,
                         effective_library_id,
+                        user_id,
+                        None,
                     )
                     .await
                 {
@@ -474,6 +504,8 @@ impl WidgetResolver {
                                 binding.filters.as_ref(),
                                 unlocked_ids,
                                 effective_library_id,
+                                user_id,
+                                Some(state),
                             )
                             .await
                         {
@@ -493,8 +525,9 @@ impl WidgetResolver {
             QueryMacro::RecentlyAdded => {
                 let items = self
                     .media_repo
-                    .find_recently_added_paginated(
+                    .find_recently_added_paginated_for_user(
                         effective_library_id,
+                        Some(user_id),
                         binding.limit,
                         offset,
                         unlocked_ids,
@@ -516,8 +549,9 @@ impl WidgetResolver {
             QueryMacro::TopRated => {
                 let items = self
                     .media_repo
-                    .find_top_rated_paginated(
+                    .find_top_rated_paginated_for_user(
                         effective_library_id,
+                        Some(user_id),
                         binding.limit,
                         offset,
                         unlocked_ids,
@@ -538,9 +572,10 @@ impl WidgetResolver {
             QueryMacro::GenreShelf { genre } => {
                 let items = self
                     .media_repo
-                    .find_by_genre_paginated(
+                    .find_by_genre_paginated_for_user(
                         genre,
                         effective_library_id,
+                        Some(user_id),
                         binding.limit,
                         offset,
                         unlocked_ids,
@@ -563,8 +598,9 @@ impl WidgetResolver {
                 let target_lib = effective_library_id.unwrap_or(library_id.as_str());
                 let (items, total) = self
                     .media_repo
-                    .find_by_library_paginated(
+                    .find_by_library_paginated_for_user(
                         target_lib,
+                        Some(user_id),
                         binding.limit,
                         offset,
                         binding.sort.as_deref(),
@@ -595,6 +631,8 @@ impl WidgetResolver {
                                 binding.filters.as_ref(),
                                 unlocked_ids,
                                 effective_library_id,
+                                user_id,
+                                None,
                             )
                             .await
                         {
@@ -607,8 +645,9 @@ impl WidgetResolver {
                     }
                 } else {
                     self.media_repo
-                        .find_spotlight_candidate(
+                        .find_spotlight_candidate_for_user(
                             effective_library_id,
+                            Some(user_id),
                             unlocked_ids,
                             binding.filters.as_ref(),
                         )
@@ -635,6 +674,8 @@ impl WidgetResolver {
                             binding.filters.as_ref(),
                             unlocked_ids,
                             effective_library_id,
+                            user_id,
+                            None,
                         )
                         .await
                     {
@@ -672,6 +713,8 @@ impl WidgetResolver {
                             binding.filters.as_ref(),
                             unlocked_ids,
                             effective_library_id,
+                            user_id,
+                            None,
                         )
                         .await
                     {
@@ -696,7 +739,31 @@ impl WidgetResolver {
 
                 Ok((cards, next_cursor, Some(total)))
             }
-            QueryMacro::CustomQuery => Ok((Vec::new(), None, Some(0))),
+            QueryMacro::CustomQuery => {
+                let (items, total) = self
+                    .media_repo
+                    .find_custom_paginated(
+                        effective_library_id,
+                        user_id,
+                        binding.limit,
+                        offset,
+                        binding.sort.as_deref(),
+                        unlocked_ids,
+                        binding.filters.as_ref(),
+                    )
+                    .await?;
+
+                let count = items.len() as u32;
+                let has_more = (offset as u64 + count as u64) < total;
+                let cards = self.hydrate_items_to_cards(items, user_id).await;
+                let next_cursor = if has_more {
+                    Some((offset + count).to_string())
+                } else {
+                    None
+                };
+
+                Ok((cards, next_cursor, Some(total)))
+            }
         }
     }
 

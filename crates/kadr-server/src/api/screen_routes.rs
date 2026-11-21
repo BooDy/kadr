@@ -175,6 +175,22 @@ pub async fn save_screen_handler(
 
     let parsed_id: ScreenId = screen_id.parse().unwrap();
     screen.id = parsed_id;
+    for widget in &screen.widgets {
+        if let Some(tree) = widget
+            .binding()
+            .and_then(|b| b.filters.as_ref())
+            .and_then(|f| f.rule_tree.as_ref())
+        {
+            if let Err(err) = tree.validate() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": format!("Invalid filter rule tree in widget '{}': {err}", widget.id())
+                    })),
+                ));
+            }
+        }
+    }
     for widget in &mut screen.widgets {
         match widget {
             kadr_core::ast::WidgetNode::HeroBanner { data, .. } => {

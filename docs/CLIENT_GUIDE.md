@@ -433,6 +433,7 @@ Every `WidgetNode` carries a `binding` (`WidgetQueryBinding`) whose `macro_type`
 | `{"spotlight_item": {"item_id": null}}` | Featured hero candidate (or explicit `item_id`). |
 | `{"item_details": {"item_id": 101}}` | Single hydrated item card by database ID. |
 | `{"playlist_items": {"playlist_id": "<uuid>"}}` | Ordered items from a manual playlist (`Carousel` or `Grid` rail). |
+| `"custom_query"` | Arbitrary catalog query compiled from `binding.filters.rule_tree` (`FilterNode` AST) with configurable `sort` and pagination. |
 
 #### Playlist Widget Binding (`playlist_items`)
 
@@ -522,6 +523,197 @@ When a user scrolls to the end of a carousel or catalog grid (including `playlis
 
 > [!TIP]
 > If `next_cursor` is `null` or omitted, the widget has reached the end of the collection.
+
+### 4.8 Declarative Filter AST (`rule_tree`) & Custom Query Shelves (`custom_query`)
+
+Every `WidgetQueryBinding` accepts an optional `filters` (`WidgetFilterConfig`) object that combines quick scoping flags with a recursive boolean `FilterNode` AST (`rule_tree`). While `rule_tree` can refine any built-in `QueryMacro` (`recently_added`, `top_rated`, `continue_watching`, `genre_shelf`, `library_items`, `spotlight_item`, `playlist_items`), pairing it with `"macro_type": "custom_query"` compiles the entire rule tree directly into parameterized SQLite predicates with total-count pagination.
+
+#### `WidgetFilterConfig` & `sort` Options
+
+```json
+{
+  "macro_type": "custom_query",
+  "limit": 20,
+  "sort": "rating:desc",
+  "filters": {
+    "exclude_private": false,
+    "exclude_library_ids": [],
+    "exclude_genres": [],
+    "max_age_days": null,
+    "all_libraries": true,
+    "library_id": null,
+    "rule_tree": {
+      "kind": "group",
+      "op": "and",
+      "children": [
+        {
+          "kind": "group",
+          "op": "or",
+          "children": [
+            {
+              "kind": "rule",
+              "condition": {
+                "field": "genres",
+                "op": "contains_any",
+                "values": ["Sci-Fi", "Thriller"]
+              }
+            },
+            {
+              "kind": "rule",
+              "condition": {
+                "field": "country",
+                "op": "in",
+                "values": ["KR", "JP"]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "rule",
+          "condition": {
+            "field": "release_year",
+            "op": "between",
+            "min": 2015,
+            "max": 2026
+          }
+        },
+        {
+          "kind": "rule",
+          "negated": true,
+          "condition": {
+            "field": "watch_state",
+            "op": "state_in",
+            "values": ["completed"]
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+- **Supported `sort` Keys** (`:` or `_` separator, default `added_at:desc`):
+  `title:asc`, `title:desc`, `release_year:asc` (`year:asc`), `release_year:desc` (`year:desc`), `added_at:asc`, `added_at:desc`, `rating:asc`, `rating:desc`, `duration_seconds:asc` (`duration:asc`), `duration_seconds:desc` (`duration:desc`), `last_watched_at:asc`, `last_watched_at:desc`.
+- **Default Episode Filtering**: When `rule_tree` does not explicitly reference `"field": "item_type"`, `custom_query` automatically excludes child `"episode"` rows (`m.item_type != 'episode'`) so movie/show shelves remain top-level catalog cards unless episodes are intentionally targeted.
+- **Per-User Playback Isolation**: Rules referencing `watch_state`, `play_count`, or `last_watched_at` (as well as `last_watched_at` sorting) automatically join and evaluate against the **requesting viewer's** `PlaybackState`.
+
+#### `FilterNode` Recursive Schema
+
+- **Group Node (`"kind": "group"`)**:
+  - `op`: `"and"` | `"or"`
+  - `negated` *(optional boolean, default `false`)*: Negates the combined group result (`NOT (...)`).
+  - `children`: Non-empty array of `FilterNode` (`group` or `rule`).
+- **Rule Node (`"kind": "rule"`)**:
+  - `negated` *(optional boolean, default `false`)*: Negates the leaf condition.
+  - `condition`: Tagged by `"field"` (`FilterCondition`).
+
+#### `FilterCondition` Field & Operator Reference
+
+| `field` | Category | Supported `op` Shapes |
+| :--- | :--- | :--- |
+| `library_id` | Set (`SetOp`) | `{"op": "in", "values": ["movies", "shows"]}` |
+| `item_type` | Set (`SetOp`) | `{"op": "in", "values": ["movie", "show", "episode", "anime", ...]}` |
+| `title`, `original_title`, `series_title`, `director`, `studio`, `country`, `language`, `resolution`, `video_codec`, `audio_codec`, `container` | Scalar Text (`TextMatch`, case-insensitive) | `{"op": "eq", "value": "4K"}`<br>`{"op": "in", "values": ["hevc", "av1"]}`<br>`{"op": "contains", "value": "director cut"}`<br>`{"op": "starts_with", "value": "Star"}`<br>`{"op": "is_empty"}` |
+| `genres`, `tags`, `actors`, `writers` | String Array (`ArrayMatch`, case-insensitive) | `{"op": "contains_any", "values": ["Sci-Fi", "Drama"]}`<br>`{"op": "contains_all", "values": ["Sci-Fi", "IMAX"]}`<br>`{"op": "is_empty"}` |
+| `release_year` | Signed Int (`IntComparison`) | `{"op": "eq", "value": 2024}`<br>`{"op": "gte", "value": 2010}`<br>`{"op": "lte", "value": 1999}`<br>`{"op": "between", "min": 1990, "max": 2005}` |
+| `duration_seconds`, `audio_channels`, `play_count` | Non-Negative Int (`IntComparison`, `>= 0`) | `{"op": "eq" \| "gte" \| "lte", "value": 5400}`<br>`{"op": "between", "min": 3600, "max": 9000}` |
+| `rating` | Float (`FloatComparison`, finite `0.0..=10.0`) | `{"op": "gte" \| "lte", "value": 8.0}`<br>`{"op": "between", "min": 7.5, "max": 9.5}` |
+| `added_at`, `last_watched_at` | Epoch Timestamp (`TimeComparison`) | `{"op": "within_last_days", "days": 30}` (`1..=36500`)<br>`{"op": "older_than_days", "days": 90}` (`1..=36500`)<br>`{"op": "after_epoch", "timestamp": 1700000000}`<br>`{"op": "before_epoch", "timestamp": 1750000000}`<br>`{"op": "between_epochs", "min": 1700000000, "max": 1750000000}` |
+| `watch_state` | Viewer State (`WatchStateMatch`) | `{"op": "state_in", "values": ["unwatched", "in_progress", "completed"]}`<br>`{"op": "progress_between", "min": 0.1, "max": 0.9}` (`0.0..=1.0`) |
+
+#### Structural Validation Guardrails (`PUT /api/v1/screens/{screen_id}` & `/widgets/preview`)
+
+Both `PUT /api/v1/screens/{screen_id}` and `POST /api/v1/widgets/preview` validate every `rule_tree` via `FilterNode::validate()` and return `400 Bad Request` (`{"error": "..."}`) if violated:
+- Maximum group nesting depth: **`5`** (`MAX_FILTER_AST_DEPTH`).
+- Total leaf rules per tree: **`1..=32`** (`MAX_FILTER_AST_RULES`).
+- Group `children` must never be empty.
+- List operators (`in`, `contains_any`, `contains_all`, `state_in`) require **`1..=32`** items (`MAX_FILTER_LIST_LEN`).
+- Text values must be non-empty after trimming and **`<= 200`** characters (`MAX_FILTER_TEXT_LEN`).
+- Numeric/epoch/progress ranges enforce `min <= max`, non-negative durations/channels/play counts, ratings in `0.0..=10.0`, progress in `0.0..=1.0`, and day windows in `1..=36500`.
+
+### 4.9 Catalog Facet Discovery (`GET /api/v1/catalog/facets`)
+
+Visual rule builders and filter drawers can populate dropdowns/autocompletes dynamically from indexed catalog facets.
+
+- **Method & Route**: `GET /api/v1/catalog/facets`
+- **Query Parameters**:
+  - `library_id` *(optional)*: Restricts distinct facet values and year bounds to a specific library UUID.
+- **Headers**: `Authorization: Bearer <token>`, optional `X-Kadr-Unlocked: <token1>,<token2>` / `X-Library-Unlock-Token: <token>` (facets from locked private libraries are strictly excluded).
+
+#### Response (`200 OK` — `CatalogFacets`)
+
+```json
+{
+  "genres": ["Action", "Drama", "Sci-Fi", "Thriller"],
+  "countries": ["DE", "KR", "US"],
+  "languages": ["de", "en", "ko"],
+  "studios": ["Barunson", "Netflix", "Paramount"],
+  "directors": ["Baran bo Odar", "Bong Joon-ho", "Denis Villeneuve"],
+  "tags": ["aliens", "satire", "time-travel"],
+  "resolutions": ["1080p", "4K"],
+  "video_codecs": ["h264", "hevc"],
+  "audio_codecs": ["aac", "eac3"],
+  "containers": ["mkv", "mp4"],
+  "year_min": 2016,
+  "year_max": 2024
+}
+```
+
+### 4.10 Stateless Live Widget Preview (`POST /api/v1/widgets/preview`)
+
+Studio layout editors can preview any `WidgetQueryBinding` (including unsaved `custom_query` rule trees) in real time without mutating stored screen layouts.
+
+- **Method & Route**: `POST /api/v1/widgets/preview`
+- **Permissions**: `Admin` role (`403 Forbidden` for standard users), plus optional `X-Kadr-Unlocked` / `X-Library-Unlock-Token` header.
+
+#### Request Body (`WidgetPreviewRequest`)
+
+```json
+{
+  "binding": {
+    "macro_type": "custom_query",
+    "limit": 12,
+    "sort": "rating:desc",
+    "filters": {
+      "rule_tree": {
+        "kind": "rule",
+        "condition": {
+          "field": "genres",
+          "op": "contains_any",
+          "values": ["Sci-Fi"]
+        }
+      }
+    }
+  },
+  "screen_id": "home",
+  "limit": 12
+}
+```
+
+- `screen_id` *(optional)*: Applies default library scoping when previewing a widget inside a library-specific screen (e.g. `"movies"`, `"shows"`, or a custom library screen), unless `binding.filters.all_libraries` or `binding.filters.library_id` overrides it.
+- `limit` *(optional)*: Preview card cap, clamped to `1..=24` (defaults to `10`).
+
+#### Response (`200 OK` — `WidgetPreviewResponse`)
+
+```json
+{
+  "items": [
+    {
+      "id": 101,
+      "title": "Dune: Part Two",
+      "subtitle": "2024 • 3840x2160",
+      "poster_url": "/api/v1/artwork/101/poster",
+      "backdrop_url": "/api/v1/artwork/101/backdrop",
+      "media_type": "movie",
+      "rating": 8.6,
+      "release_year": 2024,
+      "badge": "4K"
+    }
+  ],
+  "total_count": 14,
+  "execution_ms": 2
+}
+```
 
 ---
 
@@ -2486,6 +2678,7 @@ try {
 | `400 Bad Request` | `{"error": "Invalid folder path"}` | Playlist folder batch add path contains `..`, null byte, absolute path, or escapes configured library root. | Pass library-relative folder paths returned by `/api/v1/libraries/{id}/folders`. |
 | `400 Bad Request` | `{"error": "item_ids must be an exact permutation of visible playlist items"}` | `PUT /api/v1/playlists/{id}/items/order` omits visible items, contains duplicates, or includes unknown/locked IDs. | Refresh `GET /api/v1/playlists/{id}` and submit an exact permutation of visible `card.id`s. |
 | `400 Bad Request` | `{"error": "Invalid item_type '...'"}` | `GET /api/v1/search` called with an unrecognized `item_type` filter. | Pass `all` or a valid `MediaType` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`). |
+| `400 Bad Request` | `{"error": "Invalid filter rule tree in widget '...': ..."}` / `FilterValidationError` message | `PUT /api/v1/screens/{screen_id}` or `POST /api/v1/widgets/preview` submitted a `rule_tree` exceeding depth `5` / `32` rules, with an empty group, empty/overlong text or list, negative duration, or `min > max`. | Validate rule tree structure and range bounds in the rule builder UI before saving or previewing. |
 | `400 Bad Request` | `{"error": "TMDB_NOT_CONFIGURED", "message": "..."}` / `"INVALID_TITLE"` / `"INVALID_RATING"` / `"BLOCKED_URL"` / `"UNSUPPORTED_IMAGE"` / `"ARTWORK_TOO_LARGE"` | TMDb disabled or missing API key on `/tmdb/*`, empty title or out-of-range rating (`0.0..=10.0`) on `PATCH /api/v1/items/{id}/metadata`, or rejected custom artwork URL. | Prompt admin to configure TMDb under `Administration > Metadata & TMDb` or validate form inputs. |
 | `401 Unauthorized` | `{"error": "Missing authorization token"}` / `{"error": "Invalid or expired token"}` / Invalid PIN | Missing, invalid, or expired JWT (`Authorization: Bearer` / `?token=`), or incorrect profile PIN. | Prompt user for profile PIN or re-login. |
 | `403 Forbidden` | `{"error": "Forbidden"}` | Non-owner, non-admin caller attempting to update, add/remove/reorder items, or delete another user's public playlist. | Hide edit/reorder/delete controls whenever `summary.is_editable == false`. |
