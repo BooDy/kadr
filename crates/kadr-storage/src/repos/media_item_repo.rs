@@ -2,6 +2,7 @@ use crate::error::Result;
 use crate::repos::widget_queries::WidgetQueries;
 use deadpool_sqlite::Pool;
 use kadr_core::ast::WidgetFilterConfig;
+use kadr_core::filter_ast::CatalogFacets;
 use kadr_core::models::{
     AudioStreamInfo, MediaItem, MediaMetadata, MediaType, MetadataUpdate, TechnicalInfo,
 };
@@ -649,6 +650,27 @@ impl MediaItemRepository {
             .await
     }
 
+    pub async fn find_recently_added_paginated_for_user(
+        &self,
+        library_id: Option<&str>,
+        user_id: Option<&str>,
+        limit: u32,
+        offset: u32,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_recently_added_paginated_for_user(
+                library_id,
+                user_id,
+                limit,
+                offset,
+                unlocked_ids,
+                filters,
+            )
+            .await
+    }
+
     pub async fn find_top_rated(
         &self,
         limit: u32,
@@ -669,6 +691,27 @@ impl MediaItemRepository {
     ) -> Result<Vec<MediaItem>> {
         self.widget_queries()
             .find_top_rated_paginated(library_id, limit, offset, unlocked_ids, filters)
+            .await
+    }
+
+    pub async fn find_top_rated_paginated_for_user(
+        &self,
+        library_id: Option<&str>,
+        user_id: Option<&str>,
+        limit: u32,
+        offset: u32,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_top_rated_paginated_for_user(
+                library_id,
+                user_id,
+                limit,
+                offset,
+                unlocked_ids,
+                filters,
+            )
             .await
     }
 
@@ -697,6 +740,30 @@ impl MediaItemRepository {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn find_by_genre_paginated_for_user(
+        &self,
+        genre: &str,
+        library_id: Option<&str>,
+        user_id: Option<&str>,
+        limit: u32,
+        offset: u32,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<Vec<MediaItem>> {
+        self.widget_queries()
+            .find_by_genre_paginated_for_user(
+                genre,
+                library_id,
+                user_id,
+                limit,
+                offset,
+                unlocked_ids,
+                filters,
+            )
+            .await
+    }
+
     pub async fn find_by_library_paginated(
         &self,
         library_id: &str,
@@ -708,6 +775,30 @@ impl MediaItemRepository {
     ) -> Result<(Vec<MediaItem>, u64)> {
         self.widget_queries()
             .find_by_library_paginated(library_id, limit, offset, sort_by, unlocked_ids, filters)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn find_by_library_paginated_for_user(
+        &self,
+        library_id: &str,
+        user_id: Option<&str>,
+        limit: u32,
+        offset: u32,
+        sort_by: Option<&str>,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<(Vec<MediaItem>, u64)> {
+        self.widget_queries()
+            .find_by_library_paginated_for_user(
+                library_id,
+                user_id,
+                limit,
+                offset,
+                sort_by,
+                unlocked_ids,
+                filters,
+            )
             .await
     }
 
@@ -734,8 +825,54 @@ impl MediaItemRepository {
             .await
     }
 
+    pub async fn find_spotlight_candidate_for_user(
+        &self,
+        library_id: Option<&str>,
+        user_id: Option<&str>,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<Option<MediaItem>> {
+        self.widget_queries()
+            .find_spotlight_candidate_for_user(library_id, user_id, unlocked_ids, filters)
+            .await
+    }
+
     pub async fn find_spotlight_candidate_default(&self) -> Result<Option<MediaItem>> {
         self.find_spotlight_candidate(None, &[], None).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn find_custom_paginated(
+        &self,
+        library_id: Option<&str>,
+        user_id: &str,
+        limit: u32,
+        offset: u32,
+        sort: Option<&str>,
+        unlocked_ids: &[String],
+        filters: Option<&WidgetFilterConfig>,
+    ) -> Result<(Vec<MediaItem>, u64)> {
+        self.widget_queries()
+            .find_custom_paginated(
+                library_id,
+                user_id,
+                limit,
+                offset,
+                sort,
+                unlocked_ids,
+                filters,
+            )
+            .await
+    }
+
+    pub async fn get_catalog_facets(
+        &self,
+        library_id: Option<&str>,
+        unlocked_ids: &[String],
+    ) -> Result<CatalogFacets> {
+        self.widget_queries()
+            .get_catalog_facets(library_id, unlocked_ids)
+            .await
     }
 
     pub async fn find_episodes_by_series(&self, series_title: &str) -> Result<Vec<MediaItem>> {
