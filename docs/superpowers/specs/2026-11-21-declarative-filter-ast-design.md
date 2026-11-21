@@ -22,7 +22,7 @@ This is **Part 1 of 3** in the `v0.4` Declarative Layout & Personalization miles
 
 ### 1.2 Architectural Invariants Preserved
 - **Memory & Portability Budget**: Preserve Kadr's `<= 30 MB` idle RSS target and pure-Rust static `musl` portability (zero new C/native dependencies; no duplicate relational facet tables).
-- **Latency KPI**: Maintain single-digit millisecond query execution (`<= 10 ms` per compiled widget query) via targeted SQLite column and JSON expression indexes (`013_filter_ast_indexes.sql`).
+- **Latency KPI**: Maintain single-digit millisecond query execution (`<= 10 ms` per compiled widget query) via targeted SQLite column and JSON expression indexes (`014_filter_ast_indexes.sql`).
 - **Fail-Closed Private Library Isolation**: Locked private libraries (`libraries.is_private = 1` not present in signed `UnlockedLibraries` tokens) never leak items, counts, or facet values across screen hydration, `/widgets/{id}/data`, `/widgets/preview`, or `/catalog/facets`.
 
 ### 1.3 Non-Goals (Part 1)
@@ -221,9 +221,9 @@ pub enum WatchStateMatch {
 
 ## 3. Parameterized SQL Compiler & Storage Layer (`crates/kadr-storage`)
 
-### 3.1 Migration `013_filter_ast_indexes.sql`
+### 3.1 Migration `014_filter_ast_indexes.sql`
 
-Register `013_filter_ast_indexes.sql` in `crates/kadr-storage/src/migrations.rs` immediately after `012_metadata_overrides.sql`:
+Register `014_filter_ast_indexes.sql` in `crates/kadr-storage/src/migrations.rs` immediately after `013_audio_tracks.sql`:
 
 ```sql
 -- Column & JSON expression indexes for fast Declarative Filter AST evaluation
