@@ -1,4 +1,6 @@
-use kadr_core::models::{AudioStreamInfo, Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo};
+use kadr_core::models::{
+    AudioStreamInfo, Library, MediaItem, MediaMetadata, MediaType, TechnicalInfo,
+};
 use kadr_storage::error::StorageError;
 use kadr_storage::pool::{create_in_memory_pool, initialize_database};
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};

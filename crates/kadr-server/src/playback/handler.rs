@@ -397,8 +397,7 @@ pub async fn set_playback_states_batch(
     let mut checked_libs = HashSet::new();
     for item in items_map.values() {
         if checked_libs.insert(item.library_id.clone()) {
-            if let Some(resp) =
-                check_library_unlocked(&lib_repo, &unlocked, &item.library_id).await
+            if let Some(resp) = check_library_unlocked(&lib_repo, &unlocked, &item.library_id).await
             {
                 return resp;
             }

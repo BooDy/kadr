@@ -81,7 +81,9 @@ pub fn parse_audio_streams_from_json(json: &Value) -> Vec<AudioStreamInfo> {
             .unwrap_or("und");
         let language = normalize_language_tag(raw_lang);
 
-        let channels = stream["channels"].as_u64().and_then(|c| u8::try_from(c).ok());
+        let channels = stream["channels"]
+            .as_u64()
+            .and_then(|c| u8::try_from(c).ok());
 
         let raw_title = stream["tags"]["title"]
             .as_str()

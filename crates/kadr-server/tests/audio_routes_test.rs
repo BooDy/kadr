@@ -536,10 +536,7 @@ async fn test_get_audio_tracks_lazy_ffprobe_backfill_and_hls_validation_on_real_
     assert_eq!(persisted_via_hls.technical.audio_tracks.len(), 2);
 
     // Clean up HLS session so no ffmpeg process outlives the test
-    if let Some(session_line) = playlist_str
-        .lines()
-        .find(|l| l.contains("/hls/sessions/"))
-    {
+    if let Some(session_line) = playlist_str.lines().find(|l| l.contains("/hls/sessions/")) {
         if let Some(rest) = session_line.split("/hls/sessions/").nth(1) {
             if let Some(session_id) = rest.split('/').next() {
                 hls_mgr.terminate_session(session_id).await;

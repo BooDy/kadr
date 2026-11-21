@@ -341,6 +341,8 @@ fn test_evaluate_transcode_uses_selected_audio_track_codec() {
     let d_unknown = evaluate_transcode(&tech_empty_tracks, &p1, None);
     match d_unknown.audio {
         AudioAction::Transcode { codec, .. } => assert_eq!(codec, "aac"),
-        other => panic!("Expected AudioAction::Transcode for unknown secondary track, got {other:?}"),
+        other => {
+            panic!("Expected AudioAction::Transcode for unknown secondary track, got {other:?}")
+        }
     }
 }

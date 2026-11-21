@@ -444,17 +444,29 @@ async fn test_set_watch_states_batch() {
         .unwrap();
     assert_eq!(updated, 3);
 
-    let s1 = playback_repo.get_state("user1", id1).await.unwrap().unwrap();
+    let s1 = playback_repo
+        .get_state("user1", id1)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(s1.watch_state, WatchState::Completed);
     assert_eq!(s1.playback_position_seconds, 3600);
     assert_eq!(s1.play_count, 1);
 
-    let s2 = playback_repo.get_state("user1", id2).await.unwrap().unwrap();
+    let s2 = playback_repo
+        .get_state("user1", id2)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(s2.watch_state, WatchState::Completed);
     assert_eq!(s2.playback_position_seconds, 1); // duration.max(1)
     assert_eq!(s2.play_count, 1);
 
-    let s3 = playback_repo.get_state("user1", id3).await.unwrap().unwrap();
+    let s3 = playback_repo
+        .get_state("user1", id3)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(s3.watch_state, WatchState::Completed);
     assert_eq!(s3.playback_position_seconds, 1800);
     assert_eq!(s3.play_count, 1); // Already completed -> not double-incremented
@@ -466,12 +478,20 @@ async fn test_set_watch_states_batch() {
         .unwrap();
     assert_eq!(updated_unwatched, 2);
 
-    let s1_unw = playback_repo.get_state("user1", id1).await.unwrap().unwrap();
+    let s1_unw = playback_repo
+        .get_state("user1", id1)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(s1_unw.watch_state, WatchState::Unwatched);
     assert_eq!(s1_unw.playback_position_seconds, 0);
     assert_eq!(s1_unw.play_count, 1);
 
-    let s2_unw = playback_repo.get_state("user1", id2).await.unwrap().unwrap();
+    let s2_unw = playback_repo
+        .get_state("user1", id2)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(s2_unw.watch_state, WatchState::Unwatched);
     assert_eq!(s2_unw.playback_position_seconds, 0);
     assert_eq!(s2_unw.play_count, 1);
@@ -483,7 +503,11 @@ async fn test_set_watch_states_batch() {
     assert!(err.is_err());
 
     // id1 must still be Unwatched from step 2
-    let s1_after_fail = playback_repo.get_state("user1", id1).await.unwrap().unwrap();
+    let s1_after_fail = playback_repo
+        .get_state("user1", id1)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(s1_after_fail.watch_state, WatchState::Unwatched);
     assert_eq!(s1_after_fail.playback_position_seconds, 0);
     assert_eq!(s1_after_fail.play_count, 1);

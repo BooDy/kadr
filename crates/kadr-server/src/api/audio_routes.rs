@@ -127,9 +127,7 @@ impl AudioProbeService {
                     self.probed_items.lock().unwrap().insert(item_id);
                 } else {
                     if let Err(err) = media_repo.update_audio_tracks(item_id, &tracks).await {
-                        tracing::warn!(
-                            "Failed to persist audio tracks for item {item_id}: {err}"
-                        );
+                        tracing::warn!("Failed to persist audio tracks for item {item_id}: {err}");
                     }
                     return tracks;
                 }

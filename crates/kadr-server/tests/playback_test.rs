@@ -594,7 +594,9 @@ async fn test_manual_set_playback_state_single_and_zero_duration() {
         .body(Body::empty())
         .unwrap();
     let cw_res = app.clone().oneshot(cw_req).await.unwrap();
-    let cw_bytes = axum::body::to_bytes(cw_res.into_body(), 4096).await.unwrap();
+    let cw_bytes = axum::body::to_bytes(cw_res.into_body(), 4096)
+        .await
+        .unwrap();
     let cw_list: Vec<Value> = serde_json::from_slice(&cw_bytes).unwrap();
     assert!(cw_list.is_empty());
 
@@ -606,7 +608,9 @@ async fn test_manual_set_playback_state_single_and_zero_duration() {
         .body(Body::empty())
         .unwrap();
     let det_res = app.clone().oneshot(det_req).await.unwrap();
-    let det_bytes = axum::body::to_bytes(det_res.into_body(), 8192).await.unwrap();
+    let det_bytes = axum::body::to_bytes(det_res.into_body(), 8192)
+        .await
+        .unwrap();
     let det_json: Value = serde_json::from_slice(&det_bytes).unwrap();
     assert_eq!(det_json["card"]["playback_progress"], 1.0);
     assert!(det_json["resume_position_seconds"].is_null());
@@ -629,7 +633,9 @@ async fn test_manual_set_playback_state_single_and_zero_duration() {
         .body(Body::empty())
         .unwrap();
     let z_det_res = app.clone().oneshot(z_det_req).await.unwrap();
-    let z_det_bytes = axum::body::to_bytes(z_det_res.into_body(), 8192).await.unwrap();
+    let z_det_bytes = axum::body::to_bytes(z_det_res.into_body(), 8192)
+        .await
+        .unwrap();
     let z_det_json: Value = serde_json::from_slice(&z_det_bytes).unwrap();
     assert_eq!(z_det_json["card"]["playback_progress"], 1.0);
 
@@ -643,7 +649,9 @@ async fn test_manual_set_playback_state_single_and_zero_duration() {
         .unwrap();
     let unw_res = app.clone().oneshot(unw_req).await.unwrap();
     assert_eq!(unw_res.status(), StatusCode::OK);
-    let unw_bytes = axum::body::to_bytes(unw_res.into_body(), 4096).await.unwrap();
+    let unw_bytes = axum::body::to_bytes(unw_res.into_body(), 4096)
+        .await
+        .unwrap();
     let unw_json: Value = serde_json::from_slice(&unw_bytes).unwrap();
     assert_eq!(unw_json["watch_state"], "unwatched");
     assert_eq!(unw_json["playback_position_seconds"], 0);
@@ -656,7 +664,9 @@ async fn test_manual_set_playback_state_single_and_zero_duration() {
         .body(Body::empty())
         .unwrap();
     let det2_res = app.clone().oneshot(det2_req).await.unwrap();
-    let det2_bytes = axum::body::to_bytes(det2_res.into_body(), 8192).await.unwrap();
+    let det2_bytes = axum::body::to_bytes(det2_res.into_body(), 8192)
+        .await
+        .unwrap();
     let det2_json: Value = serde_json::from_slice(&det2_bytes).unwrap();
     assert!(det2_json["card"]["playback_progress"].is_null());
     assert!(det2_json["resume_position_seconds"].is_null());
@@ -755,7 +765,9 @@ async fn test_manual_set_playback_states_batch_and_private_library_guard() {
         .unwrap();
     let batch_res = app.clone().oneshot(batch_req).await.unwrap();
     assert_eq!(batch_res.status(), StatusCode::OK);
-    let batch_bytes = axum::body::to_bytes(batch_res.into_body(), 4096).await.unwrap();
+    let batch_bytes = axum::body::to_bytes(batch_res.into_body(), 4096)
+        .await
+        .unwrap();
     let batch_json: Value = serde_json::from_slice(&batch_bytes).unwrap();
     assert_eq!(batch_json["updated"], 2);
     assert_eq!(batch_json["watched"], true);
@@ -778,7 +790,11 @@ async fn test_manual_set_playback_states_batch_and_private_library_guard() {
             .watch_state,
         WatchState::Completed
     );
-    assert!(playback_repo.get_state("u1", live_id).await.unwrap().is_none());
+    assert!(playback_repo
+        .get_state("u1", live_id)
+        .await
+        .unwrap()
+        .is_none());
 
     // 3. Locked private library item -> 403 LIBRARY_LOCKED on both single and batch PUT
     let locked_single = Request::builder()
@@ -790,7 +806,9 @@ async fn test_manual_set_playback_states_batch_and_private_library_guard() {
         .unwrap();
     let locked_res = app.clone().oneshot(locked_single).await.unwrap();
     assert_eq!(locked_res.status(), StatusCode::FORBIDDEN);
-    let locked_bytes = axum::body::to_bytes(locked_res.into_body(), 4096).await.unwrap();
+    let locked_bytes = axum::body::to_bytes(locked_res.into_body(), 4096)
+        .await
+        .unwrap();
     let locked_json: Value = serde_json::from_slice(&locked_bytes).unwrap();
     assert_eq!(locked_json["error"], "LIBRARY_LOCKED");
 
@@ -821,7 +839,9 @@ async fn test_manual_set_playback_states_batch_and_private_library_guard() {
         .unwrap();
     let unlock_res = app.clone().oneshot(unlock_req).await.unwrap();
     assert_eq!(unlock_res.status(), StatusCode::OK);
-    let unlock_bytes = axum::body::to_bytes(unlock_res.into_body(), 4096).await.unwrap();
+    let unlock_bytes = axum::body::to_bytes(unlock_res.into_body(), 4096)
+        .await
+        .unwrap();
     let unlock_json: Value = serde_json::from_slice(&unlock_bytes).unwrap();
     let unlock_token = unlock_json["unlock_token"].as_str().unwrap();
 
