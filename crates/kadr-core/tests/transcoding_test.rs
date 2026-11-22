@@ -346,3 +346,78 @@ fn test_evaluate_transcode_uses_selected_audio_track_codec() {
         }
     }
 }
+
+#[test]
+fn test_evaluate_transcode_audio_only_and_attached_cover_art() {
+    let base_params = TranscodeParameters::default();
+
+    // 1. Pure audio file (no video_codec, known audio_codec) -> VideoAction::None
+    let flac_tech = TechnicalInfo {
+        container: Some("flac".to_string()),
+        video_codec: None,
+        audio_codec: Some("flac".to_string()),
+        audio_channels: Some(2),
+        duration_seconds: 240,
+        ..Default::default()
+    };
+    let d_flac = evaluate_transcode(&flac_tech, &base_params, None);
+    assert_eq!(d_flac.video, VideoAction::None);
+    assert!(matches!(d_flac.audio, AudioAction::Transcode { ref codec, .. } if codec == "aac"));
+
+    // 2. MP3 / M4B with embedded MJPEG/PNG cover art -> VideoAction::None
+    let cover_tech = TechnicalInfo {
+        container: Some("mp3".to_string()),
+        video_codec: Some("mjpeg".to_string()),
+        audio_codec: Some("mp3".to_string()),
+        duration_seconds: 1800,
+        ..Default::default()
+    };
+    let d_cover = evaluate_transcode(&cover_tech, &base_params, None);
+    assert_eq!(d_cover.video, VideoAction::None);
+
+    // 3. Explicit video_codec=none query param -> VideoAction::None even if unprobed
+    let unprobed = TechnicalInfo::default();
+    let explicit_audio_params = TranscodeParameters {
+        video_codec: "none".to_string(),
+        ..base_params.clone()
+    };
+    let d_explicit = evaluate_transcode(&unprobed, &explicit_audio_params, None);
+    assert_eq!(d_explicit.video, VideoAction::None);
+
+    // 4. Unprobed live IPTV / plugin stream (both video & audio None, target h264) -> keeps VideoAction::Transcode
+    let d_unprobed_live = evaluate_transcode(&unprobed, &base_params, None);
+    assert!(matches!(d_unprobed_live.video, VideoAction::Transcode { .. }));
+}
+
+#[test]
+fn test_build_ffmpeg_hls_args_audio_only_omits_video_map_and_adds_vn() {
+    let decision = TranscodeDecision {
+        video: VideoAction::None,
+        audio: AudioAction::Transcode {
+            codec: "aac".to_string(),
+            channels: 2,
+            bitrate_kbps: 192,
+        },
+    };
+    let params = TranscodeParameters {
+        video_codec: "none".to_string(),
+        audio_codec: "aac".to_string(),
+        max_height: None,
+        audio_track_index: 0,
+        start_time: 12.0,
+    };
+
+    let args = build_ffmpeg_hls_args(
+        Path::new("/media/audiobook.m4b"),
+        Path::new("/tmp/hls_audio"),
+        &decision,
+        &params,
+    );
+
+    assert!(args.contains(&"-vn".to_string()));
+    assert!(args.contains(&"0:a:0".to_string()));
+    assert!(!args.contains(&"0:v:0".to_string()));
+    assert!(!args.contains(&"-c:v".to_string()));
+    assert!(args.contains(&"-c:a".to_string()));
+    assert!(args.contains(&"aac".to_string()));
+}

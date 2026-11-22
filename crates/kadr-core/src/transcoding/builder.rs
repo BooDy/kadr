@@ -5,6 +5,7 @@ use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VideoAction {
+    None,
     Copy,
     Transcode {
         codec: String,
@@ -55,15 +56,35 @@ pub fn evaluate_transcode(
     params: &TranscodeParameters,
     hwaccel: Option<&str>,
 ) -> TranscodeDecision {
-    let source_video_codec = tech.video_codec.as_deref().unwrap_or("").to_lowercase();
-    let target_video_codec = params.video_codec.to_lowercase();
+    let source_video_codec = tech
+        .video_codec
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    let target_video_codec = params.video_codec.trim().to_lowercase();
+
+    let has_known_audio = tech
+        .audio_codec
+        .as_deref()
+        .is_some_and(|c| !c.trim().is_empty() && !c.eq_ignore_ascii_case("none"))
+        || !tech.audio_tracks.is_empty();
+    let is_attached_image_video = matches!(
+        source_video_codec.as_str(),
+        "mjpeg" | "png" | "bmp" | "webp" | "gif"
+    );
+    let is_audio_only = target_video_codec == "none"
+        || is_attached_image_video
+        || ((source_video_codec.is_empty() || source_video_codec == "none") && has_known_audio);
 
     let height_ok = match (tech.height(), params.max_height) {
         (Some(src_h), Some(max_h)) => src_h <= max_h,
         _ => true,
     };
 
-    let video_action = if source_video_codec == target_video_codec && height_ok {
+    let video_action = if is_audio_only {
+        VideoAction::None
+    } else if source_video_codec == target_video_codec && height_ok {
         VideoAction::Copy
     } else {
         VideoAction::Transcode {
@@ -153,15 +174,18 @@ pub fn build_ffmpeg_hls_args_for_source(
         }
     }
 
-    // Stream mapping
-    args.push("-map".into());
-    args.push("0:v:0".into());
-    args.push("-map".into());
-    args.push(format!("0:a:{}", params.audio_track_index));
-
-    // Video codec flags
+    // Stream mapping and video codec flags
     match &decision.video {
+        VideoAction::None => {
+            args.push("-vn".into());
+            args.push("-map".into());
+            args.push(format!("0:a:{}", params.audio_track_index));
+        }
         VideoAction::Copy => {
+            args.push("-map".into());
+            args.push("0:v:0".into());
+            args.push("-map".into());
+            args.push(format!("0:a:{}", params.audio_track_index));
             args.push("-c:v".into());
             args.push("copy".into());
         }
@@ -170,6 +194,10 @@ pub fn build_ffmpeg_hls_args_for_source(
             hwaccel,
             ..
         } => {
+            args.push("-map".into());
+            args.push("0:v:0".into());
+            args.push("-map".into());
+            args.push(format!("0:a:{}", params.audio_track_index));
             if let Some(scale_h) = max_height {
                 args.push("-vf".into());
                 args.push(format!("scale=-2:'min(ih,{})'", scale_h));
