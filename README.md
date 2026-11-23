@@ -375,7 +375,7 @@ The server will start at `http://localhost:8492` (or configured host/port).
 Kadr maintains a 100% passing test suite across all crates, frontend suites, and end-to-end integration tests:
 
 ```bash
-# Run all Rust workspace unit, integration, and E2E tests (552 tests across 95 suites in 4 crates)
+# Run all Rust workspace unit, integration, and E2E tests (553 tests across 95 suites in 4 crates)
 cargo test --workspace
 
 # Run end-to-end user journey test suites specifically
@@ -398,7 +398,7 @@ cargo test --test plugin_admin_test --test plugin_settings_test --test plugin_pu
   --test plugin_health_test --test plugin_client_test --test plugin_auth_test --test plugin_url_guard_test \
   --test plugin_forge_test --test plugin_installer_test --test plugin_supervisor_test --test plugin_install_test
 
-# Run frontend tests (Vitest — 351 tests across 32 test suites)
+# Run frontend tests (Vitest — 355 tests across 32 test suites)
 cd web
 npm test -- --run
 cd ..
