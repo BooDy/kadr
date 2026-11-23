@@ -14,12 +14,70 @@ describe('player compatibility helpers', () => {
       isAudioOnlyMedia('movie', { duration_seconds: 120, audio_codec: 'aac' })
     ).toBe(true);
     expect(
+      isAudioOnlyMedia('unknown', { duration_seconds: 200, container: 'mka' })
+    ).toBe(true);
+    expect(
+      isAudioOnlyMedia('unknown', { duration_seconds: 200, container: 'wma' })
+    ).toBe(true);
+    expect(
+      isAudioOnlyMedia('movie', { duration_seconds: 120, container: 'webm' })
+    ).toBe(false);
+    expect(
       isAudioOnlyMedia('movie', {
         duration_seconds: 120,
         video_codec: 'h264',
         audio_codec: 'aac',
       })
     ).toBe(false);
+  });
+
+  it('uses Direct Play for kadr-ingest m4a/m4b audio items probed with container=mp4 and preserves video on unprobed webm fallback', () => {
+    expect(
+      shouldUseHls({
+        mediaType: 'music',
+        technical: {
+          duration_seconds: 240,
+          container: 'mp4',
+          audio_codec: 'aac',
+        },
+        audioTrackIndex: 0,
+      })
+    ).toEqual({ useHls: false, videoCodec: 'none', audioCodec: 'aac' });
+
+    expect(
+      shouldUseHls({
+        mediaType: 'audiobook',
+        technical: {
+          duration_seconds: 3600,
+          container: 'mp4',
+          audio_codec: 'aac',
+        },
+        audioTrackIndex: 0,
+      })
+    ).toEqual({ useHls: false, videoCodec: 'none', audioCodec: 'aac' });
+
+    expect(
+      shouldUseHls({
+        mediaType: 'movie',
+        technical: {
+          duration_seconds: 120,
+          container: 'webm',
+        },
+        audioTrackIndex: 0,
+      })
+    ).toEqual({ useHls: false, videoCodec: 'h264', audioCodec: 'aac' });
+
+    expect(
+      shouldUseHls({
+        mediaType: 'movie',
+        technical: {
+          duration_seconds: 120,
+          container: 'webm',
+        },
+        audioTrackIndex: 0,
+        forceHls: true,
+      })
+    ).toEqual({ useHls: true, videoCodec: 'h264', audioCodec: 'aac' });
   });
 
   it('uses Direct Play for browser-native MP4/WebM at audioTrackIndex 0', () => {

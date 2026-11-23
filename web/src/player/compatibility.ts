@@ -36,7 +36,21 @@ const NATIVE_AUDIO_CODECS = new Set([
   'pcm_s24le',
   'wav',
 ]);
+const PURE_AUDIO_CONTAINERS = new Set([
+  'mp3',
+  'm4a',
+  'm4b',
+  'aac',
+  'ogg',
+  'oga',
+  'opus',
+  'flac',
+  'wav',
+  'mka',
+  'wma',
+]);
 const NATIVE_AUDIO_CONTAINERS = new Set([
+  'mp4',
   'mp3',
   'm4a',
   'm4b',
@@ -100,7 +114,7 @@ export function isAudioOnlyMedia(
   if (!vCodec && aCodec) {
     return true;
   }
-  if (!vCodec && NATIVE_AUDIO_CONTAINERS.has(container)) {
+  if (!vCodec && PURE_AUDIO_CONTAINERS.has(container)) {
     return true;
   }
   return false;
