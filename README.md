@@ -32,13 +32,13 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Blazing Fast & Lightweight**: Operates within a strict $\le 30\text{ MB}$ RSS memory envelope under standard multi-client streaming and layout hydration workloads.
 - **Pure-Rust & Portability First**: Zero external C/native runtime dependencies baseline (`reqwest` with `rustls-tls`, pure-Rust crypto via `argon2`, static SQLite engine). Compiles cleanly against `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`.
 - **Zero-Copy HTTP 206 Direct Play & Broad Container Support**: Axum-based streaming pipeline with 64 KiB chunk buffering supporting single and multipart byte-range requests without whole-file memory allocation, with unified support across **`MKV`, `MP4`, `M4V`, `MOV`, `WebM`, `AVI`, `TS`, `M2TS`, `MTS`, `3GP`, and `3G2`** containers (backed by 256-byte magic-byte pure-Rust header inspection, live filesystem watching, folder browsing, playlists, and accurate `Content-Type` MIME delivery).
-- **Universal On-Demand HLS Transcoding & Smart Stream Copy**: Automatic HTTP Live Streaming (HLS) fallback for Smart TVs (such as Samsung Tizen OS) and web players encountering unsupported audio/video codecs (`DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`) or containers (`MKV`, `AVI`, `TS`/`M2TS`/`MTS`, `3GP`/`3G2`). Features zero-CPU remuxing (`-c:v copy -c:a copy`), smart audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with a 15s background reaper sweeping idle sessions (`inactivity_timeout_secs`, default `60`s).
+- **Universal On-Demand HLS Transcoding & Smart Stream Copy**: Automatic HTTP Live Streaming (HLS) fallback for Smart TVs (such as Samsung Tizen OS) and web players encountering unsupported audio/video codecs (`DTS`, `TrueHD`, `HEVC 10-bit`, `AV1`) or containers (`MKV`, `AVI`, `TS`/`M2TS`/`MTS`, `3GP`/`3G2`). Features multi-audio stream selection (`audio_track`), audio-only HLS (`video_codec=none` / `-vn`) for `music` & `audiobook` streams, zero-CPU remuxing (`-c:v copy -c:a copy`), smart audio-only transcoding (`-c:v copy -c:a aac`), and full video transcoding (`libx264`, `vaapi`, `nvenc`) with a 15s background reaper sweeping idle sessions (`inactivity_timeout_secs`, default `60`s).
 - **Storyboard Seek Preview Thumbnails (Trickplay)**: Lazy on-demand and optional scan-time 10×10 JPEG sprite sheet generation (`ffmpeg` paired with a pure-Rust JPEG SOF dimension parser), serving manifest and cached sprite sheets (`/api/v1/media/:item_id/storyboard`, `/api/v1/media/:item_id/storyboard/:index.jpg`) with `202 Accepted` async generation status and `ETag` / `304 Not Modified` caching, on-demand single-frame extraction (`/api/v1/media/:item_id/frame`), private library lock enforcement, and automatic cache cleanup on re-ingest or deletion.
 - **Out-of-Process HTTP Plugin Framework, Git Installation & Process Supervision**: Install managed plugins directly from **GitHub**, **GitLab**, or **Gitea / Forgejo** release archives (`flate2` `rust_backend` + `tar` pure-Rust unpacker with SHA-256 verification and zero C dependencies) or register external HTTP plugin processes. Managed plugins wait in `pending` until admin permission approval (`items:publish`, `playback:resolve`), run under `PluginSupervisor` (`127.0.0.1:<ephemeral_port>`, `env_clear()` isolation, crash backoff, 1-click updates), publish virtual libraries and `live_channel` streams, and resolve playback via `direct` (`307`), `proxy`, or `transcode` (HLS).
 - **Global SQLite FTS5 Search & Instant Search Modal**: Sub-millisecond full-text catalog search (`GET /api/v1/search`) backed by SQLite FTS5 (`unicode61 remove_diacritics 2`), trigger-synchronized indexing across titles, series/episode `SxxExx` codes, cast, directors, writers, genres, tags, studios, overviews, filenames, and years, BM25 column weighting, safe punctuation/Unicode query sanitization, fail-closed PIN-locked private library isolation, and an instant `Ctrl+K` / `/` search modal in the Web UI.
 - **Inline Metadata & Artwork Editor + Opt-In TMDb Scraper**: Edit titles, credits, genres, tags, ratings, and cached local posters/backdrops directly from Item Details (`PATCH /api/v1/items/:id/metadata`) with per-field lock protection (`locked_fields`) that survives filesystem rescans, paired with an opt-in TMDb v3/v4 scraper (`Identify` modal, per-library `Fetch Missing Metadata`, and optional `auto_fetch_on_scan` ingest enrichment) that caches artwork locally under `<data_dir>/artwork/` for offline operation.
 - **Playlists & Queue Playback**: Manual ordered playlists with per-user ownership and server-wide multi-user sharing (`is_public`), 1-step Create & Add, batch TV Show / Season / sandboxed Folder expansion, fail-closed PIN-locked library isolation (`locked_item_count`), `playlist_items` Declarative Widget AST rails, and multi-track queue playback (auto-advance, Prev/Next, shuffle, and interactive queue popover) in Cinema Player and native clients.
-- **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (`001–012`).
+- **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (`001–014`).
 - **Network Autodiscovery & Server Identity**: Zero-conf unauthenticated `/api/v1/discovery` endpoint and persistent server identity configuration for instantaneous client detection across local networks.
 - **Declarative Widget AST Layout Engine**: Single-roundtrip screen hydration (`Home`, `Movies`, `Shows`, plus custom screens) powering hero spotlights, horizontal card carousels, and catalog grids with badge computation (`4K`, `NEW`, `RESUME` progress bars).
 - **TV Shows & Seasons Grouping**: Automated TV episode filename and directory cue parsing (`S01E02`), parent series aggregation, season tabs navigation, and 1-click episode playback.
@@ -49,7 +49,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `layout:changed`, `session:synced`, `subtitle:downloaded`, `plugin:error`, `playlist:updated`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
 - **System Telemetry & Health**: Non-blocking collector querying Linux process RSS memory via `/proc/self/statm`, SQLite DB/WAL file sizes, and active playback session counters.
 - **Integrated Cinema Web App & Studio**:
-  - **Cinema Player**: Full-screen dark video player with multi-track queue playback (auto-advance, Prev/Next track controls, interactive Queue popover, return-to-previous-view navigation), native HTML5 `<track>` WebVTT subtitles, in-player subtitle downloading, auto-resume seeking, 10s playback scrobbling heartbeats, and media keyboard shortcuts (paired with server-side `/storyboard` & `/frame` trickplay APIs for seek-preview clients).
+  - **Cinema Player**: Full-screen dark video player with dynamic `hls.js` automatic HLS fallback (including `video_codec=none` audio-only HLS for `music` & `audiobook` streams), multi-audio track selector (`/audio-tracks`), 10×10 storyboard seek-bar hover previews (with `/frame` fallback), multi-track queue playback (auto-advance, Prev/Next track controls, interactive Queue popover, return-to-previous-view navigation), native HTML5 `<track>` WebVTT subtitles (with HLS `start_time` cue offset sync), in-player subtitle downloading, auto-resume seeking, 10s playback scrobbling heartbeats, media keyboard shortcuts, and single / season / series Mark Watched controls across catalog cards and Item Details.
   - **Playlists View**: Top-bar `Playlists` screen with `PlaylistDetailView` (Play All, Shuffle, drag-and-drop / button item reordering, public/private visibility toggle) and 1-step `AddToPlaylistModal` across catalog cards, TV shows/seasons, and folders.
   - **Global Search & Metadata Tools**: Instant `Ctrl+K` / `/` Global Search modal across public and unlocked libraries, plus inline `Edit Metadata` & TMDb `Identify` modals on Item Details.
   - **Plugins & Metadata Admin Panels**: Live administration tabs (`Administration > Plugins` and `Administration > Metadata & TMDb`) to install/update managed Git plugins or external URL plugins, approve permissions, configure opt-in TMDb credentials & scan enrichment, and monitor plugin health.
@@ -87,7 +87,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
                |                           |                          |
 +--------------v---------------------------|-----------+              |
 |        kadr-storage                      |           |              |
-| (SQLite WAL Pool, Migrations 001-012)    |           |              |
+| (SQLite WAL Pool, Migrations 001-014)    |           |              |
 +--------------+---------------------------+-----------+              |
                |                           |                          |
 +--------------v-----------+   +-----------+-----------+              |
@@ -112,7 +112,7 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 | Directory | Crate / Component | Description |
 |:---|:---|:---|
 | `crates/kadr-core` | `kadr-core` | Shared domain models (`locked_fields`, metadata overrides), unified video container definitions (`video_formats`), Declarative Widget AST definitions (`playlist_items`, filter rules), search, plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
-| `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–012`, including FTS5 full-text index & triggers), and repositories (`User`, `Library`, `MediaItem`, `Search`, `Playback`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
+| `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–014`, including FTS5 full-text index, audio tracks & filter AST indexes), and repositories (`User`, `Library`, `MediaItem`, `Search`, `Playback`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
 | `crates/kadr-ingest` | `kadr-ingest` | Filesystem watcher (`notify`), media scanner, 256-byte pure-Rust container inspector, `ffprobe` technical & embedded subtitle stream parser, sidecar subtitle detector, background `ffmpeg` thumbnail extractor, and batch ingestion worker. |
 | `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, managed Git plugin installer & supervisor + HTTP plugin framework, global FTS5 search, inline metadata & opt-in TMDb scraper, ordered playlists & AST widget resolver, embedded/sidecar/OpenSubtitles WebVTT delivery, SSE event bus, and static web serving. |
 | `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React (Browse, Global Search, Cinema Player, Playlists, Metadata & TMDb Editor, Layout Studio, Plugins Admin, and Telemetry Dashboard). |
@@ -374,7 +374,7 @@ The server will start at `http://localhost:8492` (or configured host/port).
 Kadr maintains a 100% passing test suite across all crates, frontend suites, and end-to-end integration tests:
 
 ```bash
-# Run all Rust workspace unit, integration, and E2E tests (516 tests across 89 suites in 4 crates)
+# Run all Rust workspace unit, integration, and E2E tests (542 tests across 93 suites in 4 crates)
 cargo test --workspace
 
 # Run end-to-end user journey test suites specifically
@@ -396,7 +396,7 @@ cargo test --test plugin_admin_test --test plugin_settings_test --test plugin_pu
   --test plugin_health_test --test plugin_client_test --test plugin_auth_test --test plugin_url_guard_test \
   --test plugin_forge_test --test plugin_installer_test --test plugin_supervisor_test --test plugin_install_test
 
-# Run frontend tests (Vitest — 275 tests across 24 test suites)
+# Run frontend tests (Vitest — 326 tests across 30 test suites)
 cd web
 npm test -- --run
 cd ..
@@ -451,7 +451,7 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 
 ### Video Streaming, HLS Transcoding, Storyboards & Artwork
 - `GET /api/v1/stream/:item_id` — Zero-copy HTTP 206 byte-range Direct Play streaming for local files, or plugin playback resolution (`307 Temporary Redirect` for `direct`, range-forwarding HTTP relay for `proxy`, or `409 PLAYBACK_REQUIRES_TRANSCODE` for `transcode`).
-- `GET /api/v1/media/:item_id/hls/master.m3u8` — On-demand HLS fallback master playlist with codec negotiation (`video_codec`, `audio_codec`, `max_height`, `audio_track`, `start_time`) for local and plugin media sources.
+- `GET /api/v1/media/:item_id/hls/master.m3u8` — On-demand HLS fallback master playlist with codec negotiation (`video_codec`, `audio_codec`, `max_height`, `audio_track`, `start_time`, including `video_codec=none` audio-only HLS for `music` & `audiobook` streams) for local and plugin media sources.
 - `GET /api/v1/media/:item_id/hls/sessions/:session_id/segment_:seq.ts` — Stream 4-second MPEG-TS HLS segments (`video/mp2t`) for an active transcode session.
 - `DELETE /api/v1/media/:item_id/hls/sessions/:session_id` — Immediately terminate an active HLS transcode session and clean up temporary segment files.
 - `GET /api/v1/media/:item_id/storyboard` — Retrieve storyboard seek-preview manifest (`interval_ms`, `tile_width`, `tile_height`, `columns`, `rows`, `total_tiles`, `sheets`), or `202 Accepted` (`Retry-After: 5`) while background `ffmpeg` sprite generation runs.
@@ -477,6 +477,8 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `POST /api/v1/playback/:session_id/progress` — 10-second heartbeat progress update (`{"position_seconds": 120}`).
 - `DELETE /api/v1/playback/sessions/:session_id` (or `/api/v1/playback/:session_id`) — Close active playback session.
 - `GET /api/v1/playback/states/:item_id` — Fetch user's saved playback position and watch status.
+- `PUT /api/v1/playback/states/:item_id` — Manually mark a playable VOD item watched or unwatched (`{"watched": true|false}`, returning `PlaybackState` and broadcasting `layout:changed` for `home`).
+- `PUT /api/v1/playback/states` — Batch mark `1..=500` items watched or unwatched (`{"item_ids": [...], "watched": true|false}` -> `{"updated": N, "watched": bool}`), ideal for marking entire TV seasons or series.
 - `GET /api/v1/playback/continue-watching` — List items currently in progress for Continue Watching carousel.
 
 ### Playlists & Queue Playback
@@ -504,7 +506,8 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `PUT /api/v1/plugin/libraries/:id/items` — Batch-upsert up to 1,000 virtual or live items (`{"items": [...]}`; requires plugin Bearer token with `items:publish`).
 - `DELETE /api/v1/plugin/libraries/:id/items/:remote_id` — Delete a published virtual item from a plugin-owned library (requires plugin Bearer token with `items:publish`).
 
-### Subtitle Management
+### Audio Tracks & Subtitle Management
+- `GET /api/v1/items/:item_id/audio-tracks` — List container audio streams (`AudioStreamInfo[]`: `audio_index`, `stream_index`, `codec`, `channels`, `language`, `title`, `is_default`, `is_commentary`), lazily backfilling via singleflight `ffprobe` when not yet indexed.
 - `GET /api/v1/items/:item_id/subtitles` — List available embedded (`source: "embedded"` with `stream_index`), sidecar (`"sidecar"`), and downloaded (`"downloaded"`) subtitle tracks for an item (lazily probing embedded container text subtitle streams via `ffprobe` when not yet indexed).
 - `GET /api/v1/subtitles/:subtitle_id/stream.vtt` — Public WebVTT stream (on-demand `ffmpeg` extraction/conversion for embedded container & `.ass` tracks, pure-Rust SRT $\to$ WebVTT conversion, and singleflight disk caching).
 - `GET /api/v1/subtitles/:item_id/search?languages=en,ar` — Search online subtitles via OpenSubtitles.

@@ -13,6 +13,7 @@ Welcome to the **Kadr Client Developer Guide**. This document is the definitive 
 5. [Media Details, Global Search & Metadata Management](#5-media-details-global-search--metadata-management)
 6. [Video Streaming, HLS Transcoding Fallback, Plugin Playback & Scrobbling](#6-video-streaming-hls-transcoding-fallback-plugin-playback--scrobbling)
 7. [Subtitles, Storyboard Trickplay & Media Assets](#7-subtitles-storyboard-trickplay--media-assets)
+   - [7.1b Audio Track Discovery (`GET /api/v1/items/{item_id}/audio-tracks`)](#71b-audio-track-discovery-get-apiv1itemsitem_idaudio-tracks)
 8. [Libraries, Hierarchical Folder Browsing & Real-Time Events (SSE)](#8-libraries-hierarchical-folder-browsing--real-time-events-sse)
 9. [Playlists & Client Queue Playback](#9-playlists--client-queue-playback)
 10. [Client Architecture Recipes & Best Practices](#10-client-architecture-recipes--best-practices)
@@ -1133,11 +1134,11 @@ When direct play is not possible (or when a plugin item returns `409 PLAYBACK_RE
 ##### Query Parameters:
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `video_codec` | String | `"h264"` | Target video codec required by the client (`"h264"` or `"hevc"`). |
+| `video_codec` | String | `"h264"` | Target video codec required by the client: `"h264"`, `"hevc"`, or `"none"` (`VideoAction::None` / `ffmpeg -vn -map 0:a:<audio_track>` audio-only MPEG-TS HLS for `music` and `audiobook` items, or containers with attached cover-art stills). |
 | `audio_codec` | String | `"aac"` | Target audio codec required by the client (`"aac"`, `"ac3"`, `"eac3"`). |
-| `max_height` | Integer | Source height | Optional max resolution height: `1080`, `720`, `480`. Automatically scales video down if source exceeds this. |
-| `audio_track` | Integer | `0` | Stream index of the audio track to play (also accepts alias `audio_track_index`). |
-| `start_time` | Float | `0.0` | Initial seek offset in seconds for instant start at a resume position. |
+| `max_height` | Integer | Source height | Optional max resolution height: `1080`, `720`, `480`. Automatically scales video down if source exceeds this (ignored when `video_codec=none`). |
+| `audio_track` | Integer | `0` | 0-based audio stream ordinal (`audio_index` from `GET /api/v1/items/{item_id}/audio-tracks`; also accepts alias `audio_track_index`). Returns `400 Bad Request` (`{"error": "Invalid audio_track index"}`) if out of range. |
+| `start_time` | Float | `0.0` | Initial seek offset in seconds (`ffmpeg -ss <start_time>`) for instant start at a resume position, unbuffered scrub target, or live audio-track switch. |
 
 ##### Example Request (Tizen TV playing an MKV with DTS audio):
 ```http
@@ -1163,6 +1164,12 @@ Cache-Control: no-cache
 
 > [!NOTE]
 > Any `token=`, `unlocked=`, or `unlock_token=` query parameters passed to `master.m3u8` are automatically preserved and appended onto every rewritten `/segment_{seq}.ts` line so native HLS players do not need custom segment request interceptors.
+
+##### Client Timeline & External WebVTT Cue Offset (`start_time > 0`):
+
+Because server-side `ffmpeg -ss <start_time>` input seeking resets emitted MPEG-TS segment PTS timestamps to `0.0` (so `player.currentTime` starts at `0` even when `master.m3u8` was opened with `start_time = S`), clients starting or restarting an HLS session at `start_time = S` (`S > 0`) must apply two timeline adjustments:
+1. **Effective Playback Position & Scrobbling**: Compute `effectiveCurrentTime = S + player.currentTime` for seek-bar progress rendering, scrobble heartbeats (`POST /api/v1/playback/{session_id}/progress`), and buffered-vs-unbuffered seek detection (seeking in-buffer when `targetSeconds - S` falls inside `player.buffered`, or requesting a new `master.m3u8?start_time=<targetSeconds>` session otherwise).
+2. **External WebVTT Subtitle Cue Alignment**: Because `/api/v1/subtitles/{subtitle_id}/stream.vtt` serves full-timeline cues anchored at `00:00:00.000`, shift each `VTTCue` timestamp by `-S` (`startTime = max(0, originalStart - S)`, `endTime = max(0, originalEnd - S)`), preserving original cue bounds in memory so subsequent seeks or audio-track switches re-anchor cleanly without drift.
 
 #### 2. Segment Delivery
 - **Method & Route**: `GET /api/v1/media/{item_id}/hls/sessions/{session_id}/segment_{seq}.ts`
@@ -1337,11 +1344,64 @@ Call when the user closes the player or playback finishes:
 - **All Continue Watching Items**: `GET /api/v1/playback/continue-watching`
   Returns up to 50 items currently in the `in_progress` state for the logged-in user.
 
+#### Step 5: Manual Mark Watched / Unwatched (Single & Batch)
+
+Users can explicitly mark individual movies/episodes — or entire TV seasons and multi-season series — as watched (`completed`) or unwatched (`unwatched`) outside an active playback session.
+
+##### 1. Single Item Watch State — `PUT /api/v1/playback/states/{item_id}`
+- **Method & Route**: `PUT /api/v1/playback/states/{item_id}`
+- **Headers**: `Authorization: Bearer <token>` (plus `X-Kadr-Unlocked: <token>` / `X-Library-Unlock-Token: <token>` or `?unlocked=<token>` when the item belongs to a private library)
+- **Request Body**:
+  ```json
+  {
+    "watched": true
+  }
+  ```
+- **Response (`200 OK` — `PlaybackState`)**:
+  ```json
+  {
+    "user_id": "a1b2c3d4-...",
+    "media_item_id": 101,
+    "playback_position_seconds": 9960,
+    "watch_state": "completed",
+    "last_watched_at": 1728401200,
+    "play_count": 1
+  }
+  ```
+- **Server Semantics & Error Responses**:
+  - Setting `"watched": true` transitions `watch_state` to `"completed"`, sets `playback_position_seconds` to `max(duration_seconds, 1)`, increments `play_count` by `1` if the item was not already `"completed"`, and broadcasts a `layout:changed` SSE event for `screen_id: "home"` (immediately removing the item from `Continue Watching` rails).
+  - Setting `"watched": false` transitions `watch_state` to `"unwatched"` and resets `playback_position_seconds` to `0` (preserving historical `play_count`), also broadcasting `layout:changed` for `"home"`.
+  - **`400 Bad Request`**: `{"error": "Live items do not support watch state"}` when `{item_id}` is a `live_channel` (`item.is_live() == true`).
+  - **`403 Forbidden`**: `{"error": "LIBRARY_LOCKED"}` when `{item_id}` belongs to a locked private library without a valid unlock token.
+  - **`404 Not Found`**: `{"error": "Media item not found"}` when `{item_id}` does not exist.
+
+##### 2. Batch Watch State (Seasons & Series) — `PUT /api/v1/playback/states`
+- **Method & Route**: `PUT /api/v1/playback/states`
+- **Headers**: `Authorization: Bearer <token>` (plus `X-Kadr-Unlocked` / `X-Library-Unlock-Token` if any target item resides in a private library)
+- **Request Body**:
+  ```json
+  {
+    "item_ids": [201, 202, 203],
+    "watched": true
+  }
+  ```
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "updated": 3,
+    "watched": true
+  }
+  ```
+- **Batch Limits, Validation & Client Chunking Guidance**:
+  - **Unique ID Limit (`1..=500`)**: Server deduplicates `item_ids` in order and enforces `1 <= unique_ids.len() <= 500`. Passing an empty array or more than `500` unique IDs returns **`400 Bad Request`** (`{"error": "item_ids must contain 1..=500 items"}`). For long-running anime or multi-season TV series exceeding 500 episodes, clients should slice episode IDs into sequential chunks of `<= 500` items per `PUT /api/v1/playback/states` call.
+  - **Private Library Enforcement**: Returns **`403 Forbidden`** (`{"error": "LIBRARY_LOCKED"}`) before writing any rows if any matched item belongs to a locked private library.
+  - **Live & Missing Items**: Non-existent IDs and `live_channel` items are safely filtered out; if `updated > 0`, Kadr broadcasts a single `layout:changed` SSE event for `screen_id: "home"`.
+
 ---
 
 ## 7. Subtitles, Storyboard Trickplay & Media Assets
 
-Kadr provides first-class subtitle delivery across **embedded container text streams**, **local sidecar files**, and **downloaded OpenSubtitles tracks** — normalizing every track into UTF-8 WebVTT with singleflight extraction and disk caching — alongside high-resolution artwork delivery and 10×10 storyboard trickplay sprite sheets with single-frame seek fallback.
+Kadr provides first-class subtitle delivery across **embedded container text streams**, **local sidecar files**, and **downloaded OpenSubtitles tracks** — normalizing every track into UTF-8 WebVTT with singleflight extraction and disk caching — alongside **multi-audio container stream discovery**, high-resolution artwork delivery, and 10×10 storyboard trickplay sprite sheets with single-frame seek fallback.
 
 ### 7.1 Subtitle Discovery (Embedded, Sidecar & Downloaded)
 
@@ -1392,6 +1452,59 @@ Kadr provides first-class subtitle delivery across **embedded container text str
 - **`source`**: `"embedded"` (muxed inside the video container), `"sidecar"` (companion `.srt`, `.vtt`, `.ass`, or `.sub` file on disk), or `"downloaded"` (fetched via OpenSubtitles).
 - **`stream_index`**: 0-based `ffprobe` container stream index (`u32`, e.g. `2`), serialized **only** on `"embedded"` tracks (`skip_serializing_if = "Option::is_none"`).
 - **Supported Embedded Text Codecs**: During library scans — and **lazily on first `GET /api/v1/items/{item_id}/subtitles` request** (via singleflight `ffprobe` backfill for pre-existing catalog items across all supported video containers: `mkv`, `mp4`, `m4v`, `mov`, `webm`, `avi`, `ts`, `m2ts`, `mts`, `3gp`, `3g2`) — Kadr indexes embedded text subtitle streams (`subrip`/`srt`, `text`, `ass`/`ssa`, `webvtt`/`vtt`, and MP4/MOV `mov_text`/`tx3g`). Bitmap subtitle streams (such as Blu-ray PGS `hdmv_pgs_subtitle` or DVD `dvd_subtitle`) are automatically ignored so client text-track menus only list streamable WebVTT tracks, and generic muxer handler names (`SubtitleHandler`, `GPAC Streaming Text Handler`, `sbtl`, Apple `Core Media Subtitle`) are replaced with clean human-readable language labels (`English [SDH]`, `Arabic [Forced]`, `Track 2`).
+
+### 7.1b Audio Track Discovery (`GET /api/v1/items/{item_id}/audio-tracks`)
+
+Multi-language releases and Blu-ray remuxes frequently bundle several container audio streams (e.g. original language lossless audio, localized dubs, and director commentary). Clients discover all selectable audio streams for an item via `/audio-tracks`:
+
+- **Method & Route**: `GET /api/v1/items/{item_id}/audio-tracks`
+- **Headers**: `Authorization: Bearer <token>` (plus `X-Kadr-Unlocked: <token>` / `X-Library-Unlock-Token: <token>` or `?unlocked=<token>` for private libraries)
+- **Response (`200 OK` — `AudioStreamInfo[]`)**:
+
+```json
+[
+  {
+    "audio_index": 0,
+    "stream_index": 1,
+    "codec": "dts",
+    "channels": 6,
+    "language": "jpn",
+    "title": "Japanese 5.1 Surround",
+    "is_default": true,
+    "is_commentary": false
+  },
+  {
+    "audio_index": 1,
+    "stream_index": 2,
+    "codec": "aac",
+    "channels": 2,
+    "language": "eng",
+    "title": "English Dub",
+    "is_default": false,
+    "is_commentary": false
+  },
+  {
+    "audio_index": 2,
+    "stream_index": 3,
+    "codec": "aac",
+    "channels": 2,
+    "language": "eng",
+    "title": "Director Commentary",
+    "is_default": false,
+    "is_commentary": true
+  }
+]
+```
+
+#### `AudioStreamInfo` Fields, Lazy Singleflight Probing & HLS Selection:
+- **`audio_index`** (`u32`): **0-based audio-relative stream ordinal** (`0`, `1`, `2`, ... corresponding to `ffmpeg -map 0:a:<audio_index>`). Pass this exact value as `?audio_track=<audio_index>` on `GET /api/v1/media/{item_id}/hls/master.m3u8`.
+- **`stream_index`** (`u32`): Global 0-based `ffprobe` container stream index across video, audio, and subtitle streams (informational; **do not** pass `stream_index` to `?audio_track=`).
+- **`codec`** (`String`), **`channels`** (`u8`, optional — omitted when unknown), **`language`** (`String`, normalized ISO code or `"und"`), **`title`** (`String`, optional — omitted when unset), **`is_default`** (`bool`), **`is_commentary`** (`bool`).
+- **Lazy Singleflight `ffprobe` Persistence**:
+  - When `item.technical.audio_tracks` was already populated during library ingestion, Kadr returns the persisted list immediately from SQLite.
+  - For pre-existing local on-disk catalog items whose `audio_tracks` column is still empty (excluding virtual `plugin://` items and `live_channel` streams), `AudioProbeService` coalesces concurrent requests per `item_id` behind a singleflight mutex, probes the container once via `ffprobe`, and persists discovered `AudioStreamInfo[]` back into SQLite (`media_repo.update_audio_tracks`). If `ffprobe` finds no streams or is unavailable, Kadr synthesizes a single fallback Track `0` (`audio_index: 0`, `language: "und"`, `is_default: true`) from `item.technical.audio_codec` and `audio_channels` (or `[]` for silent video-only files).
+- **Private Library Lock Enforcement**: Returns **`403 Forbidden`** (`{"error": "LIBRARY_LOCKED"}`) before probing disk if the item belongs to a locked private library without a valid unlock token, and **`404 Not Found`** (`{"error": "Media item not found"}`) if `{item_id}` does not exist.
+- **Switching Audio Tracks in Client Players**: Because standard HTML5 `<video>` Direct Play cannot reliably switch secondary container audio streams across browsers (and secondary tracks often use `dts`/`ac3`/`eac3`), selecting `audio_index > 0` (or any track with an unsupported codec) should start or reload HLS at `?audio_track=<audio_index>&start_time=<Math.floor(effectiveCurrentTime)>` (plus `video_codec=none` for audio-only `music`/`audiobook` items).
 
 ### 7.2 WebVTT Subtitle Streaming
 
@@ -2679,10 +2792,12 @@ try {
 | `400 Bad Request` | `{"error": "item_ids must be an exact permutation of visible playlist items"}` | `PUT /api/v1/playlists/{id}/items/order` omits visible items, contains duplicates, or includes unknown/locked IDs. | Refresh `GET /api/v1/playlists/{id}` and submit an exact permutation of visible `card.id`s. |
 | `400 Bad Request` | `{"error": "Invalid item_type '...'"}` | `GET /api/v1/search` called with an unrecognized `item_type` filter. | Pass `all` or a valid `MediaType` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`). |
 | `400 Bad Request` | `{"error": "Invalid filter rule tree in widget '...': ..."}` / `FilterValidationError` message | `PUT /api/v1/screens/{screen_id}` or `POST /api/v1/widgets/preview` submitted a `rule_tree` exceeding depth `5` / `32` rules, with an empty group, empty/overlong text or list, negative duration, or `min > max`. | Validate rule tree structure and range bounds in the rule builder UI before saving or previewing. |
+| `400 Bad Request` | `{"error": "Invalid audio_track index"}` | `GET /api/v1/media/{id}/hls/master.m3u8` called with `?audio_track=<n>` not present in `AudioStreamInfo[]`. | Select `audio_index` values returned by `GET /api/v1/items/{id}/audio-tracks`. |
+| `400 Bad Request` | `{"error": "Live items do not support watch state"}` / `{"error": "item_ids must contain 1..=500 items"}` | `PUT /api/v1/playback/states/{id}` called on a `live_channel` item, or `PUT /api/v1/playback/states` called with `0` or `> 500` unique `item_ids`. | Hide Mark Watched on `live_channel` items and chunk batch watch-state updates into slices of `<= 500` unique IDs. |
 | `400 Bad Request` | `{"error": "TMDB_NOT_CONFIGURED", "message": "..."}` / `"INVALID_TITLE"` / `"INVALID_RATING"` / `"BLOCKED_URL"` / `"UNSUPPORTED_IMAGE"` / `"ARTWORK_TOO_LARGE"` | TMDb disabled or missing API key on `/tmdb/*`, empty title or out-of-range rating (`0.0..=10.0`) on `PATCH /api/v1/items/{id}/metadata`, or rejected custom artwork URL. | Prompt admin to configure TMDb under `Administration > Metadata & TMDb` or validate form inputs. |
 | `401 Unauthorized` | `{"error": "Missing authorization token"}` / `{"error": "Invalid or expired token"}` / Invalid PIN | Missing, invalid, or expired JWT (`Authorization: Bearer` / `?token=`), or incorrect profile PIN. | Prompt user for profile PIN or re-login. |
 | `403 Forbidden` | `{"error": "Forbidden"}` | Non-owner, non-admin caller attempting to update, add/remove/reorder items, or delete another user's public playlist. | Hide edit/reorder/delete controls whenever `summary.is_editable == false`. |
-| `403 Forbidden` | `{"error": "LIBRARY_LOCKED"}` | Request accesses `/stream/{id}`, `/hls/*`, `/storyboard*`, `/frame`, `/items/{id}`, `/libraries/{id}/folders`, or adds/removes a locked private-library item in a playlist without a valid unlock token. | Present 4-digit Library PIN dialog, call `POST /api/v1/libraries/{id}/unlock`, attach `X-Kadr-Unlocked` / `X-Library-Unlock-Token` (or `?unlocked=`), and retry. |
+| `403 Forbidden` | `{"error": "LIBRARY_LOCKED"}` | Request accesses `/stream/{id}`, `/hls/*`, `/storyboard*`, `/frame`, `/items/{id}`, `/items/{id}/audio-tracks`, `/playback/states*`, `/libraries/{id}/folders`, or adds/removes a locked private-library item in a playlist without a valid unlock token. | Present 4-digit Library PIN dialog, call `POST /api/v1/libraries/{id}/unlock`, attach `X-Kadr-Unlocked` / `X-Library-Unlock-Token` (or `?unlocked=`), and retry. |
 | `404 Not Found` | `{"error": "Playlist not found"}` | Playlist UUID does not exist, or playlist is private (`is_public == false`) and owned by another user. | Remove stale playlist reference and navigate back to Playlists overview. |
 | `404 Not Found` | `{"error": "Media item not found"}` / `{"error": "Item not found in playlist"}` / `{"error": "Media file missing from disk"}` | Referenced `media_item_id`, `library_id`, folder, subtitle, HLS session, or underlying media file does not exist. | Display a friendly error state; refresh playlist or catalog view. |
 | `404 Not Found` | `{"error": "Media item has no video stream"}` / `{"error": "Storyboard sheet index out of range"}` / `{"error": "Storyboard sheet not found"}` / `{"error": "Frame not found"}` | Storyboard or `/frame` requested for a plugin item, `LiveChannel`, audio/container item, `duration_seconds <= 0`, `.novideo` file, or out-of-range sheet index. | Disable visual scrub thumbnails for the active session and show timestamp pill only. |
