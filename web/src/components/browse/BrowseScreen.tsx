@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type FC } from 'react';
+import { useState, useEffect, useCallback, useRef, type FC } from 'react';
 import { Loader2, AlertCircle, RotateCcw, Folder, LayoutGrid } from 'lucide-react';
 import type { ScreenLayout, CardViewModel, WidgetNode } from '../../types';
 import { api } from '../../api/client';
@@ -97,17 +97,26 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
     }
   };
 
+  const refreshSeqRef = useRef(0);
+
   const fetchScreen = useCallback(async () => {
+    const seq = ++refreshSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       const data = await api.getScreen(screenId);
-      setLayout(data);
+      if (seq === refreshSeqRef.current) {
+        setLayout(data);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Failed to load screen layout: ${msg}`);
+      if (seq === refreshSeqRef.current) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        setError(`Failed to load screen layout: ${msg}`);
+      }
     } finally {
-      setLoading(false);
+      if (seq === refreshSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [screenId]);
 
@@ -120,10 +129,11 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
     let isMounted = true;
     const refreshHome = () => {
       if (typeof api.getScreen !== 'function') return;
+      const seq = ++refreshSeqRef.current;
       api
         .getScreen('home')
         .then((data) => {
-          if (isMounted && data) {
+          if (isMounted && seq === refreshSeqRef.current && data) {
             setLayout(data);
           }
         })

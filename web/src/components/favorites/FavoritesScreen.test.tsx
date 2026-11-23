@@ -115,6 +115,8 @@ describe('FavoritesScreen', () => {
 
     expect(getFavoritesSpy).toHaveBeenLastCalledWith({
       sort: 'favorited_at:desc',
+      limit: 60,
+      offset: 0,
     });
 
     // Verify all 6 filter pills render with aria-pressed
@@ -139,6 +141,8 @@ describe('FavoritesScreen', () => {
       expect(getFavoritesSpy).toHaveBeenLastCalledWith({
         item_type: 'movie',
         sort: 'favorited_at:desc',
+        limit: 60,
+        offset: 0,
       });
     });
 
@@ -148,6 +152,8 @@ describe('FavoritesScreen', () => {
       expect(getFavoritesSpy).toHaveBeenLastCalledWith({
         item_type: 'live_channel',
         sort: 'favorited_at:desc',
+        limit: 60,
+        offset: 0,
       });
     });
 
@@ -157,6 +163,8 @@ describe('FavoritesScreen', () => {
       expect(getFavoritesSpy).toHaveBeenLastCalledWith({
         item_type: 'live_channel',
         sort: 'rating:desc',
+        limit: 60,
+        offset: 0,
       });
     });
   });
@@ -314,5 +322,70 @@ describe('FavoritesScreen', () => {
 
     expect(screen.getByRole('button', { name: /Play All/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Shuffle/i })).toBeDisabled();
+  });
+
+  it('paginates with Load More when total_count exceeds loaded items, deduplicates by card.id, and omits WatchStateButton on season cards', async () => {
+    const seasonItem: FavoriteItemView = {
+      favorited_at: 1700001500,
+      duration_seconds: 0,
+      card: {
+        id: 205,
+        title: 'Severance Season 1',
+        subtitle: '9 Episodes',
+        media_type: 'season',
+        is_favorite: true,
+      },
+    };
+
+    const getFavoritesSpy = vi
+      .spyOn(api, 'getFavorites')
+      .mockResolvedValueOnce({
+        items: [movieItem, seasonItem],
+        total_count: 3,
+        locked_item_count: 0,
+      })
+      .mockResolvedValueOnce({
+        items: [movieItem, episodeItem],
+        total_count: 3,
+        locked_item_count: 1,
+      });
+
+    render(
+      <FavoritesScreen
+        currentUser={currentUser}
+        onPlayItem={vi.fn()}
+        onPlayQueue={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Arrival')).toBeInTheDocument();
+      expect(screen.getByText('Severance Season 1')).toBeInTheDocument();
+    });
+
+    // Season cards must not render WatchStateButton
+    expect(
+      screen.queryByRole('button', { name: /Mark Severance Season 1 as/i })
+    ).not.toBeInTheDocument();
+
+    const loadMoreBtn = screen.getByRole('button', { name: /^Load More$/i });
+    expect(loadMoreBtn).toBeInTheDocument();
+    expect(loadMoreBtn.className).toContain('min-h-7');
+
+    fireEvent.click(loadMoreBtn);
+
+    await waitFor(() => {
+      expect(getFavoritesSpy).toHaveBeenLastCalledWith({
+        sort: 'favorited_at:desc',
+        limit: 60,
+        offset: 2,
+      });
+      expect(screen.getByText('Good News About Hell')).toBeInTheDocument();
+      expect(screen.getByText('1 in locked libraries')).toBeInTheDocument();
+    });
+
+    // Duplicate movieItem was deduplicated; total loaded items == 3 == total_count -> Load More hides
+    expect(screen.getAllByText('Arrival')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /^Load More$/i })).not.toBeInTheDocument();
   });
 });

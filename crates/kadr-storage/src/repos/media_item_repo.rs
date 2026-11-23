@@ -928,7 +928,7 @@ impl MediaItemRepository {
     }
 
     /// Deduplicates media items in storage that point to the same physical file on disk (via symlinks, hardlinks, or alias paths).
-    /// Preserves user playback states by migrating them to the canonical item.
+    /// Preserves user playback states, playlist items, and user favorites by migrating them to the canonical item.
     pub async fn deduplicate_media_items(&self) -> Result<usize> {
         let conn = self.pool.get().await?;
         conn.interact(|c| {
@@ -1000,6 +1000,27 @@ impl MediaItemRepository {
                     "DELETE FROM user_playback_states WHERE media_item_id = ?1",
                     rusqlite::params![del_id],
                 );
+                tx.execute(
+                    "UPDATE user_favorites \
+                     SET favorited_at = MIN(favorited_at, ( \
+                         SELECT del_uf.favorited_at FROM user_favorites del_uf \
+                         WHERE del_uf.user_id = user_favorites.user_id AND del_uf.media_item_id = ?2 \
+                     )) \
+                     WHERE media_item_id = ?1 \
+                       AND EXISTS ( \
+                           SELECT 1 FROM user_favorites del_uf \
+                           WHERE del_uf.user_id = user_favorites.user_id AND del_uf.media_item_id = ?2 \
+                       )",
+                    rusqlite::params![keep_id, del_id],
+                )?;
+                tx.execute(
+                    "UPDATE OR IGNORE user_favorites SET media_item_id = ?1 WHERE media_item_id = ?2",
+                    rusqlite::params![keep_id, del_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM user_favorites WHERE media_item_id = ?1",
+                    rusqlite::params![del_id],
+                )?;
                 let _ = tx.execute(
                     "DELETE FROM media_subtitles WHERE media_item_id = ?1",
                     rusqlite::params![del_id],

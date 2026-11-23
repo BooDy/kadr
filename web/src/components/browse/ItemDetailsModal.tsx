@@ -34,7 +34,10 @@ import {
   emitWatchStateChanged,
   isCardWatched,
 } from '../../utils/watchStateEvents';
-import { applyFavoriteToCard } from '../../utils/favoriteEvents';
+import {
+  applyFavoriteToCard,
+  onFavoriteChanged,
+} from '../../utils/favoriteEvents';
 import {
   formatChannelLayout,
   formatLanguageCode,
@@ -335,6 +338,37 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
       isMounted = false;
     };
   }, [isOpen, itemId, initialDetails]);
+
+  useEffect(() => {
+    if (!isOpen || itemId === null) return;
+    return onFavoriteChanged(({ itemId: changedId, isFavorite }) => {
+      setDetails((prev) => {
+        if (!prev) return prev;
+        const cardMatches = prev.card?.id === changedId;
+        const episodeMatches = Boolean(
+          prev.episodes?.some((ep) => ep.id === changedId)
+        );
+        if (!cardMatches && !episodeMatches) return prev;
+        return {
+          ...prev,
+          card: cardMatches
+            ? applyFavoriteToCard(prev.card, isFavorite)
+            : prev.card,
+          ...(prev.episodes
+            ? {
+                episodes: episodeMatches
+                  ? prev.episodes.map((ep) =>
+                      ep.id === changedId
+                        ? applyFavoriteToCard(ep, isFavorite)
+                        : ep
+                    )
+                  : prev.episodes,
+              }
+            : {}),
+        };
+      });
+    });
+  }, [isOpen, itemId]);
 
   // Handle escape key
   useEffect(() => {

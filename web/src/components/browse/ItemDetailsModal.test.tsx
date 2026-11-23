@@ -596,6 +596,28 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
     expect(
       screen.getByRole('button', { name: 'Add Live Sports to favorites' })
     ).toHaveAttribute('aria-pressed', 'false');
+
+    // External favorite events sync an open ItemDetailsModal's card & episodes
+    const { emitFavoriteChanged } = await import('../../utils/favoriteEvents');
+    rerender(
+      <ItemDetailsModal
+        itemId={10}
+        initialDetails={mockShowDetails}
+        onClose={vi.fn()}
+      />
+    );
+    emitFavoriteChanged(10, true);
+    emitFavoriteChanged(102, true);
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', {
+          name: 'Remove What We Do in the Shadows from favorites',
+        })
+      ).toHaveAttribute('aria-pressed', 'true');
+      expect(
+        screen.getByRole('button', { name: 'Remove The Lamp from favorites' })
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
   });
 });
 

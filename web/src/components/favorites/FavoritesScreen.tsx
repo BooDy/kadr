@@ -59,6 +59,8 @@ const TYPE_FILTER_PILLS: { value: FavoriteFilterType; label: string }[] = [
   { value: 'live_channel', label: 'Live Channels' },
 ];
 
+const PAGE_SIZE = 60;
+
 const FAVORITES_SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'favorited_at:desc', label: 'Recently Favorited' },
   { value: 'favorited_at:asc', label: 'Oldest Favorited' },
@@ -67,6 +69,18 @@ const FAVORITES_SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'rating:desc', label: 'Rating' },
   { value: 'duration_seconds:asc', label: 'Duration (Shortest)' },
 ];
+
+function dedupeFavoriteItems(items: FavoriteItemView[]): FavoriteItemView[] {
+  const seen = new Set<number>();
+  const out: FavoriteItemView[] = [];
+  for (const item of items) {
+    if (!seen.has(item.card.id)) {
+      seen.add(item.card.id);
+      out.push(item);
+    }
+  }
+  return out;
+}
 
 function isPlayableFavorite(item: FavoriteItemView): boolean {
   return item.card.media_type !== 'show' && item.card.media_type !== 'season';
@@ -159,15 +173,17 @@ const FavoritePosterCard: FC<FavoritePosterCardProps> = ({ card, onSelect }) => 
             variant="icon"
             alwaysVisible
           />
-          {card.media_type !== 'show' && card.media_type !== 'live_channel' && (
-            <WatchStateButton
-              itemId={card.id}
-              title={card.title}
-              mediaType={card.media_type}
-              watched={watched}
-              variant="icon"
-            />
-          )}
+          {card.media_type !== 'show' &&
+            card.media_type !== 'season' &&
+            card.media_type !== 'live_channel' && (
+              <WatchStateButton
+                itemId={card.id}
+                title={card.title}
+                mediaType={card.media_type}
+                watched={watched}
+                variant="icon"
+              />
+            )}
         </div>
 
         {hasProgress && !watched && (
@@ -215,7 +231,10 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
     lockedCount: 0,
   });
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [hasMorePages, setHasMorePages] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(true);
@@ -236,18 +255,27 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
     }
     const reqId = ++requestIdRef.current;
     setLoading(true);
+    setLoadingMore(false);
+    setHasMorePages(true);
     setError(null);
+    setLoadMoreError(null);
     try {
       const res = await api.getFavorites({
         ...(itemType !== 'all' ? { item_type: itemType } : {}),
         sort,
+        limit: PAGE_SIZE,
+        offset: 0,
       });
       if (!mountedRef.current || reqId !== requestIdRef.current) return;
+      const incoming = res.items || [];
       setData({
-        items: res.items || [],
+        items: dedupeFavoriteItems(incoming),
         totalCount: res.total_count ?? 0,
         lockedCount: res.locked_item_count ?? 0,
       });
+      if (incoming.length === 0) {
+        setHasMorePages(false);
+      }
     } catch (err) {
       if (!mountedRef.current || reqId !== requestIdRef.current) return;
       setError(describeApiError(err));
@@ -257,6 +285,51 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
       }
     }
   }, [itemType, sort]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (
+      typeof api.getFavorites !== 'function' ||
+      loading ||
+      loadingMore
+    ) {
+      return;
+    }
+    const activeReqId = requestIdRef.current;
+    const offset = itemsRef.current.length;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const res = await api.getFavorites({
+        ...(itemType !== 'all' ? { item_type: itemType } : {}),
+        sort,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      if (!mountedRef.current || activeReqId !== requestIdRef.current) return;
+      const incoming = res.items || [];
+      if (incoming.length === 0) {
+        setHasMorePages(false);
+      }
+      setData((prev) => {
+        const merged = dedupeFavoriteItems([...prev.items, ...incoming]);
+        if (merged.length === prev.items.length) {
+          setHasMorePages(false);
+        }
+        return {
+          items: merged,
+          totalCount: res.total_count ?? prev.totalCount,
+          lockedCount: res.locked_item_count ?? prev.lockedCount,
+        };
+      });
+    } catch (err) {
+      if (!mountedRef.current || activeReqId !== requestIdRef.current) return;
+      setLoadMoreError(describeApiError(err));
+    } finally {
+      if (mountedRef.current && activeReqId === requestIdRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [itemType, sort, loading, loadingMore]);
 
   useEffect(() => {
     loadFavorites();
@@ -450,15 +523,45 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-          {data.items.map((item) => (
-            <FavoritePosterCard
-              key={item.card.id}
-              card={item.card}
-              onSelect={() => setSelectedItemId(item.card.id)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+            {data.items.map((item) => (
+              <FavoritePosterCard
+                key={item.card.id}
+                card={item.card}
+                onSelect={() => setSelectedItemId(item.card.id)}
+              />
+            ))}
+          </div>
+
+          {hasMorePages && data.items.length < data.totalCount && (
+            <div className="flex flex-col items-center gap-2 pt-4">
+              {loadMoreError && (
+                <p role="alert" className="text-xs text-highlight">
+                  {loadMoreError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="min-w-7 min-h-7 inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-panel hover:bg-panel-hover text-sm font-semibold text-text-main border border-border-subtle transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2
+                      aria-hidden="true"
+                      className="w-4 h-4 animate-spin text-cta"
+                    />
+                    <span>Loading...</span>
+                  </>
+                ) : (
+                  'Load More'
+                )}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <ItemDetailsModal

@@ -546,6 +546,29 @@ async fn list_favorites_sorting_item_types_episodes_and_private_library_isolatio
     assert_eq!(priv_locked_total, 0);
     assert_eq!(priv_locked_cnt, 2);
 
+    // Filter consistency on locked_count: exclude_private=true and exclude_library_ids
+    let exclude_priv_cfg = WidgetFilterConfig {
+        exclude_private: true,
+        ..Default::default()
+    };
+    let (_, excl_priv_total, excl_priv_locked) = fav_repo
+        .list_favorites("u1", None, None, 10, 0, None, &[], Some(&exclude_priv_cfg))
+        .await
+        .unwrap();
+    assert_eq!(excl_priv_total, 3);
+    assert_eq!(excl_priv_locked, 0);
+
+    let exclude_lib_cfg = WidgetFilterConfig {
+        exclude_library_ids: vec!["lib-priv".to_string()],
+        ..Default::default()
+    };
+    let (_, excl_lib_total, excl_lib_locked) = fav_repo
+        .list_favorites("u1", None, None, 10, 0, None, &[], Some(&exclude_lib_cfg))
+        .await
+        .unwrap();
+    assert_eq!(excl_lib_total, 3);
+    assert_eq!(excl_lib_locked, 0);
+
     // 7. Unlocking lib-priv reveals private items and drops locked_count to 0
     let unlocked = vec!["lib-priv".to_string()];
     let (all_items, all_total, all_locked) = fav_repo
@@ -1034,4 +1057,144 @@ async fn search_repository_populates_per_user_is_favorite() {
         .await
         .unwrap();
     assert!(!u1_after.items[0].is_favorite);
+}
+
+#[tokio::test]
+async fn deduplicate_media_items_preserves_and_merges_user_favorites() {
+    let pool = create_in_memory_pool().unwrap();
+    initialize_database(&pool).await.unwrap();
+
+    let user_repo = UserRepository::new(pool.clone());
+    let lib_repo = LibraryRepository::new(pool.clone());
+    let media_repo = MediaItemRepository::new(pool.clone());
+    let fav_repo = FavoritesRepository::new(pool.clone());
+
+    for (uid, uname) in [
+        ("u_del_only", "alice"),
+        ("u_both_del_earlier", "bob"),
+        ("u_both_keep_earlier", "carol"),
+        ("u_keep_only", "dave"),
+    ] {
+        user_repo
+            .create(&User {
+                id: uid.to_string(),
+                username: uname.to_string(),
+                pin_hash: "hash".to_string(),
+                role: UserRole::Standard,
+                created_at: 100,
+            })
+            .await
+            .unwrap();
+    }
+
+    let temp_dir = TempDir::new().unwrap();
+    let real_file = temp_dir.path().join("canonical_movie.mkv");
+    std::fs::File::create(&real_file).unwrap();
+
+    let alias_dir = temp_dir.path().join("nested_alias");
+    std::fs::create_dir(&alias_dir).unwrap();
+    let alias_file = alias_dir.join("..").join("canonical_movie.mkv");
+
+    lib_repo
+        .insert(&Library {
+            id: "lib-dedup".to_string(),
+            name: "Dedup Cinema".to_string(),
+            path: temp_dir.path().to_path_buf(),
+            paths: vec![temp_dir.path().to_path_buf()],
+            media_type: MediaType::Movie,
+            is_private: false,
+            pin_hash: None,
+            created_at: 100,
+        })
+        .await
+        .unwrap();
+
+    let keep_id = insert_and_get_id(
+        &media_repo,
+        make_item(
+            "lib-dedup",
+            MediaType::Movie,
+            "Canonical Film",
+            &real_file.to_string_lossy(),
+            1000,
+            Some(8.4),
+            vec!["Sci-Fi"],
+        ),
+    )
+    .await;
+
+    let del_id = insert_and_get_id(
+        &media_repo,
+        make_item(
+            "lib-dedup",
+            MediaType::Movie,
+            "Duplicate Alias Film",
+            &alias_file.to_string_lossy(),
+            1001,
+            Some(8.4),
+            vec!["Sci-Fi"],
+        ),
+    )
+    .await;
+    assert_ne!(keep_id, del_id);
+
+    // 1. Single-side on del_id -> must migrate to keep_id with original favorited_at
+    fav_repo
+        .add_favorite("u_del_only", del_id, 1_700_000_250)
+        .await
+        .unwrap();
+
+    // 2. Dual-side where del_id was favorited EARLIER than keep_id -> MIN(favorited_at) = 1_700_000_100
+    fav_repo
+        .add_favorite("u_both_del_earlier", keep_id, 1_700_000_400)
+        .await
+        .unwrap();
+    fav_repo
+        .add_favorite("u_both_del_earlier", del_id, 1_700_000_100)
+        .await
+        .unwrap();
+
+    // 3. Dual-side where keep_id was favorited EARLIER than del_id -> MIN(favorited_at) = 1_700_000_050
+    fav_repo
+        .add_favorite("u_both_keep_earlier", keep_id, 1_700_000_050)
+        .await
+        .unwrap();
+    fav_repo
+        .add_favorite("u_both_keep_earlier", del_id, 1_700_000_900)
+        .await
+        .unwrap();
+
+    // 4. Single-side on keep_id -> remains intact
+    fav_repo
+        .add_favorite("u_keep_only", keep_id, 1_700_000_333)
+        .await
+        .unwrap();
+
+    let deduplicated = media_repo.deduplicate_media_items().await.unwrap();
+    assert!(deduplicated >= 1);
+    assert!(media_repo.get_by_id(del_id).await.unwrap().is_none());
+    assert!(media_repo.get_by_id(keep_id).await.unwrap().is_some());
+
+    for (uid, expected_ts) in [
+        ("u_del_only", 1_700_000_250i64),
+        ("u_both_del_earlier", 1_700_000_100i64),
+        ("u_both_keep_earlier", 1_700_000_050i64),
+        ("u_keep_only", 1_700_000_333i64),
+    ] {
+        assert!(
+            fav_repo.is_favorite(uid, keep_id).await.unwrap(),
+            "expected keep_id favorite to survive for {uid}"
+        );
+        assert!(!fav_repo.is_favorite(uid, del_id).await.unwrap());
+        let (items, total, _) = fav_repo
+            .list_favorites(uid, None, None, 10, 0, None, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(total, 1, "expected exactly 1 favorite for {uid}");
+        assert_eq!(items[0].1.id, Some(keep_id));
+        assert_eq!(
+            items[0].0, expected_ts,
+            "expected preserved MIN(favorited_at) for {uid}"
+        );
+    }
 }

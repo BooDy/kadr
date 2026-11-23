@@ -223,4 +223,54 @@ describe('FavoriteButton', () => {
       is_favorite: true,
     });
   });
+
+  it('ignores stale rollback and resets busy when itemId changes while request is in flight', async () => {
+    let rejectFirst!: (err: Error) => void;
+    vi.spyOn(api, 'addFavorite').mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        })
+    );
+    const onToggled = vi.fn();
+
+    const { rerender } = render(
+      <FavoriteButton
+        itemId={10}
+        title="Item Ten"
+        isFavorite={false}
+        onToggled={onToggled}
+      />
+    );
+
+    const firstBtn = screen.getByRole('button', { name: 'Add Item Ten to favorites' });
+    fireEvent.click(firstBtn);
+    expect(
+      screen.getByRole('button', { name: 'Remove Item Ten from favorites' })
+    ).toBeDisabled();
+
+    // Switch to a new item while Item Ten's request is still pending
+    onToggled.mockClear();
+    rerender(
+      <FavoriteButton
+        itemId={20}
+        title="Item Twenty"
+        isFavorite={true}
+        onToggled={onToggled}
+      />
+    );
+
+    const secondBtn = screen.getByRole('button', { name: 'Remove Item Twenty from favorites' });
+    expect(secondBtn).not.toBeDisabled();
+    expect(secondBtn).toHaveAttribute('aria-pressed', 'true');
+
+    // Reject Item Ten's stale request -> must NOT clobber Item Twenty
+    rejectFirst(new Error('stale network failure'));
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Remove Item Twenty from favorites' })
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+    expect(onToggled).not.toHaveBeenCalled();
+  });
 });

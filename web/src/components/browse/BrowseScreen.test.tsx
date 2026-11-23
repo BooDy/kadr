@@ -851,5 +851,75 @@ describe('BrowseScreen & Declarative Widgets', () => {
       }
     });
   });
+
+  it('ignores out-of-order home screen refresh responses so stale snapshots cannot overwrite newer ones', async () => {
+    const { emitFavoriteChanged } = await import('../../utils/favoriteEvents');
+    let resolveFirstRefresh!: (value: ScreenLayout) => void;
+    let resolveSecondRefresh!: (value: ScreenLayout) => void;
+
+    vi.spyOn(api, 'getScreen')
+      .mockResolvedValueOnce(mockHomeLayout)
+      .mockImplementationOnce(
+        () =>
+          new Promise<ScreenLayout>((resolve) => {
+            resolveFirstRefresh = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ScreenLayout>((resolve) => {
+            resolveSecondRefresh = resolve;
+          })
+      );
+
+    render(<BrowseScreen screenId="home" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Blade Runner 2049')).toBeInTheDocument();
+    });
+
+    // Trigger two rapid home refreshes
+    emitFavoriteChanged(101, true);
+    emitFavoriteChanged(102, true);
+
+    // Newer (2nd) refresh resolves first
+    resolveSecondRefresh({
+      id: 'home',
+      title: 'Home Cinema',
+      widgets: [
+        {
+          type: 'carousel',
+          id: 'home_favorites',
+          title: 'Newest Favorites Snapshot',
+          binding: { macro_type: 'favorites', limit: 20 },
+          items: [{ id: 102, title: 'Dune: Part Two', media_type: 'movie', is_favorite: true }],
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Newest Favorites Snapshot')).toBeInTheDocument();
+    });
+
+    // Older (1st) refresh resolves later -> must be ignored
+    resolveFirstRefresh({
+      id: 'home',
+      title: 'Home Cinema',
+      widgets: [
+        {
+          type: 'carousel',
+          id: 'home_favorites',
+          title: 'Stale Favorites Snapshot',
+          binding: { macro_type: 'favorites', limit: 20 },
+          items: [{ id: 101, title: 'Blade Runner 2049', media_type: 'movie', is_favorite: true }],
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Newest Favorites Snapshot')).toBeInTheDocument();
+      expect(screen.queryByText('Stale Favorites Snapshot')).toBeNull();
+    });
+  });
 });
 

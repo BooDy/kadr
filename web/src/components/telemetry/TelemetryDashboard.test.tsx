@@ -216,6 +216,27 @@ describe('TelemetryDashboard Component', () => {
       expect(screen.getByText(/subtitle:downloaded/i)).toBeDefined();
       expect(screen.getByText(/eng/i)).toBeDefined();
     });
+
+    // Named SSE listeners are registered for favorite:updated, playlist:updated, and plugin:error
+    expect(eventSource.listeners['favorite:updated']?.length).toBe(1);
+    expect(eventSource.listeners['playlist:updated']?.length).toBe(1);
+    expect(eventSource.listeners['plugin:error']?.length).toBe(1);
+
+    act(() => {
+      eventSource.emitEvent('favorite:updated', {
+        type: 'favorite:updated',
+        payload: {
+          user_id: 'user-1',
+          item_id: 101,
+          is_favorite: true,
+          timestamp: 1700000040,
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/favorite:updated/i)).toBeDefined();
+    });
   });
 
   it('updates telemetry metrics when system:telemetry SSE event is received', async () => {

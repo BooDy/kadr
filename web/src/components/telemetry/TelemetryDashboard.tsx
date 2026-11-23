@@ -129,6 +129,9 @@ export const TelemetryDashboard: FC = () => {
       'subtitle:downloaded',
       'session:synced',
       'system:telemetry',
+      'favorite:updated',
+      'playlist:updated',
+      'plugin:error',
     ];
 
     eventNames.forEach((name) => {

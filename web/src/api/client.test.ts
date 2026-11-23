@@ -1218,6 +1218,15 @@ describe('Favorites API & IsFavorite Filter AST', () => {
     );
     expect(badValue.node).toBeNull();
     expect(badValue.error).toMatch(/is_favorite/i);
+
+    const badOp = parseFilterNodeJson(
+      JSON.stringify({
+        kind: 'rule',
+        condition: { field: 'is_favorite', op: 'neq', value: true },
+      })
+    );
+    expect(badOp.node).toBeNull();
+    expect(badOp.error).toMatch(/is_favorite/i);
   });
 });
 

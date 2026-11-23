@@ -132,51 +132,69 @@ impl FavoritesRepository {
         let (order_clause, sort_needs_playback_join) =
             match sort.map(|s| s.trim().to_lowercase()).as_deref() {
                 Some("favorited_at:asc") | Some("favorited_at_asc") => {
-                    ("uf.favorited_at ASC, m.id ASC", false)
+                    ("uf.favorited_at ASC, uf.media_item_id ASC", false)
                 }
                 Some("favorited_at:desc") | Some("favorited_at_desc") | Some("") | None => {
-                    ("uf.favorited_at DESC, m.id DESC", false)
+                    ("uf.favorited_at DESC, uf.media_item_id DESC", false)
                 }
-                _ => resolve_sort_clause(sort, "uf.favorited_at DESC, m.id DESC"),
+                _ => resolve_sort_clause(sort, "uf.favorited_at DESC, uf.media_item_id DESC"),
             };
         let unlocked = unlocked_ids.to_vec();
         let now = current_epoch_secs();
 
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let mut locked_where =
-                vec!["uf.user_id = ?".to_string(), "l.is_private = 1".to_string()];
-            let mut locked_params = vec![Value::Text(uid.clone())];
+            let locked_count: i64 = if filters_owned.as_ref().is_some_and(|f| f.exclude_private) {
+                0
+            } else {
+                let mut locked_where =
+                    vec!["uf.user_id = ?".to_string(), "l.is_private = 1".to_string()];
+                let mut locked_params = vec![Value::Text(uid.clone())];
 
-            if !unlocked.is_empty() {
-                let ph = unlocked.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-                locked_where.push(format!("l.id NOT IN ({ph})"));
-                for id in &unlocked {
-                    locked_params.push(Value::Text(id.clone()));
+                if !unlocked.is_empty() {
+                    let ph = unlocked.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                    locked_where.push(format!("l.id NOT IN ({ph})"));
+                    for id in &unlocked {
+                        locked_params.push(Value::Text(id.clone()));
+                    }
                 }
-            }
-            if let Some(ref lid) = lib_id {
-                locked_where.push("m.library_id = ?".to_string());
-                locked_params.push(Value::Text(lid.clone()));
-            }
-            if let Some(it) = item_type_str {
-                locked_where.push("m.item_type = ?".to_string());
-                locked_params.push(Value::Text(it.to_string()));
-            }
+                if let Some(ref lid) = lib_id {
+                    locked_where.push("m.library_id = ?".to_string());
+                    locked_params.push(Value::Text(lid.clone()));
+                }
+                if let Some(ref f) = filters_owned {
+                    if !f.exclude_library_ids.is_empty() {
+                        let ph = f
+                            .exclude_library_ids
+                            .iter()
+                            .map(|_| "?")
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        locked_where.push(format!("m.library_id NOT IN ({ph})"));
+                        for excl_id in &f.exclude_library_ids {
+                            locked_params.push(Value::Text(excl_id.clone()));
+                        }
+                    }
+                }
+                if let Some(it) = item_type_str {
+                    locked_where.push("m.item_type = ?".to_string());
+                    locked_params.push(Value::Text(it.to_string()));
+                }
 
-            let locked_sql = format!(
-                "SELECT COUNT(*) \
-                 FROM user_favorites uf \
-                 JOIN media_items m ON m.id = uf.media_item_id \
-                 JOIN libraries l ON l.id = m.library_id \
-                 WHERE {}",
-                locked_where.join(" AND ")
-            );
-            let locked_count: i64 = c.query_row(
-                &locked_sql,
-                rusqlite::params_from_iter(locked_params),
-                |row| row.get(0),
-            )?;
+                let locked_sql = format!(
+                    "SELECT COUNT(*) \
+                     FROM user_favorites uf \
+                     JOIN media_items m ON m.id = uf.media_item_id \
+                     JOIN libraries l ON l.id = m.library_id \
+                     WHERE {}",
+                    locked_where.join(" AND ")
+                );
+                c.query_row(
+                    &locked_sql,
+                    rusqlite::params_from_iter(locked_params),
+                    |row| row.get(0),
+                )?
+            };
 
             let envelope =
                 build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);

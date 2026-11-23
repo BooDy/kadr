@@ -1,6 +1,7 @@
 import {
   useState,
   useEffect,
+  useRef,
   type FC,
   type MouseEvent,
   type KeyboardEvent,
@@ -29,9 +30,16 @@ export const FavoriteButton: FC<FavoriteButtonProps> = ({
 }) => {
   const [optimisticFavorite, setOptimisticFavorite] = useState(propIsFavorite);
   const [busy, setBusy] = useState(false);
+  const activeItemIdRef = useRef(itemId);
+  activeItemIdRef.current = itemId;
+  const prevItemIdRef = useRef(itemId);
 
   useEffect(() => {
     setOptimisticFavorite(propIsFavorite);
+    if (prevItemIdRef.current !== itemId) {
+      prevItemIdRef.current = itemId;
+      setBusy(false);
+    }
   }, [itemId, propIsFavorite]);
 
   const label = optimisticFavorite
@@ -41,6 +49,7 @@ export const FavoriteButton: FC<FavoriteButtonProps> = ({
   const handleToggle = async (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (busy) return;
+    const requestItemId = itemId;
     const prev = optimisticFavorite;
     const next = !prev;
     setOptimisticFavorite(next);
@@ -49,19 +58,23 @@ export const FavoriteButton: FC<FavoriteButtonProps> = ({
     try {
       if (next) {
         if (typeof api.addFavorite === 'function') {
-          await api.addFavorite(itemId);
+          await api.addFavorite(requestItemId);
         }
       } else {
         if (typeof api.removeFavorite === 'function') {
-          await api.removeFavorite(itemId);
+          await api.removeFavorite(requestItemId);
         }
       }
-      emitFavoriteChanged(itemId, next);
+      emitFavoriteChanged(requestItemId, next);
     } catch {
-      setOptimisticFavorite(prev);
-      onToggled?.(prev);
+      if (activeItemIdRef.current === requestItemId) {
+        setOptimisticFavorite(prev);
+        onToggled?.(prev);
+      }
     } finally {
-      setBusy(false);
+      if (activeItemIdRef.current === requestItemId) {
+        setBusy(false);
+      }
     }
   };
 
