@@ -530,4 +530,115 @@ describe('BrowseScreen & Declarative Widgets', () => {
 
     expect(onNavProp).toHaveBeenCalledWith('other-lib', 'OtherFolder');
   });
+
+  it('toggles card watched state without opening ItemDetailsModal, omits watch toggle on show/live_channel cards, and silently refreshes home screen', async () => {
+    const layoutWithMixedCards: ScreenLayout = {
+      id: 'home',
+      title: 'Home Cinema',
+      widgets: [
+        {
+          type: 'carousel',
+          id: 'continue_watching',
+          title: 'Continue Watching',
+          binding: { macro_type: 'continue_watching', limit: 10 },
+          items: [
+            {
+              id: 102,
+              title: 'Dune: Part Two',
+              media_type: 'movie',
+              playback_progress: 0.65,
+            },
+            {
+              id: 104,
+              title: 'Severance',
+              media_type: 'show',
+            },
+            {
+              id: 105,
+              title: 'Live News 24',
+              media_type: 'live_channel',
+            },
+          ],
+        },
+        {
+          type: 'grid',
+          id: 'top_movies',
+          title: 'Popular Movies',
+          columns: 4,
+          binding: { macro_type: 'top_rated', limit: 20 },
+          items: [
+            {
+              id: 102,
+              title: 'Dune: Part Two',
+              media_type: 'movie',
+              playback_progress: 0.65,
+            },
+          ],
+        },
+      ],
+    };
+
+    const getScreenSpy = vi
+      .spyOn(api, 'getScreen')
+      .mockResolvedValueOnce(layoutWithMixedCards)
+      .mockResolvedValueOnce({
+        ...layoutWithMixedCards,
+        widgets: [
+          {
+            ...layoutWithMixedCards.widgets[1],
+            items: [
+              {
+                id: 102,
+                title: 'Dune: Part Two',
+                media_type: 'movie',
+                playback_progress: 1,
+              },
+            ],
+          } as ScreenLayout['widgets'][number],
+        ],
+      });
+    const setSpy = vi.spyOn(api, 'setPlaybackState').mockResolvedValue({
+      user_id: 'u1',
+      media_item_id: 102,
+      playback_position_seconds: 0,
+      watch_state: 'completed',
+      last_watched_at: 1000,
+      play_count: 1,
+    });
+    const detailsSpy = vi.spyOn(api, 'getItemDetails');
+
+    render(<BrowseScreen screenId="home" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Dune: Part Two').length).toBe(2);
+    });
+
+    // Omit watch toggle on show container cards and live_channel cards
+    expect(screen.queryByRole('button', { name: /Mark Severance as/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Mark Live News 24 as/i })).toBeNull();
+
+    // Both carousel and grid render WatchStateButton for movie 102
+    const watchBtns = screen.getAllByRole('button', {
+      name: 'Mark Dune: Part Two as watched',
+    });
+    expect(watchBtns.length).toBe(2);
+
+    fireEvent.click(watchBtns[0]);
+
+    // Must not open ItemDetailsModal
+    expect(detailsSpy).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(setSpy).toHaveBeenCalledWith(102, true);
+      expect(getScreenSpy).toHaveBeenCalledTimes(2);
+    });
+
+    // Grid card synced to watched via watchStateEvents and Continue Watching refreshed away
+    await waitFor(() => {
+      expect(screen.queryByText('Continue Watching')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Mark Dune: Part Two as unwatched' })
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+  });
 });

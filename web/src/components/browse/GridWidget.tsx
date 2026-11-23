@@ -2,6 +2,12 @@ import { useState, useEffect, type FC } from 'react';
 import { Film, Loader2, Play } from 'lucide-react';
 import type { CardViewModel } from '../../types';
 import { api } from '../../api/client';
+import { WatchStateButton } from './WatchStateButton';
+import {
+  applyWatchStateToCard,
+  isCardWatched,
+  onWatchStateChanged,
+} from '../../utils/watchStateEvents';
 
 export interface GridWidgetProps {
   title?: string;
@@ -26,6 +32,7 @@ const GridCard: FC<GridCardProps> = ({ item, onClick }) => {
   const posterUrl =
     item.poster_url || (item.id ? api.getArtworkUrl(item.id, 'poster') : undefined);
 
+  const watched = isCardWatched(item);
   const hasProgress =
     typeof item.playback_progress === 'number' && item.playback_progress > 0;
   const progressPercent = hasProgress
@@ -79,8 +86,21 @@ const GridCard: FC<GridCardProps> = ({ item, onClick }) => {
           </div>
         )}
 
+        {/* Watch State Toggle */}
+        {item.media_type !== 'show' && item.media_type !== 'live_channel' && (
+          <div className="absolute top-2 right-2 z-20">
+            <WatchStateButton
+              itemId={item.id}
+              title={item.title}
+              mediaType={item.media_type}
+              watched={watched}
+              variant="icon"
+            />
+          </div>
+        )}
+
         {/* Resume Progress Bar */}
-        {hasProgress && (
+        {hasProgress && !watched && (
           <div className="absolute bottom-0 inset-x-0 h-1.5 bg-muted">
             <div
               className="h-full bg-accent"
@@ -161,6 +181,16 @@ export const GridWidget: FC<GridWidgetProps> = ({
       isMounted = false;
     };
   }, [initialItems, widgetId, screenId]);
+
+  useEffect(() => {
+    return onWatchStateChanged(({ itemIds, watched }) => {
+      setItems((prev) =>
+        prev.map((it) =>
+          itemIds.has(it.id) ? applyWatchStateToCard(it, watched) : it
+        )
+      );
+    });
+  }, []);
 
   const loadMore = async () => {
     if (!widgetId || loading) return;

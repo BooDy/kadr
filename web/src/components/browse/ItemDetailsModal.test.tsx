@@ -283,5 +283,224 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
       expect(screen.getByRole('dialog', { name: /Add Reunited to playlist/i })).toBeInTheDocument();
     });
   });
+
+  it('toggles single movie Mark Watched button to Watched via api.setPlaybackState and hides on live_channel', async () => {
+    const setSpy = vi.spyOn(api, 'setPlaybackState').mockResolvedValue({
+      user_id: 'u1',
+      media_item_id: 20,
+      playback_position_seconds: 0,
+      watch_state: 'completed',
+      last_watched_at: 1000,
+      play_count: 1,
+    });
+
+    const movieDetails: ItemDetailsPayload = {
+      card: {
+        id: 20,
+        title: 'Interstellar',
+        media_type: 'movie',
+        badge: 'RESUME',
+        playback_progress: 0.4,
+      },
+      overview: 'A team of explorers travel through a wormhole.',
+      genres: ['Sci-Fi'],
+      stream_url: '/api/v1/stream/20',
+      resume_position_seconds: 1200,
+    };
+
+    const { rerender } = render(
+      <ItemDetailsModal itemId={20} initialDetails={movieDetails} onClose={vi.fn()} />
+    );
+
+    expect(screen.getByText('Mark Watched')).toBeInTheDocument();
+    const watchBtn = screen.getByRole('button', { name: 'Mark Interstellar as watched' });
+    expect(watchBtn).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(watchBtn);
+
+    await waitFor(() => {
+      expect(setSpy).toHaveBeenCalledWith(20, true);
+    });
+    expect(screen.getByText('Watched')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Mark Interstellar as unwatched' })
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    // Hides watch controls completely for live_channel
+    rerender(
+      <ItemDetailsModal
+        itemId={30}
+        initialDetails={{
+          card: { id: 30, title: 'Live Sports', media_type: 'live_channel' },
+          genres: [],
+          stream_url: '/api/v1/stream/30',
+        }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(
+      screen.queryByRole('button', { name: /Mark Live Sports as/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('supports Mark Season Watched, Mark Series Watched batch actions, and per-episode watched toggle', async () => {
+    const batchSpy = vi
+      .spyOn(api, 'setPlaybackStatesBatch')
+      .mockResolvedValue({ updated: 2, watched: true });
+    const singleSpy = vi.spyOn(api, 'setPlaybackState').mockResolvedValue({
+      user_id: 'u1',
+      media_item_id: 201,
+      playback_position_seconds: 0,
+      watch_state: 'completed',
+      last_watched_at: 1000,
+      play_count: 1,
+    });
+
+    render(
+      <ItemDetailsModal
+        itemId={10}
+        initialDetails={mockShowDetails}
+        onClose={vi.fn()}
+        onPlayItem={vi.fn()}
+      />
+    );
+
+    // Selected season defaults to Season 4 (episodes 101, 102)
+    const seasonBtn = screen.getByRole('button', { name: 'Mark Season Watched' });
+    expect(seasonBtn).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(seasonBtn);
+
+    await waitFor(() => {
+      expect(batchSpy).toHaveBeenCalledWith([101, 102], true);
+    });
+    expect(screen.getByRole('button', { name: 'Season Watched' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    // Series still has unwatched Season 5 episode 201
+    expect(screen.getByRole('button', { name: 'Mark Series Watched' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+
+    // Switch to Season 5 and toggle episode 201 individually via row WatchStateButton
+    fireEvent.click(screen.getByRole('button', { name: /Season 5/i }));
+    const epBtn = screen.getByRole('button', { name: 'Mark Mall Stories as watched' });
+    fireEvent.click(epBtn);
+
+    await waitFor(() => {
+      expect(singleSpy).toHaveBeenCalledWith(201, true);
+    });
+
+    // Now all episodes across all seasons are watched!
+    expect(screen.getByRole('button', { name: 'Series Watched' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    // Clicking Series Watched marks entire series unwatched ([101, 102, 201], false)
+    batchSpy.mockResolvedValueOnce({ updated: 3, watched: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Series Watched' }));
+
+    await waitFor(() => {
+      expect(batchSpy).toHaveBeenLastCalledWith([101, 102, 201], false);
+    });
+    expect(screen.getByRole('button', { name: 'Mark Series Watched' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+
+    // Rolls back optimistic batch state if api.setPlaybackStatesBatch rejects
+    batchSpy.mockRejectedValueOnce(new Error('batch network failure'));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Series Watched' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Mark Series Watched' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+    });
+  });
+
+  it('renders technical audio stream badges from details.technical.audio_tracks and falls back to api.getAudioTracks', async () => {
+    const movieWithAudioTracks: ItemDetailsPayload = {
+      card: {
+        id: 50,
+        title: 'Spirited Away',
+        media_type: 'movie',
+      },
+      genres: ['Animation', 'Fantasy'],
+      stream_url: '/api/v1/stream/50',
+      technical: {
+        duration_seconds: 7500,
+        resolution: '1080p',
+        video_codec: 'h264',
+        audio_codec: 'eac3',
+        audio_channels: 6,
+        container: 'mkv',
+        audio_tracks: [
+          {
+            audio_index: 0,
+            stream_index: 1,
+            codec: 'aac',
+            channels: 2,
+            language: 'eng',
+            is_default: true,
+            is_commentary: false,
+          },
+          {
+            audio_index: 1,
+            stream_index: 2,
+            codec: 'eac3',
+            channels: 6,
+            language: 'jpn',
+            is_default: false,
+            is_commentary: false,
+          },
+        ],
+      },
+    };
+
+    const { unmount } = render(
+      <ItemDetailsModal itemId={50} initialDetails={movieWithAudioTracks} onClose={vi.fn()} />
+    );
+
+    expect(screen.getByText('Audio Streams')).toBeInTheDocument();
+    expect(screen.getByText('English • AAC Stereo')).toBeInTheDocument();
+    expect(screen.getByText('Japanese • EAC3 5.1')).toBeInTheDocument();
+
+    unmount();
+
+    // Fallback to api.getAudioTracks when details.technical.audio_tracks is absent
+    const getAudioSpy = vi.spyOn(api, 'getAudioTracks').mockResolvedValue([
+      {
+        audio_index: 0,
+        stream_index: 1,
+        codec: 'flac',
+        channels: 2,
+        language: 'fra',
+        is_default: true,
+        is_commentary: false,
+      },
+    ]);
+
+    render(
+      <ItemDetailsModal
+        itemId={51}
+        initialDetails={{
+          card: { id: 51, title: 'Amélie', media_type: 'movie' },
+          genres: ['Comedy'],
+          stream_url: '/api/v1/stream/51',
+          technical: { duration_seconds: 7320, container: 'mkv' },
+        }}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioSpy).toHaveBeenCalledWith(51);
+      expect(screen.getByText('French • FLAC Stereo')).toBeInTheDocument();
+    });
+  });
 });
 

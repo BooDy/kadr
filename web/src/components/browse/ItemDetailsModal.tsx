@@ -6,6 +6,7 @@ import {
   Download,
   Search,
   Check,
+  CheckCircle2,
   Loader2,
   Folder,
   ListPlus,
@@ -14,6 +15,7 @@ import {
   Lock,
 } from 'lucide-react';
 import type {
+  AudioStreamInfo,
   CardViewModel,
   ItemDetailsPayload,
   OnlineSubtitleMatch,
@@ -25,6 +27,28 @@ import { api } from '../../api/client';
 import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 import { MetadataEditorModal } from './MetadataEditorModal';
 import { IdentifyTmdbModal } from './IdentifyTmdbModal';
+import { WatchStateButton } from './WatchStateButton';
+import {
+  applyWatchStateToCard,
+  emitWatchStateChanged,
+  isCardWatched,
+} from '../../utils/watchStateEvents';
+import {
+  formatChannelLayout,
+  formatLanguageCode,
+} from '../../player/compatibility';
+
+function formatAudioStreamBadge(track: AudioStreamInfo): string {
+  const lang =
+    formatLanguageCode(track.language) ||
+    track.title?.trim() ||
+    `Track ${track.audio_index + 1}`;
+  const codecUpper = track.codec ? track.codec.toUpperCase() : '';
+  const layout = formatChannelLayout(track.channels);
+  const techPart = [codecUpper, layout].filter(Boolean).join(' ');
+  const base = [lang, techPart].filter(Boolean).join(' • ');
+  return track.is_commentary ? `${base} (Commentary)` : base;
+}
 
 export interface ItemDetailsModalProps {
   itemId: number | null;
@@ -41,6 +65,7 @@ interface EpisodeCardProps {
   episode: CardViewModel;
   onPlay: (id: number) => void;
   onAddToPlaylist: (episode: CardViewModel) => void;
+  onToggleWatched: (episodeId: number, watched: boolean) => void;
   formatDuration: (seconds?: number) => string | null;
 }
 
@@ -48,6 +73,7 @@ const EpisodeCard: FC<EpisodeCardProps> = ({
   episode,
   onPlay,
   onAddToPlaylist,
+  onToggleWatched,
   formatDuration,
 }) => {
   const [thumbFailed, setThumbFailed] = useState(false);
@@ -55,6 +81,7 @@ const EpisodeCard: FC<EpisodeCardProps> = ({
     episode.backdrop_url ||
     episode.poster_url ||
     (episode.id ? api.getArtworkUrl(episode.id, 'backdrop') : undefined);
+  const watched = isCardWatched(episode);
   const hasProgress =
     typeof episode.playback_progress === 'number' && episode.playback_progress > 0;
   const progressPercent = hasProgress
@@ -117,7 +144,7 @@ const EpisodeCard: FC<EpisodeCardProps> = ({
         )}
 
         {/* Progress bar */}
-        {hasProgress && (
+        {hasProgress && !watched && (
           <div className="absolute bottom-0 inset-x-0 h-1 bg-muted">
             <div
               className="h-full bg-accent"
@@ -153,8 +180,17 @@ const EpisodeCard: FC<EpisodeCardProps> = ({
         )}
       </div>
 
-      {/* 1-Click Play & Add to Playlist Buttons */}
+      {/* 1-Click Play, Watch Toggle & Add to Playlist Buttons */}
       <div className="self-end sm:self-center flex items-center gap-2 flex-shrink-0">
+        <WatchStateButton
+          itemId={episode.id}
+          title={episode.title}
+          mediaType={episode.media_type}
+          watched={watched}
+          variant="icon"
+          alwaysVisible
+          onToggled={(w) => onToggleWatched(episode.id, w)}
+        />
         <button
           type="button"
           aria-label={`Add ${episode.title} to playlist`}
@@ -189,9 +225,12 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
 }) => {
   const [details, setDetails] = useState<ItemDetailsPayload | null>(initialDetails ?? null);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
+  const [fetchedAudioTracks, setFetchedAudioTracks] = useState<AudioStreamInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'subtitles'>('details');
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [seriesBatchBusy, setSeriesBatchBusy] = useState(false);
+  const [seasonBatchBusy, setSeasonBatchBusy] = useState(false);
 
   // Subtitle search state
   const [searchLang, setSearchLang] = useState('');
@@ -216,6 +255,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
     if (!isOpen || itemId === null) {
       setDetails(null);
       setSubtitles([]);
+      setFetchedAudioTracks([]);
       setSearchResults([]);
       setSearchError(null);
       setDownloadSuccessMsg(null);
@@ -223,19 +263,44 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
       setBackdropFailed(false);
       setPosterFailed(false);
       setSelectedSeason(null);
+      setSeriesBatchBusy(false);
+      setSeasonBatchBusy(false);
       setPlaylistTarget(null);
       setIsMetadataEditorOpen(false);
       setIsIdentifyOpen(false);
       return;
     }
 
+    let isMounted = true;
+    setFetchedAudioTracks([]);
+
+    const maybeFetchAudioTracks = (target: ItemDetailsPayload | null | undefined) => {
+      if (
+        target &&
+        !(target.technical?.audio_tracks && target.technical.audio_tracks.length > 0) &&
+        target.card?.media_type !== 'show' &&
+        target.card?.media_type !== 'live_channel' &&
+        typeof api.getAudioTracks === 'function'
+      ) {
+        Promise.resolve(api.getAudioTracks(itemId))
+          .then((tracks) => {
+            if (isMounted && Array.isArray(tracks) && tracks.length > 0) {
+              setFetchedAudioTracks(tracks);
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
     if (initialDetails) {
       setDetails(initialDetails);
       setLoading(false);
-      return;
+      maybeFetchAudioTracks(initialDetails);
+      return () => {
+        isMounted = false;
+      };
     }
 
-    let isMounted = true;
     setLoading(true);
 
     Promise.all([api.getItemDetails(itemId), api.getSubtitles(itemId)])
@@ -244,6 +309,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
           setDetails(itemDetails);
           setSubtitles(tracks || []);
           setLoading(false);
+          maybeFetchAudioTracks(itemDetails);
         }
       })
       .catch(() => {
@@ -298,7 +364,91 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
 
   const episodesForCurrentSeason = episodesBySeason.get(currentSeason) || [];
 
+  const hasEpisodes = Boolean(details?.episodes && details.episodes.length > 0);
+  const allSeriesWatched = Boolean(
+    hasEpisodes && details!.episodes!.every((ep) => isCardWatched(ep))
+  );
+  const allSeasonWatched =
+    episodesForCurrentSeason.length > 0 &&
+    episodesForCurrentSeason.every((ep) => isCardWatched(ep));
+
+  const audioTracks =
+    details?.technical?.audio_tracks && details.technical.audio_tracks.length > 0
+      ? details.technical.audio_tracks
+      : fetchedAudioTracks;
+
   if (!isOpen || itemId === null) return null;
+
+  const handleToggleEpisodeWatched = (episodeId: number, watched: boolean) => {
+    setDetails((prev) =>
+      prev && prev.episodes
+        ? {
+            ...prev,
+            episodes: prev.episodes.map((ep) =>
+              ep.id === episodeId ? applyWatchStateToCard(ep, watched) : ep
+            ),
+          }
+        : prev
+    );
+  };
+
+  const handleToggleSeriesWatched = async () => {
+    if (!details?.episodes || details.episodes.length === 0 || seriesBatchBusy) return;
+    const targetIds = details.episodes.map((e) => e.id);
+    const nextWatched = !allSeriesWatched;
+    const previousEpisodes = details.episodes;
+    const idSet = new Set(targetIds);
+
+    setDetails((prev) =>
+      prev && prev.episodes
+        ? {
+            ...prev,
+            episodes: prev.episodes.map((ep) =>
+              idSet.has(ep.id) ? applyWatchStateToCard(ep, nextWatched) : ep
+            ),
+          }
+        : prev
+    );
+    setSeriesBatchBusy(true);
+    try {
+      await api.setPlaybackStatesBatch(targetIds, nextWatched);
+      emitWatchStateChanged(targetIds, nextWatched);
+    } catch {
+      setDetails((prev) => (prev ? { ...prev, episodes: previousEpisodes } : prev));
+    } finally {
+      setSeriesBatchBusy(false);
+    }
+  };
+
+  const handleToggleSeasonWatched = async () => {
+    if (episodesForCurrentSeason.length === 0 || seasonBatchBusy || !details?.episodes) {
+      return;
+    }
+    const targetIds = episodesForCurrentSeason.map((e) => e.id);
+    const nextWatched = !allSeasonWatched;
+    const previousEpisodes = details.episodes;
+    const idSet = new Set(targetIds);
+
+    setDetails((prev) =>
+      prev && prev.episodes
+        ? {
+            ...prev,
+            episodes: prev.episodes.map((ep) =>
+              idSet.has(ep.id) ? applyWatchStateToCard(ep, nextWatched) : ep
+            ),
+          }
+        : prev
+    );
+    setSeasonBatchBusy(true);
+    try {
+      await api.setPlaybackStatesBatch(targetIds, nextWatched);
+      emitWatchStateChanged(targetIds, nextWatched);
+    } catch {
+      setDetails((prev) => (prev ? { ...prev, episodes: previousEpisodes } : prev));
+    } finally {
+      setSeasonBatchBusy(false);
+    }
+  };
 
   const handleSearchSubtitles = async () => {
     if (itemId === null) return;
@@ -538,6 +688,55 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                     <ListPlus className="w-4 h-4 text-accent" />
                     <span>+ Playlist</span>
                   </button>
+                  {!hasEpisodes &&
+                    card?.media_type !== 'show' &&
+                    card?.media_type !== 'live_channel' && (
+                      <WatchStateButton
+                        itemId={itemId}
+                        title={card?.title || 'Item'}
+                        mediaType={card?.media_type}
+                        watched={isCardWatched(card)}
+                        variant="pill"
+                        onToggled={(w) =>
+                          setDetails((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  resume_position_seconds: undefined,
+                                  card: applyWatchStateToCard(prev.card, w),
+                                }
+                              : prev
+                          )
+                        }
+                      />
+                    )}
+                  {hasEpisodes && card?.media_type !== 'live_channel' && (
+                    <button
+                      type="button"
+                      aria-pressed={allSeriesWatched}
+                      disabled={seriesBatchBusy}
+                      onClick={handleToggleSeriesWatched}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                        allSeriesWatched
+                          ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
+                          : 'bg-panel hover:bg-panel-hover text-text-main border-border-subtle'
+                      }`}
+                    >
+                      {seriesBatchBusy ? (
+                        <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2
+                          aria-hidden="true"
+                          className={`w-4 h-4 ${
+                            allSeriesWatched ? 'text-emerald-400' : 'text-muted'
+                          }`}
+                        />
+                      )}
+                      <span>
+                        {allSeriesWatched ? 'Series Watched' : 'Mark Series Watched'}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handlePlayItem(itemId)}
                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-lg shadow-cta/25 hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
@@ -692,21 +891,54 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                             })}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPlaylistTarget({
-                                kind: 'season',
-                                showId: itemId,
-                                seasonNumber: currentSeason,
-                                title: `${card?.title || 'Show'} — Season ${currentSeason}`,
-                              })
-                            }
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-canvas/60 hover:bg-panel-hover border border-border-subtle text-xs font-medium text-text-main transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
-                          >
-                            <ListPlus className="w-3.5 h-3.5 text-accent" />
-                            <span>Add Season</span>
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {card?.media_type !== 'live_channel' && (
+                              <button
+                                type="button"
+                                aria-pressed={allSeasonWatched}
+                                disabled={seasonBatchBusy}
+                                onClick={handleToggleSeasonWatched}
+                                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                                  allSeasonWatched
+                                    ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
+                                    : 'bg-canvas/60 hover:bg-panel-hover border-border-subtle text-text-main'
+                                }`}
+                              >
+                                {seasonBatchBusy ? (
+                                  <Loader2
+                                    aria-hidden="true"
+                                    className="w-3.5 h-3.5 animate-spin"
+                                  />
+                                ) : (
+                                  <CheckCircle2
+                                    aria-hidden="true"
+                                    className={`w-3.5 h-3.5 ${
+                                      allSeasonWatched ? 'text-emerald-400' : 'text-muted'
+                                    }`}
+                                  />
+                                )}
+                                <span>
+                                  {allSeasonWatched ? 'Season Watched' : 'Mark Season Watched'}
+                                </span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPlaylistTarget({
+                                  kind: 'season',
+                                  showId: itemId,
+                                  seasonNumber: currentSeason,
+                                  title: `${card?.title || 'Show'} — Season ${currentSeason}`,
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-canvas/60 hover:bg-panel-hover border border-border-subtle text-xs font-medium text-text-main transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                            >
+                              <ListPlus className="w-3.5 h-3.5 text-accent" />
+                              <span>Add Season</span>
+                            </button>
+                          </div>
                         </div>
                       )}
 
@@ -724,6 +956,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                                 title: episode.title,
                               })
                             }
+                            onToggleWatched={handleToggleEpisodeWatched}
                             formatDuration={formatDuration}
                           />
                         ))}
@@ -777,6 +1010,22 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                         </div>
                       )}
                     </div>
+
+                    {audioTracks.length > 0 && (
+                      <div className="p-3 rounded-xl bg-canvas/40 border border-border-subtle space-y-2">
+                        <span className="text-muted text-[11px] block">Audio Streams</span>
+                        <div className="flex flex-wrap gap-2">
+                          {audioTracks.map((track) => (
+                            <span
+                              key={`${track.audio_index}-${track.stream_index}`}
+                              className="font-mono text-xs text-text-main bg-canvas/60 px-2.5 py-1 rounded-lg border border-border-subtle"
+                            >
+                              {formatAudioStreamBadge(track)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

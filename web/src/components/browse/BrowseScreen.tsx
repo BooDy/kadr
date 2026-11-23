@@ -7,6 +7,7 @@ import { CarouselWidget } from './CarouselWidget';
 import { GridWidget } from './GridWidget';
 import { ItemDetailsModal } from './ItemDetailsModal';
 import { FolderBrowser } from './FolderBrowser';
+import { applyWatchStateToCard, onWatchStateChanged } from '../../utils/watchStateEvents';
 
 export interface BrowseScreenProps {
   screenId: string;
@@ -45,6 +46,14 @@ const HydratedSpotlight: FC<{
       isMounted = false;
     };
   }, [widget.id, widget.data, screenId]);
+
+  useEffect(() => {
+    return onWatchStateChanged(({ itemIds, watched }) => {
+      setItem((prev) =>
+        prev && itemIds.has(prev.id) ? applyWatchStateToCard(prev, watched) : prev
+      );
+    });
+  }, []);
 
   if (!item) return null;
 
@@ -96,6 +105,26 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
   useEffect(() => {
     fetchScreen();
   }, [fetchScreen]);
+
+  useEffect(() => {
+    if (screenId !== 'home') return;
+    let isMounted = true;
+    const unsubscribe = onWatchStateChanged(() => {
+      if (typeof api.getScreen !== 'function') return;
+      api
+        .getScreen('home')
+        .then((data) => {
+          if (isMounted && data) {
+            setLayout(data);
+          }
+        })
+        .catch(() => {});
+    });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [screenId]);
 
   return (
     <div className="min-h-screen bg-canvas text-text-main space-y-8 pb-12">
