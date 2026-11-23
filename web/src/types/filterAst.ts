@@ -51,7 +51,8 @@ export type FilterField =
   | IntFilterField
   | 'rating'
   | TimeFilterField
-  | 'watch_state';
+  | 'watch_state'
+  | 'is_favorite';
 
 export type ScalarTextCondition =
   | { field: ScalarTextField; op: 'eq' | 'contains' | 'starts_with'; value: string }
@@ -79,6 +80,12 @@ export type WatchStateFilterCondition =
   | { field: 'watch_state'; op: 'state_in'; values: WatchStateValue[] }
   | { field: 'watch_state'; op: 'progress_between'; min: number; max: number };
 
+export interface IsFavoriteFilterCondition {
+  field: 'is_favorite';
+  op: 'eq';
+  value: boolean;
+}
+
 export type FilterCondition =
   | { field: 'library_id'; op: 'in'; values: string[] }
   | { field: 'item_type'; op: 'in'; values: FilterMediaType[] }
@@ -87,7 +94,8 @@ export type FilterCondition =
   | IntFilterCondition
   | RatingFilterCondition
   | TimeFilterCondition
-  | WatchStateFilterCondition;
+  | WatchStateFilterCondition
+  | IsFavoriteFilterCondition;
 
 export type FilterNode =
   | {
@@ -212,6 +220,18 @@ function validateConditionObject(cond: unknown): string | null {
   if (typeof c.field !== 'string') {
     return 'Rule condition is missing a string "field".';
   }
+
+  if (c.field === 'is_favorite') {
+    if (c.op !== undefined && c.op !== 'eq') {
+      return 'Condition "is_favorite" requires op "eq" (or omitted) and a boolean "value".';
+    }
+    if (typeof c.value !== 'boolean') {
+      return 'Condition "is_favorite" requires a boolean "value".';
+    }
+    c.op = 'eq';
+    return null;
+  }
+
   if (typeof c.op !== 'string') {
     return `Condition "${c.field}" is missing a string "op".`;
   }

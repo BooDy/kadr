@@ -704,4 +704,152 @@ describe('BrowseScreen & Declarative Widgets', () => {
       expect(spotlightSection).not.toHaveTextContent('RESUME');
     });
   });
+
+  it('renders FavoriteButton on Spotlight, Carousel, and Grid cards (including show and live_channel), syncs via onFavoriteChanged, and refreshes home screen silently', async () => {
+    const homeWithMixedFavorites: ScreenLayout = {
+      id: 'home',
+      title: 'Home Cinema',
+      widgets: [
+        {
+          type: 'hero_banner',
+          id: 'spotlight_hero',
+          binding: { macro_type: 'spotlight_item', limit: 1 },
+          data: {
+            id: 102,
+            title: 'Dune: Part Two',
+            media_type: 'movie',
+            release_year: 2024,
+            is_favorite: false,
+          },
+        },
+        {
+          type: 'carousel',
+          id: 'mixed_rail',
+          title: 'Featured Rail',
+          binding: { macro_type: 'recently_added', limit: 10 },
+          items: [
+            {
+              id: 102,
+              title: 'Dune: Part Two',
+              media_type: 'movie',
+              playback_progress: 0.3,
+              is_favorite: false,
+            },
+            {
+              id: 104,
+              title: 'Severance',
+              media_type: 'show',
+              is_favorite: false,
+            },
+            {
+              id: 105,
+              title: 'Live News 24',
+              media_type: 'live_channel',
+              is_favorite: true,
+            },
+          ],
+        },
+        {
+          type: 'grid',
+          id: 'popular_grid',
+          title: 'Popular Grid',
+          columns: 4,
+          binding: { macro_type: 'top_rated', limit: 20 },
+          items: [
+            {
+              id: 102,
+              title: 'Dune: Part Two',
+              media_type: 'movie',
+              is_favorite: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const refreshedHome: ScreenLayout = {
+      ...homeWithMixedFavorites,
+      widgets: [
+        {
+          ...homeWithMixedFavorites.widgets[0],
+          data: {
+            id: 102,
+            title: 'Dune: Part Two',
+            media_type: 'movie',
+            release_year: 2024,
+            is_favorite: true,
+          },
+        } as ScreenLayout['widgets'][number],
+        {
+          type: 'carousel',
+          id: 'home_favorites',
+          title: 'Favorites',
+          binding: { macro_type: 'favorites', limit: 20 },
+          items: [
+            {
+              id: 102,
+              title: 'Dune: Part Two',
+              media_type: 'movie',
+              is_favorite: true,
+            },
+          ],
+        },
+        ...homeWithMixedFavorites.widgets.slice(1),
+      ],
+    };
+
+    const getScreenSpy = vi
+      .spyOn(api, 'getScreen')
+      .mockResolvedValueOnce(homeWithMixedFavorites)
+      .mockResolvedValueOnce(refreshedHome);
+    const addFavSpy = vi.spyOn(api, 'addFavorite').mockResolvedValue({
+      item_id: 102,
+      is_favorite: true,
+    });
+    const detailsSpy = vi.spyOn(api, 'getItemDetails');
+
+    render(<BrowseScreen screenId="home" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Dune: Part Two').length).toBe(3);
+    });
+
+    // FavoriteButton renders on show & live_channel cards while WatchStateButton stays omitted on them
+    expect(screen.getByRole('button', { name: 'Add Severance to favorites' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove Live News 24 from favorites' })
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: /Mark Severance as/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Mark Live News 24 as/i })).toBeNull();
+
+    // Spotlight + Carousel + Grid all have FavoriteButton for Dune: Part Two, coexisting with WatchStateButton on movie cards
+    const duneFavBtns = screen.getAllByRole('button', {
+      name: 'Add Dune: Part Two to favorites',
+    });
+    expect(duneFavBtns.length).toBe(3);
+    expect(
+      screen.getAllByRole('button', { name: 'Mark Dune: Part Two as watched' }).length
+    ).toBe(2);
+
+    // Click card FavoriteButton (carousel card) -> does not open modal, calls addFavorite(102), syncs Spotlight + Grid, and refreshes home screen
+    fireEvent.click(duneFavBtns[1]);
+    expect(detailsSpy).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(addFavSpy).toHaveBeenCalledWith(102);
+      expect(getScreenSpy).toHaveBeenCalledTimes(2);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Favorites')).toBeInTheDocument();
+      const updatedFavBtns = screen.getAllByRole('button', {
+        name: 'Remove Dune: Part Two from favorites',
+      });
+      expect(updatedFavBtns.length).toBeGreaterThanOrEqual(3);
+      for (const btn of updatedFavBtns) {
+        expect(btn).toHaveAttribute('aria-pressed', 'true');
+      }
+    });
+  });
 });
+

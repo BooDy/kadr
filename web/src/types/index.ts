@@ -54,12 +54,14 @@ export interface CardViewModel {
   season?: number;
   episode?: number;
   duration_seconds?: number;
+  is_favorite?: boolean;
 }
 
 export type QueryMacro =
   | 'continue_watching'
   | 'recently_added'
   | 'top_rated'
+  | 'favorites'
   | 'custom_query'
   | { library_items: { library_id: string } }
   | { genre_shelf: { genre: string } }
@@ -395,6 +397,15 @@ export type SystemEvent =
         action: string;
         timestamp: number;
       };
+    }
+  | {
+      type: 'favorite:updated';
+      payload: {
+        user_id: string;
+        item_id: number;
+        is_favorite: boolean;
+        timestamp: number;
+      };
     };
 
 // Filesystem Browsing Types
@@ -664,6 +675,33 @@ export type PlaylistAddTarget =
   | { kind: 'item'; itemId: number; title: string }
   | { kind: 'season'; showId: number; seasonNumber: number; title: string }
   | { kind: 'folder'; libraryId: string; path: string; recursive: boolean; title: string };
+
+// Favorites / Watchlist Types
+export interface FavoriteItemView {
+  favorited_at: number;
+  duration_seconds: number;
+  resume_position_seconds?: number;
+  card: CardViewModel;
+}
+
+export interface FavoritesListResponse {
+  items: FavoriteItemView[];
+  total_count: number;
+  locked_item_count: number;
+}
+
+export interface FavoriteStatusResponse {
+  item_id: number;
+  is_favorite: boolean;
+}
+
+export interface FavoritesQueryParams {
+  item_type?: string;
+  library_id?: string;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+}
 
 export * from './search';
 export * from './filterAst';

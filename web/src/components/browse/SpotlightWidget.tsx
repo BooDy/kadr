@@ -3,6 +3,7 @@ import { Play, Info, Clapperboard, Sparkles, ListPlus } from 'lucide-react';
 import type { CardViewModel } from '../../types';
 import { api } from '../../api/client';
 import { isCardWatched } from '../../utils/watchStateEvents';
+import { FavoriteButton } from '../favorites/FavoriteButton';
 import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 
 export interface SpotlightWidgetProps {
@@ -121,6 +122,14 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
             <Info className="h-4 w-4 text-muted group-hover:text-text-main" />
             More Info
           </button>
+
+          <FavoriteButton
+            itemId={item.id}
+            title={item.title}
+            mediaType={item.media_type}
+            isFavorite={Boolean(item.is_favorite)}
+            variant="pill"
+          />
 
           <button
             type="button"

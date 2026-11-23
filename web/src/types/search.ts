@@ -37,6 +37,7 @@ export interface SearchResultItem {
   episode?: number | null;
   genres: string[];
   director?: string | null;
+  is_favorite?: boolean;
 }
 
 export interface SearchResponse {

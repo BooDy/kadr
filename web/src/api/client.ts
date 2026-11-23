@@ -14,6 +14,9 @@ import type {
   DiscoveryResponse,
   DownloadSubtitleRequest,
   EnrichLibraryResponse,
+  FavoriteStatusResponse,
+  FavoritesListResponse,
+  FavoritesQueryParams,
   FsBrowseResponse,
   HlsUrlOptions,
   ItemDetailsPayload,
@@ -975,6 +978,50 @@ export class ApiClient {
       {
         method: 'PUT',
         body: JSON.stringify({ item_ids: itemIds }),
+      }
+    );
+  }
+
+  // Favorites / Watchlist
+  public async getFavorites(
+    params?: FavoritesQueryParams
+  ): Promise<FavoritesListResponse> {
+    const query = new URLSearchParams();
+    if (params?.item_type && params.item_type !== 'all') {
+      query.set('item_type', params.item_type);
+    }
+    if (params?.library_id) {
+      query.set('library_id', params.library_id);
+    }
+    if (params?.sort) {
+      query.set('sort', params.sort);
+    }
+    if (params?.limit !== undefined) {
+      query.set('limit', String(params.limit));
+    }
+    if (params?.offset !== undefined) {
+      query.set('offset', String(params.offset));
+    }
+    const qs = query.toString();
+    return this.request<FavoritesListResponse>(
+      `/api/v1/favorites${qs ? `?${qs}` : ''}`
+    );
+  }
+
+  public async addFavorite(itemId: number): Promise<FavoriteStatusResponse> {
+    return this.request<FavoriteStatusResponse>(
+      `/api/v1/favorites/${encodeURIComponent(String(itemId))}`,
+      {
+        method: 'PUT',
+      }
+    );
+  }
+
+  public async removeFavorite(itemId: number): Promise<FavoriteStatusResponse> {
+    return this.request<FavoriteStatusResponse>(
+      `/api/v1/favorites/${encodeURIComponent(String(itemId))}`,
+      {
+        method: 'DELETE',
       }
     );
   }

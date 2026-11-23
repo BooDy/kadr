@@ -28,11 +28,13 @@ import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 import { MetadataEditorModal } from './MetadataEditorModal';
 import { IdentifyTmdbModal } from './IdentifyTmdbModal';
 import { WatchStateButton } from './WatchStateButton';
+import { FavoriteButton } from '../favorites/FavoriteButton';
 import {
   applyWatchStateToCard,
   emitWatchStateChanged,
   isCardWatched,
 } from '../../utils/watchStateEvents';
+import { applyFavoriteToCard } from '../../utils/favoriteEvents';
 import {
   formatChannelLayout,
   formatLanguageCode,
@@ -66,6 +68,7 @@ interface EpisodeCardProps {
   onPlay: (id: number) => void;
   onAddToPlaylist: (episode: CardViewModel) => void;
   onToggleWatched: (episodeId: number, watched: boolean) => void;
+  onToggleFavorite: (episodeId: number, isFavorite: boolean) => void;
   formatDuration: (seconds?: number) => string | null;
 }
 
@@ -74,6 +77,7 @@ const EpisodeCard: FC<EpisodeCardProps> = ({
   onPlay,
   onAddToPlaylist,
   onToggleWatched,
+  onToggleFavorite,
   formatDuration,
 }) => {
   const [thumbFailed, setThumbFailed] = useState(false);
@@ -180,8 +184,17 @@ const EpisodeCard: FC<EpisodeCardProps> = ({
         )}
       </div>
 
-      {/* 1-Click Play, Watch Toggle & Add to Playlist Buttons */}
+      {/* 1-Click Play, Favorite Toggle, Watch Toggle & Add to Playlist Buttons */}
       <div className="self-end sm:self-center flex items-center gap-2 flex-shrink-0">
+        <FavoriteButton
+          itemId={episode.id}
+          title={episode.title}
+          mediaType={episode.media_type}
+          isFavorite={Boolean(episode.is_favorite)}
+          variant="icon"
+          alwaysVisible
+          onToggled={(fav) => onToggleFavorite(episode.id, fav)}
+        />
         <WatchStateButton
           itemId={episode.id}
           title={episode.title}
@@ -386,6 +399,19 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
             ...prev,
             episodes: prev.episodes.map((ep) =>
               ep.id === episodeId ? applyWatchStateToCard(ep, watched) : ep
+            ),
+          }
+        : prev
+    );
+  };
+
+  const handleToggleEpisodeFavorite = (episodeId: number, isFavorite: boolean) => {
+    setDetails((prev) =>
+      prev && prev.episodes
+        ? {
+            ...prev,
+            episodes: prev.episodes.map((ep) =>
+              ep.id === episodeId ? applyFavoriteToCard(ep, isFavorite) : ep
             ),
           }
         : prev
@@ -700,6 +726,23 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                     <ListPlus className="w-4 h-4 text-accent" />
                     <span>+ Playlist</span>
                   </button>
+                  <FavoriteButton
+                    itemId={itemId}
+                    title={card?.title || 'Item'}
+                    mediaType={card?.media_type}
+                    isFavorite={Boolean(card?.is_favorite)}
+                    variant="pill"
+                    onToggled={(fav) =>
+                      setDetails((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              card: applyFavoriteToCard(prev.card, fav),
+                            }
+                          : prev
+                      )
+                    }
+                  />
                   {!hasEpisodes &&
                     card?.media_type !== 'show' &&
                     card?.media_type !== 'live_channel' && (
@@ -969,6 +1012,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                               })
                             }
                             onToggleWatched={handleToggleEpisodeWatched}
+                            onToggleFavorite={handleToggleEpisodeFavorite}
                             formatDuration={formatDuration}
                           />
                         ))}

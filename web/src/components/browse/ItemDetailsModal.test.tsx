@@ -519,5 +519,84 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
       expect(screen.getByText('French • FLAC Stereo')).toBeInTheDocument();
     });
   });
+
+  it('renders FavoriteButton in the modal header (including TV Show and live_channel) and on EpisodeCard rows', async () => {
+    const addSpy = vi
+      .spyOn(api, 'addFavorite')
+      .mockImplementation(async (id: number) => ({ item_id: id, is_favorite: true }));
+    const removeSpy = vi
+      .spyOn(api, 'removeFavorite')
+      .mockImplementation(async (id: number) => ({ item_id: id, is_favorite: false }));
+    const onPlayItem = vi.fn();
+
+    const { rerender } = render(
+      <ItemDetailsModal
+        itemId={10}
+        initialDetails={mockShowDetails}
+        onClose={vi.fn()}
+        onPlayItem={onPlayItem}
+      />
+    );
+
+    // Header FavoriteButton works on TV Show container items
+    const showFavBtn = screen.getByRole('button', {
+      name: 'Add What We Do in the Shadows to favorites',
+    });
+    expect(showFavBtn).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(showFavBtn);
+
+    await waitFor(() => {
+      expect(addSpy).toHaveBeenCalledWith(10);
+    });
+    expect(
+      screen.getByRole('button', {
+        name: 'Remove What We Do in the Shadows from favorites',
+      })
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    // EpisodeCard rows render always-visible FavoriteButton alongside WatchStateButton, + Playlist, and Play
+    const epFavBtn = screen.getByRole('button', { name: 'Add Reunited to favorites' });
+    expect(epFavBtn.className).toContain('opacity-100');
+    fireEvent.click(epFavBtn);
+
+    await waitFor(() => {
+      expect(addSpy).toHaveBeenCalledWith(101);
+    });
+    expect(onPlayItem).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Remove Reunited from favorites' })
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    // Switch to Season 5 and back to Season 4: episode favorite state persists on details.episodes
+    fireEvent.click(screen.getByRole('button', { name: /Season 5/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Season 4/i }));
+    const persistedEpBtn = screen.getByRole('button', {
+      name: 'Remove Reunited from favorites',
+    });
+    expect(persistedEpBtn).toHaveAttribute('aria-pressed', 'true');
+
+    // Removing favorite from EpisodeCard calls removeFavorite
+    fireEvent.click(persistedEpBtn);
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledWith(101);
+    });
+
+    // Header FavoriteButton also renders on live_channel items
+    rerender(
+      <ItemDetailsModal
+        itemId={30}
+        initialDetails={{
+          card: { id: 30, title: 'Live Sports', media_type: 'live_channel' },
+          genres: [],
+          stream_url: '/api/v1/stream/30',
+        }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Add Live Sports to favorites' })
+    ).toHaveAttribute('aria-pressed', 'false');
+  });
 });
+
 

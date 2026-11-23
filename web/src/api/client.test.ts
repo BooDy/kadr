@@ -1094,7 +1094,130 @@ describe('Player, Storyboard & Watch-State API methods', () => {
   });
 });
 
+describe('Favorites API & IsFavorite Filter AST', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
 
+  it('fetches favorites with query params and forwards auth + unlock headers', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-fav-123');
+    client.storeUnlockToken('lib-priv', 'unlock-fav-1');
 
+    const mockList = {
+      items: [
+        {
+          favorited_at: 1700000100,
+          duration_seconds: 8880,
+          card: {
+            id: 42,
+            title: 'Inception',
+            media_type: 'movie',
+            is_favorite: true,
+          },
+        },
+      ],
+      total_count: 1,
+      locked_item_count: 0,
+    };
 
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(JSON.stringify(mockList), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+
+    const res = await client.getFavorites({
+      item_type: 'movie',
+      sort: 'favorited_at:desc',
+      limit: 40,
+      offset: 0,
+    });
+    expect(res).toEqual(mockList);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/v1/favorites?item_type=movie&sort=favorited_at%3Adesc&limit=40&offset=0',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer jwt-fav-123',
+          'X-Kadr-Unlocked': 'unlock-fav-1',
+        }),
+      })
+    );
+
+    await client.getFavorites();
+    expect(fetchSpy).toHaveBeenLastCalledWith('/api/v1/favorites', expect.any(Object));
+  });
+
+  it('adds and removes favorites via PUT and DELETE /api/v1/favorites/{id}', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-fav-123');
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ item_id: 42, is_favorite: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ item_id: 42, is_favorite: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const added = await client.addFavorite(42);
+    expect(added).toEqual({ item_id: 42, is_favorite: true });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/favorites/42');
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('PUT');
+
+    const removed = await client.removeFavorite(42);
+    expect(removed).toEqual({ item_id: 42, is_favorite: false });
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/favorites/42');
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('DELETE');
+  });
+
+  it('validates and normalizes is_favorite conditions in parseFilterNodeJson', async () => {
+    const { parseFilterNodeJson } = await import('../types/filterAst');
+
+    const omittedOp = parseFilterNodeJson(
+      JSON.stringify({
+        kind: 'rule',
+        condition: { field: 'is_favorite', value: true },
+      })
+    );
+    expect(omittedOp.error).toBeNull();
+    expect(omittedOp.node).toEqual({
+      kind: 'rule',
+      condition: { field: 'is_favorite', op: 'eq', value: true },
+    });
+
+    const explicitOp = parseFilterNodeJson(
+      JSON.stringify({
+        kind: 'rule',
+        condition: { field: 'is_favorite', op: 'eq', value: false },
+      })
+    );
+    expect(explicitOp.error).toBeNull();
+    expect(explicitOp.node).toEqual({
+      kind: 'rule',
+      condition: { field: 'is_favorite', op: 'eq', value: false },
+    });
+
+    const badValue = parseFilterNodeJson(
+      JSON.stringify({
+        kind: 'rule',
+        condition: { field: 'is_favorite', op: 'eq', value: 'yes' },
+      })
+    );
+    expect(badValue.node).toBeNull();
+    expect(badValue.error).toMatch(/is_favorite/i);
+  });
+});
 

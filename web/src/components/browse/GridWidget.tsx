@@ -3,11 +3,16 @@ import { Film, Loader2, Play } from 'lucide-react';
 import type { CardViewModel } from '../../types';
 import { api } from '../../api/client';
 import { WatchStateButton } from './WatchStateButton';
+import { FavoriteButton } from '../favorites/FavoriteButton';
 import {
   applyWatchStateToCard,
   isCardWatched,
   onWatchStateChanged,
 } from '../../utils/watchStateEvents';
+import {
+  applyFavoriteToCard,
+  onFavoriteChanged,
+} from '../../utils/favoriteEvents';
 
 export interface GridWidgetProps {
   title?: string;
@@ -86,9 +91,16 @@ const GridCard: FC<GridCardProps> = ({ item, onClick }) => {
           </div>
         )}
 
-        {/* Watch State Toggle */}
-        {item.media_type !== 'show' && item.media_type !== 'live_channel' && (
-          <div className="absolute top-2 right-2 z-20">
+        {/* Favorite & Watch State Toggles */}
+        <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5">
+          <FavoriteButton
+            itemId={item.id}
+            title={item.title}
+            mediaType={item.media_type}
+            isFavorite={Boolean(item.is_favorite)}
+            variant="icon"
+          />
+          {item.media_type !== 'show' && item.media_type !== 'live_channel' && (
             <WatchStateButton
               itemId={item.id}
               title={item.title}
@@ -96,8 +108,8 @@ const GridCard: FC<GridCardProps> = ({ item, onClick }) => {
               watched={watched}
               variant="icon"
             />
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Resume Progress Bar */}
         {hasProgress && !watched && (
@@ -187,6 +199,16 @@ export const GridWidget: FC<GridWidgetProps> = ({
       setItems((prev) =>
         prev.map((it) =>
           itemIds.has(it.id) ? applyWatchStateToCard(it, watched) : it
+        )
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    return onFavoriteChanged(({ itemId, isFavorite }) => {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === itemId ? applyFavoriteToCard(it, isFavorite) : it
         )
       );
     });

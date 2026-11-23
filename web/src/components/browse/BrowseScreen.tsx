@@ -8,6 +8,7 @@ import { GridWidget } from './GridWidget';
 import { ItemDetailsModal } from './ItemDetailsModal';
 import { FolderBrowser } from './FolderBrowser';
 import { applyWatchStateToCard, onWatchStateChanged } from '../../utils/watchStateEvents';
+import { applyFavoriteToCard, onFavoriteChanged } from '../../utils/favoriteEvents';
 
 export interface BrowseScreenProps {
   screenId: string;
@@ -51,6 +52,14 @@ const HydratedSpotlight: FC<{
     return onWatchStateChanged(({ itemIds, watched }) => {
       setItem((prev) =>
         prev && itemIds.has(prev.id) ? applyWatchStateToCard(prev, watched) : prev
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    return onFavoriteChanged(({ itemId, isFavorite }) => {
+      setItem((prev) =>
+        prev && prev.id === itemId ? applyFavoriteToCard(prev, isFavorite) : prev
       );
     });
   }, []);
@@ -109,7 +118,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
   useEffect(() => {
     if (screenId !== 'home') return;
     let isMounted = true;
-    const unsubscribe = onWatchStateChanged(() => {
+    const refreshHome = () => {
       if (typeof api.getScreen !== 'function') return;
       api
         .getScreen('home')
@@ -119,10 +128,13 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
           }
         })
         .catch(() => {});
-    });
+    };
+    const unsubscribeWatch = onWatchStateChanged(refreshHome);
+    const unsubscribeFavorite = onFavoriteChanged(refreshHome);
     return () => {
       isMounted = false;
-      unsubscribe();
+      unsubscribeWatch();
+      unsubscribeFavorite();
     };
   }, [screenId]);
 
