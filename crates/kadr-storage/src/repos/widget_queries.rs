@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::repos::filter_compiler::{compile_filter_node, CompiledFilter};
+use crate::repos::filter_compiler::{compile_filter_node_for_user, CompiledFilter};
 use deadpool_sqlite::Pool;
 use kadr_core::ast::WidgetFilterConfig;
 use kadr_core::filter_ast::CatalogFacets;
@@ -12,14 +12,14 @@ pub const SELECT_JOINED_COLUMNS: &str =
  m.duration_seconds, m.added_at, m.file_path, m.file_name, m.file_size, \
  m.resolution, m.video_codec, m.audio_codec, m.audio_channels, m.container, m.metadata, m.locked_fields, m.audio_tracks_json";
 
-fn current_epoch_secs() -> i64 {
+pub(crate) fn current_epoch_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
 }
 
-fn resolve_effective_library_id(
+pub(crate) fn resolve_effective_library_id(
     library_id: Option<&str>,
     filters: Option<&WidgetFilterConfig>,
 ) -> Option<String> {
@@ -52,6 +52,15 @@ pub fn privacy_clause(unlocked_ids: &[String]) -> (String, Vec<Value>) {
 
 pub fn build_filter_envelope(
     filters: Option<&WidgetFilterConfig>,
+    unlocked_ids: &[String],
+    current_time_epoch_secs: i64,
+) -> CompiledFilter {
+    build_filter_envelope_for_user(filters, None, unlocked_ids, current_time_epoch_secs)
+}
+
+pub fn build_filter_envelope_for_user(
+    filters: Option<&WidgetFilterConfig>,
+    user_id: Option<&str>,
     unlocked_ids: &[String],
     current_time_epoch_secs: i64,
 ) -> CompiledFilter {
@@ -114,7 +123,7 @@ pub fn build_filter_envelope(
 
         // 5. Declarative recursive FilterNode AST (wrapped in parentheses inside outer AND)
         if let Some(ref tree) = f.rule_tree {
-            let compiled = compile_filter_node(tree, current_time_epoch_secs);
+            let compiled = compile_filter_node_for_user(tree, user_id, current_time_epoch_secs);
             clauses.push(format!("({})", compiled.sql));
             params.extend(compiled.params);
             needs_playback_join = compiled.needs_playback_join;
@@ -350,7 +359,8 @@ impl WidgetQueries {
         let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let envelope = build_filter_envelope(filters_owned.as_ref(), &unlocked, now);
+            let envelope =
+                build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);
             let mut sql_params = Vec::new();
 
             let playback_join = if envelope.needs_playback_join {
@@ -439,7 +449,8 @@ impl WidgetQueries {
         let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let envelope = build_filter_envelope(filters_owned.as_ref(), &unlocked, now);
+            let envelope =
+                build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);
             let mut sql_params = Vec::new();
 
             let playback_join = if envelope.needs_playback_join {
@@ -535,7 +546,8 @@ impl WidgetQueries {
         let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let envelope = build_filter_envelope(filters_owned.as_ref(), &unlocked, now);
+            let envelope =
+                build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);
             let mut sql_params = Vec::new();
 
             let playback_join = if envelope.needs_playback_join {
@@ -633,7 +645,8 @@ impl WidgetQueries {
         let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let envelope = build_filter_envelope(filters_owned.as_ref(), &unlocked, now);
+            let envelope =
+                build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);
             let needs_join = envelope.needs_playback_join || sort_needs_playback_join;
 
             let mut base_params = Vec::new();
@@ -719,7 +732,8 @@ impl WidgetQueries {
         let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let envelope = build_filter_envelope(filters_owned.as_ref(), &unlocked, now);
+            let envelope =
+                build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);
             let mut sql_params = Vec::new();
 
             let playback_join = if envelope.needs_playback_join {
@@ -795,7 +809,8 @@ impl WidgetQueries {
         let now = current_epoch_secs();
         let conn = self.pool.get().await?;
         conn.interact(move |c| {
-            let envelope = build_filter_envelope(filters_owned.as_ref(), &unlocked, now);
+            let envelope =
+                build_filter_envelope_for_user(filters_owned.as_ref(), Some(&uid), &unlocked, now);
             let needs_join = envelope.needs_playback_join || sort_needs_playback_join;
 
             let mut base_params = Vec::new();

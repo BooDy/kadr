@@ -274,7 +274,8 @@ impl SearchRepository {
                 });
             }
 
-            let mut select_params = Vec::with_capacity(filter_params.len() + 2);
+            let mut select_params = Vec::with_capacity(filter_params.len() + 3);
+            select_params.push(rusqlite::types::Value::Text(uid.clone()));
             select_params.push(rusqlite::types::Value::Text(uid));
             select_params.extend(filter_params);
             select_params.push(rusqlite::types::Value::Integer(limit as i64));
@@ -296,7 +297,8 @@ impl SearchRepository {
                     m.resolution, \
                     m.metadata, \
                     ups.playback_position_seconds, \
-                    ups.watch_state \
+                    ups.watch_state, \
+                    EXISTS (SELECT 1 FROM user_favorites uf WHERE uf.media_item_id = m.id AND uf.user_id = ?) \
                  FROM media_items_fts \
                  JOIN media_items m ON m.id = media_items_fts.rowid \
                  JOIN libraries l ON l.id = m.library_id \
@@ -325,6 +327,7 @@ impl SearchRepository {
                 let metadata_str: String = row.get(10)?;
                 let playback_position_seconds: Option<i64> = row.get(11)?;
                 let watch_state: Option<String> = row.get(12)?;
+                let is_favorite = row.get::<_, i64>(13).unwrap_or(0) != 0;
 
                 let item_type: MediaType = serde_json::from_str(&format!("\"{item_type_str}\""))
                     .unwrap_or(MediaType::Unknown);
@@ -366,6 +369,7 @@ impl SearchRepository {
                     episode: metadata.episode,
                     genres: metadata.genres,
                     director: metadata.director.filter(|s| !s.trim().is_empty()),
+                    is_favorite,
                 })
             })?;
 

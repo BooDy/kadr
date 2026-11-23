@@ -18,6 +18,7 @@ pub fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/012_metadata_overrides.sql")),
         M::up(include_str!("migrations/013_audio_tracks.sql")),
         M::up(include_str!("migrations/014_filter_ast_indexes.sql")),
+        M::up(include_str!("migrations/015_user_favorites.sql")),
     ])
 }
 

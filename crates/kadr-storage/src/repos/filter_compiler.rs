@@ -28,7 +28,7 @@ fn f32_to_sql_f64(v: f32) -> f64 {
     v.to_string().parse::<f64>().unwrap_or(v as f64)
 }
 
-fn media_type_db_str(mt: MediaType) -> &'static str {
+pub(crate) fn media_type_db_str(mt: MediaType) -> &'static str {
     match mt {
         MediaType::Movie => "movie",
         MediaType::Show => "show",
@@ -52,12 +52,25 @@ fn watch_state_db_str(ws: WatchState) -> &'static str {
 }
 
 pub fn compile_filter_node(node: &FilterNode, now_epoch: i64) -> CompiledFilter {
+    compile_filter_node_for_user(node, None, now_epoch)
+}
+
+pub fn compile_filter_node_for_user(
+    node: &FilterNode,
+    user_id: Option<&str>,
+    now_epoch: i64,
+) -> CompiledFilter {
     let mut out = CompiledFilter::default();
-    out.sql = compile_inner(node, now_epoch, &mut out);
+    out.sql = compile_inner(node, user_id, now_epoch, &mut out);
     out
 }
 
-fn compile_inner(node: &FilterNode, now_epoch: i64, state: &mut CompiledFilter) -> String {
+fn compile_inner(
+    node: &FilterNode,
+    user_id: Option<&str>,
+    now_epoch: i64,
+    state: &mut CompiledFilter,
+) -> String {
     match node {
         FilterNode::Group {
             op,
@@ -77,7 +90,7 @@ fn compile_inner(node: &FilterNode, now_epoch: i64, state: &mut CompiledFilter) 
             };
             let parts: Vec<String> = children
                 .iter()
-                .map(|c| compile_inner(c, now_epoch, state))
+                .map(|c| compile_inner(c, user_id, now_epoch, state))
                 .collect();
             let grouped = format!("({})", parts.join(joiner));
             if *negated {
@@ -87,7 +100,7 @@ fn compile_inner(node: &FilterNode, now_epoch: i64, state: &mut CompiledFilter) 
             }
         }
         FilterNode::Rule { negated, condition } => {
-            let expr = compile_condition(condition, now_epoch, state);
+            let expr = compile_condition(condition, user_id, now_epoch, state);
             if *negated {
                 format!("NOT COALESCE(({expr}), 0)")
             } else {
@@ -216,7 +229,12 @@ fn compile_time_cmp(
     }
 }
 
-fn compile_condition(cond: &FilterCondition, now_epoch: i64, state: &mut CompiledFilter) -> String {
+fn compile_condition(
+    cond: &FilterCondition,
+    user_id: Option<&str>,
+    now_epoch: i64,
+    state: &mut CompiledFilter,
+) -> String {
     match cond {
         FilterCondition::LibraryId { values, .. } => {
             if values.is_empty() {
@@ -359,6 +377,19 @@ fn compile_condition(cond: &FilterCondition, now_epoch: i64, state: &mut Compile
                     state.params.push(Value::Real(f32_to_sql_f64(*max)));
                     "(m.duration_seconds > 0 AND (CAST(COALESCE(ups.playback_position_seconds, 0) AS REAL) / CAST(m.duration_seconds AS REAL)) BETWEEN ? AND ?)".to_string()
                 }
+            }
+        }
+
+        FilterCondition::IsFavorite { value, .. } => {
+            state
+                .params
+                .push(Value::Text(user_id.unwrap_or("").to_string()));
+            if *value {
+                "(EXISTS (SELECT 1 FROM user_favorites uf WHERE uf.media_item_id = m.id AND uf.user_id = ?))"
+                    .to_string()
+            } else {
+                "(NOT EXISTS (SELECT 1 FROM user_favorites uf WHERE uf.media_item_id = m.id AND uf.user_id = ?))"
+                    .to_string()
             }
         }
     }
