@@ -120,6 +120,17 @@ export type WidgetNode =
       details?: ItemDetailsPayload;
     };
 
+export interface AudioStreamInfo {
+  audio_index: number;
+  stream_index: number;
+  codec: string;
+  channels?: number;
+  language: string;
+  title?: string;
+  is_default: boolean;
+  is_commentary: boolean;
+}
+
 export interface TechnicalInfo {
   duration_seconds: number;
   resolution?: string;
@@ -127,6 +138,7 @@ export interface TechnicalInfo {
   audio_codec?: string;
   audio_channels?: number;
   container?: string;
+  audio_tracks?: AudioStreamInfo[];
 }
 
 export interface ItemDetailsPayload {
@@ -290,6 +302,41 @@ export interface PlaybackState {
   watch_state: 'unwatched' | 'in_progress' | 'completed';
   last_watched_at: number;
   play_count: number;
+}
+
+export interface StoryboardSheet {
+  index: number;
+  url: string;
+  first_tile: number;
+  tile_count: number;
+}
+
+export interface StoryboardManifest {
+  interval_ms: number;
+  tile_width: number;
+  tile_height: number;
+  columns: number;
+  rows: number;
+  total_tiles: number;
+  sheets: StoryboardSheet[];
+}
+
+export type StoryboardFetchResult =
+  | { status: 'ready'; manifest: StoryboardManifest }
+  | { status: 'generating'; retryAfterMs: number }
+  | { status: 'unavailable' };
+
+export interface BatchWatchStateResponse {
+  updated: number;
+  watched: boolean;
+}
+
+export interface HlsUrlOptions {
+  videoCodec?: 'h264' | 'hevc' | 'none' | string;
+  audioCodec?: 'aac' | 'ac3' | 'eac3' | string;
+  maxHeight?: number;
+  startTime?: number;
+  audioTrack?: number;
 }
 
 // Telemetry & Events

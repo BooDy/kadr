@@ -887,6 +887,202 @@ describe('Playlists API', () => {
   });
 });
 
+describe('Player, Storyboard & Watch-State API methods', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('appendMediaAuthParams preserves existing query params and appends token + unlocked', () => {
+    const client = new ApiClient('http://localhost:8492');
+    client.setToken('jwt-abc');
+    client.storeUnlockToken('lib-priv', 'unlock-1');
+
+    expect(client.appendMediaAuthParams('/api/v1/media/42/storyboard/0.jpg')).toBe(
+      'http://localhost:8492/api/v1/media/42/storyboard/0.jpg?token=jwt-abc&unlocked=unlock-1'
+    );
+    expect(client.appendMediaAuthParams('/api/v1/media/42/frame?t=12&w=320')).toBe(
+      'http://localhost:8492/api/v1/media/42/frame?t=12&w=320&token=jwt-abc&unlocked=unlock-1'
+    );
+  });
+
+  it('builds HLS master URLs with codec, start_time, audio_track, and auth params', () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-xyz');
+    const url = client.getHlsMasterUrl(99, {
+      videoCodec: 'none',
+      audioCodec: 'aac',
+      startTime: 125.8,
+      audioTrack: 2,
+    });
+    expect(url).toBe(
+      '/api/v1/media/99/hls/master.m3u8?video_codec=none&audio_codec=aac&start_time=125.8&audio_track=2&token=jwt-xyz'
+    );
+  });
+
+  it('snaps getFramePreviewUrl timestamps down to 2-second increments', () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-1');
+    expect(client.getFramePreviewUrl(7, 15.9, 320)).toBe(
+      '/api/v1/media/7/frame?t=14&w=320&token=jwt-1'
+    );
+  });
+
+  it('chunks setPlaybackStatesBatch into <= 500 unique item IDs per PUT', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({ updated: body.item_ids.length, watched: body.watched }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ApiClient('');
+    const ids = Array.from({ length: 620 }, (_, i) => i + 1);
+    const res = await client.setPlaybackStatesBatch([...ids, 1, 2], true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(firstBody.item_ids).toHaveLength(500);
+    expect(secondBody.item_ids).toHaveLength(120);
+    expect(res).toEqual({ updated: 620, watched: true });
+  });
+
+  it('parses getStoryboard 200 ready, 202 Retry-After generating, and 404 unavailable', async () => {
+    const client = new ApiClient('');
+    const manifest = {
+      interval_ms: 10000,
+      tile_width: 160,
+      tile_height: 90,
+      columns: 10,
+      rows: 10,
+      total_tiles: 12,
+      sheets: [{ index: 0, url: '/api/v1/media/5/storyboard/0.jpg', first_tile: 0, tile_count: 12 }],
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'generating' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '7' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(manifest), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await client.getStoryboard(5)).toEqual({
+      status: 'generating',
+      retryAfterMs: 7000,
+    });
+    expect(await client.getStoryboard(5)).toEqual({
+      status: 'ready',
+      manifest,
+    });
+    expect(await client.getStoryboard(5)).toEqual({ status: 'unavailable' });
+  });
+
+  it('handles setPlaybackState, getAudioTracks, deleteHlsSession, and getStoryboardSheetUrl', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-sess');
+    client.storeUnlockToken('lib-a', 'unlock-a');
+
+    expect(client.getStoryboardSheetUrl('/api/v1/media/5/storyboard/0.jpg')).toBe(
+      '/api/v1/media/5/storyboard/0.jpg?token=jwt-sess&unlocked=unlock-a'
+    );
+
+    const mockState = {
+      user_id: 'u-1',
+      media_item_id: 12,
+      playback_position_seconds: 0,
+      watch_state: 'completed' as const,
+      last_watched_at: 1700000000,
+      play_count: 1,
+    };
+    const mockTracks = [
+      {
+        audio_index: 0,
+        stream_index: 1,
+        codec: 'aac',
+        channels: 2,
+        language: 'eng',
+        is_default: true,
+        is_commentary: false,
+      },
+    ];
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockState), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockTracks), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const stateRes = await client.setPlaybackState(12, true);
+    expect(stateRes).toEqual(mockState);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/playback/states/12');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ watched: true }),
+    });
+
+    const tracksRes = await client.getAudioTracks(12);
+    expect(tracksRes).toEqual(mockTracks);
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/items/12/audio-tracks');
+
+    await client.deleteHlsSession(12, 'sess/1');
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/v1/media/12/hls/sessions/sess%2F1');
+    expect(fetchMock.mock.calls[2][1]?.method).toBe('DELETE');
+  });
+
+  it('logs out and returns unavailable on getStoryboard 401, and short-circuits empty batch', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-expired');
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await client.getStoryboard(5)).toEqual({ status: 'unavailable' });
+    expect(client.getToken()).toBeNull();
+
+    expect(await client.setPlaybackStatesBatch([0, -3], false)).toEqual({
+      updated: 0,
+      watched: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+
 
 
 

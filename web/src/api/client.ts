@@ -3,6 +3,8 @@ import type {
   AddPlaylistItemsResponse,
   ApplyTmdbPayload,
   ApprovePluginResponse,
+  AudioStreamInfo,
+  BatchWatchStateResponse,
   CardViewModel,
   CatalogFacets,
   CreateLibraryPayload,
@@ -13,6 +15,7 @@ import type {
   DownloadSubtitleRequest,
   EnrichLibraryResponse,
   FsBrowseResponse,
+  HlsUrlOptions,
   ItemDetailsPayload,
   Library,
   LibraryFolderResponse,
@@ -35,6 +38,9 @@ import type {
   ScreenSummary,
   SearchParams,
   SearchResponse,
+  StoryboardFetchResult,
+  StoryboardManifest,
+  StoryboardSheet,
   SubtitleTrack,
   SystemConfig,
   TelemetrySnapshot,
@@ -278,21 +284,67 @@ export class ApiClient {
   }
 
   // URL Resolution Methods
-  public getStreamUrl(itemId: number, unlocked?: string): string {
+  public appendMediaAuthParams(pathOrUrl: string, unlockedOverride?: string): string {
+    const prefixed =
+      pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')
+        ? pathOrUrl
+        : `${this.baseUrl}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`;
+
+    const qIdx = prefixed.indexOf('?');
+    const basePath = qIdx >= 0 ? prefixed.slice(0, qIdx) : prefixed;
+    const params = new URLSearchParams(qIdx >= 0 ? prefixed.slice(qIdx + 1) : '');
+
     const token = this.getToken();
-    const base = `${this.baseUrl}/api/v1/stream/${itemId}`;
-    const params = new URLSearchParams();
-    if (token) {
-      params.append('token', token);
+    if (token && !params.has('token')) {
+      params.set('token', token);
     }
-    const unlockedTokens = unlocked
-      ? [unlocked]
+
+    const unlockedTokens = unlockedOverride
+      ? [unlockedOverride]
       : Object.values(this.getUnlockedTokens()).filter(Boolean);
-    if (unlockedTokens.length > 0) {
-      params.append('unlocked', unlockedTokens.join(','));
+    if (unlockedTokens.length > 0 && !params.has('unlocked')) {
+      params.set('unlocked', unlockedTokens.join(','));
     }
-    const query = params.toString();
-    return query ? `${base}?${query}` : base;
+
+    const qs = params.toString();
+    return qs ? `${basePath}?${qs}` : basePath;
+  }
+
+  public getStreamUrl(itemId: number, unlocked?: string): string {
+    return this.appendMediaAuthParams(`/api/v1/stream/${itemId}`, unlocked);
+  }
+
+  public getHlsMasterUrl(itemId: number, opts: HlsUrlOptions = {}): string {
+    const params = new URLSearchParams();
+    params.set('video_codec', opts.videoCodec ?? 'h264');
+    params.set('audio_codec', opts.audioCodec ?? 'aac');
+    if (opts.maxHeight !== undefined && opts.maxHeight > 0) {
+      params.set('max_height', String(Math.floor(opts.maxHeight)));
+    }
+    if (opts.startTime !== undefined && opts.startTime > 0) {
+      params.set('start_time', String(Math.round(opts.startTime * 100) / 100));
+    }
+    if (opts.audioTrack !== undefined && opts.audioTrack >= 0) {
+      params.set('audio_track', String(opts.audioTrack));
+    }
+    return this.appendMediaAuthParams(
+      `/api/v1/media/${itemId}/hls/master.m3u8?${params.toString()}`
+    );
+  }
+
+  public getStoryboardSheetUrl(sheetUrl: StoryboardSheet['url']): string {
+    return this.appendMediaAuthParams(sheetUrl);
+  }
+
+  public getFramePreviewUrl(
+    itemId: number,
+    seconds: number,
+    width: number = 320
+  ): string {
+    const snapped = Math.max(0, Math.floor(seconds / 2) * 2);
+    return this.appendMediaAuthParams(
+      `/api/v1/media/${itemId}/frame?t=${snapped}&w=${width}`
+    );
   }
 
   public getSubtitleStreamUrl(subtitleId: number): string {
@@ -568,6 +620,86 @@ export class ApiClient {
 
   public async getPlaybackState(itemId: number): Promise<PlaybackState> {
     return this.request<PlaybackState>(`/api/v1/playback/states/${itemId}`);
+  }
+
+  public async setPlaybackState(
+    itemId: number,
+    watched: boolean
+  ): Promise<PlaybackState> {
+    return this.request<PlaybackState>(`/api/v1/playback/states/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ watched }),
+    });
+  }
+
+  public async setPlaybackStatesBatch(
+    itemIds: number[],
+    watched: boolean
+  ): Promise<BatchWatchStateResponse> {
+    const uniqueIds = Array.from(
+      new Set(itemIds.filter((id) => Number.isInteger(id) && id > 0))
+    );
+    if (uniqueIds.length === 0) {
+      return { updated: 0, watched };
+    }
+    let totalUpdated = 0;
+    for (let offset = 0; offset < uniqueIds.length; offset += 500) {
+      const slice = uniqueIds.slice(offset, offset + 500);
+      const res = await this.request<BatchWatchStateResponse>(
+        '/api/v1/playback/states',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ item_ids: slice, watched }),
+        }
+      );
+      totalUpdated += res?.updated ?? 0;
+    }
+    return { updated: totalUpdated, watched };
+  }
+
+  public async getAudioTracks(itemId: number): Promise<AudioStreamInfo[]> {
+    return this.request<AudioStreamInfo[]>(`/api/v1/items/${itemId}/audio-tracks`);
+  }
+
+  public async deleteHlsSession(itemId: number, sessionId: string): Promise<void> {
+    await this.request<void>(
+      `/api/v1/media/${itemId}/hls/sessions/${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  public async getStoryboard(
+    itemId: number,
+    signal?: AbortSignal
+  ): Promise<StoryboardFetchResult> {
+    const url = `${this.baseUrl}/api/v1/media/${itemId}/storyboard`;
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const unlockedTokens = Object.values(this.getUnlockedTokens()).filter(Boolean);
+    if (unlockedTokens.length > 0) {
+      headers['X-Kadr-Unlocked'] = unlockedTokens.join(',');
+    }
+
+    const response = await fetch(url, { method: 'GET', headers, signal });
+    if (response.status === 401) {
+      this.logout();
+      return { status: 'unavailable' };
+    }
+    if (response.status === 202) {
+      const retryHeader = response.headers.get('Retry-After');
+      const retrySecs = retryHeader ? Number(retryHeader) : NaN;
+      const retryAfterMs =
+        Number.isFinite(retrySecs) && retrySecs > 0 ? retrySecs * 1000 : 5000;
+      return { status: 'generating', retryAfterMs };
+    }
+    if (response.status === 200) {
+      const manifest = (await response.json()) as StoryboardManifest;
+      return { status: 'ready', manifest };
+    }
+    return { status: 'unavailable' };
   }
 
   // System Telemetry
