@@ -272,4 +272,143 @@ describe('PlayerControls Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /Blade Runner 2049/i }));
     expect(onSelectQueueIndex).toHaveBeenCalledWith(1);
   });
+
+  it('renders Audio Tracks menu with role="menuitemradio", aria-checked, badges, mutual exclusion, and Escape focus restore', () => {
+    const onSelectAudioTrack = vi.fn();
+    const onAudioMenuToggle = vi.fn();
+    const onSubtitlesMenuToggle = vi.fn();
+    render(
+      <PlayerControls
+        {...defaultProps}
+        audioTracks={[
+          {
+            audio_index: 0,
+            stream_index: 1,
+            codec: 'aac',
+            channels: 2,
+            language: 'eng',
+            title: 'English Stereo',
+            is_default: true,
+            is_commentary: false,
+          },
+          {
+            audio_index: 1,
+            stream_index: 2,
+            codec: 'eac3',
+            channels: 6,
+            language: 'jpn',
+            title: 'Director Commentary',
+            is_default: false,
+            is_commentary: true,
+          },
+        ]}
+        activeAudioTrackIndex={0}
+        onSelectAudioTrack={onSelectAudioTrack}
+        onAudioMenuToggle={onAudioMenuToggle}
+        onSubtitlesMenuToggle={onSubtitlesMenuToggle}
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: /audio tracks/i });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    // Open Subtitles first, then open Audio Tracks -> Subtitles closes mutually exclusively
+    fireEvent.click(screen.getByRole('button', { name: 'Subtitles' }));
+    expect(onSubtitlesMenuToggle).toHaveBeenCalledWith(true);
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(onAudioMenuToggle).toHaveBeenCalledWith(true);
+    expect(onSubtitlesMenuToggle).toHaveBeenCalledWith(false);
+
+    const radios = screen.getAllByRole('menuitemradio');
+    expect(radios).toHaveLength(2);
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+    expect(radios[1]).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('AAC')).toBeInTheDocument();
+    expect(screen.getByText('Stereo')).toBeInTheDocument();
+    expect(screen.getByText('EAC3')).toBeInTheDocument();
+    expect(screen.getByText('5.1')).toBeInTheDocument();
+    expect(screen.getByText('Commentary')).toBeInTheDocument();
+
+    // Arrow key navigation moves between menuitemradio options
+    radios[0].focus();
+    fireEvent.keyDown(screen.getByRole('menu', { name: /audio tracks/i }), {
+      key: 'ArrowDown',
+    });
+    expect(document.activeElement).toBe(radios[1]);
+
+    // Escape closes menu and restores focus to trigger
+    fireEvent.keyDown(screen.getByRole('menu', { name: /audio tracks/i }), {
+      key: 'Escape',
+    });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(onAudioMenuToggle).toHaveBeenCalledWith(false);
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getAllByRole('menuitemradio')[1]);
+    expect(onSelectAudioTrack).toHaveBeenCalledWith(1);
+  });
+
+  it('renders SeekPreviewThumbnail on pointer hover over seek bar with finite math and hides on pointer leave', () => {
+    const manifest = {
+      interval_ms: 10000,
+      tile_width: 320,
+      tile_height: 180,
+      columns: 10,
+      rows: 10,
+      total_tiles: 720,
+      sheets: [
+        { index: 0, url: '/api/v1/media/10/storyboard/0.jpg', first_tile: 0, tile_count: 720 },
+      ],
+    };
+
+    render(
+      <PlayerControls
+        {...defaultProps}
+        itemId={10}
+        duration={7200}
+        storyboard={{ status: 'ready', manifest }}
+      />
+    );
+
+    const seekInput = screen.getByRole('slider', { name: /seek/i });
+    const seekContainer = seekInput.parentElement as HTMLElement;
+
+    // Zero-width rect must not render NaN preview
+    vi.spyOn(seekContainer, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 10,
+      right: 0,
+      bottom: 10,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent(seekContainer, new MouseEvent('pointermove', { bubbles: true, clientX: 50 }));
+    expect(screen.queryByTestId('seek-preview-sprite')).not.toBeInTheDocument();
+
+    // Valid rect renders preview at 25% of 7200s = 1800s (30:00)
+    vi.spyOn(seekContainer, 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      top: 0,
+      width: 400,
+      height: 10,
+      right: 500,
+      bottom: 10,
+      x: 100,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent(seekContainer, new MouseEvent('pointermove', { bubbles: true, clientX: 200 }));
+    expect(screen.getByTestId('seek-preview-sprite')).toBeInTheDocument();
+    expect(screen.getByText('30:00')).toBeInTheDocument();
+
+    fireEvent.pointerLeave(seekContainer);
+    expect(screen.queryByTestId('seek-preview-sprite')).not.toBeInTheDocument();
+  });
 });

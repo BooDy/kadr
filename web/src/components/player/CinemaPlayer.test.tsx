@@ -79,6 +79,9 @@ describe('CinemaPlayer Component', () => {
     vi.spyOn(api, 'getPlaybackState').mockResolvedValue(mockPlaybackState);
     vi.spyOn(api, 'getSubtitles').mockResolvedValue(mockSubtitles);
     vi.spyOn(api, 'getItemDetails').mockResolvedValue(mockDetails);
+    vi.spyOn(api, 'getAudioTracks').mockResolvedValue([]);
+    vi.spyOn(api, 'getStoryboard').mockResolvedValue({ status: 'unavailable' });
+    vi.spyOn(api, 'deleteHlsSession').mockResolvedValue(undefined);
     vi.spyOn(api, 'getStreamUrl').mockReturnValue(`/api/v1/stream/${mockItemId}`);
     vi.spyOn(api, 'getSubtitleStreamUrl').mockImplementation(
       (id: number) => `/api/v1/subtitles/${id}/stream.vtt`
@@ -606,5 +609,133 @@ describe('CinemaPlayer Component', () => {
 
     expect(screen.getByTestId('player-controls')).toHaveClass('opacity-100');
     vi.useRealTimers();
+  });
+
+  it('wires getAudioTracks, getStoryboard, audio track switching via HLS, Escape dismissal without closing player, and HUD auto-hide pause', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hlsSpy = vi.spyOn(api, 'getHlsMasterUrl');
+    vi.spyOn(api, 'getAudioTracks').mockResolvedValue([
+      {
+        audio_index: 0,
+        stream_index: 1,
+        codec: 'aac',
+        channels: 2,
+        language: 'eng',
+        title: 'English',
+        is_default: true,
+        is_commentary: false,
+      },
+      {
+        audio_index: 1,
+        stream_index: 2,
+        codec: 'eac3',
+        channels: 6,
+        language: 'jpn',
+        title: 'Japanese Original',
+        is_default: false,
+        is_commentary: false,
+      },
+    ]);
+    vi.spyOn(api, 'getStoryboard').mockResolvedValue({
+      status: 'ready',
+      manifest: {
+        interval_ms: 10000,
+        tile_width: 320,
+        tile_height: 180,
+        columns: 10,
+        rows: 10,
+        total_tiles: 980,
+        sheets: [
+          { index: 0, url: '/api/v1/media/10/storyboard/0.jpg', first_tile: 0, tile_count: 980 },
+        ],
+      },
+    });
+
+    render(<CinemaPlayer itemId={mockItemId} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(api.getAudioTracks).toHaveBeenCalledWith(mockItemId);
+      expect(api.getStoryboard).toHaveBeenCalledWith(mockItemId, expect.any(AbortSignal));
+    });
+
+    const audioBtn = await screen.findByRole('button', { name: /audio tracks/i });
+    fireEvent.click(audioBtn);
+
+    // Controls remain visible past 3s while Audio Tracks menu is open
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.getByTestId('player-controls')).toHaveClass('opacity-100');
+
+    // Escape closes Audio Tracks menu without closing CinemaPlayer, and restores focus
+    const menu = screen.getByRole('menu', { name: /audio tracks/i });
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(audioBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(audioBtn);
+
+    // Window-level Escape while Audio Tracks menu is open also closes menu without exiting player
+    fireEvent.click(audioBtn);
+    expect(audioBtn).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(audioBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(audioBtn);
+
+    // Selecting non-zero audio track switches playback to HLS with audioTrack=1
+    fireEvent.click(audioBtn);
+    const radios = screen.getAllByRole('menuitemradio');
+    fireEvent.click(radios[1]);
+
+    await waitFor(() => {
+      expect(hlsSpy).toHaveBeenCalledWith(
+        mockItemId,
+        expect.objectContaining({ audioTrack: 1 })
+      );
+    });
+    vi.useRealTimers();
+  });
+
+  it('falls back to itemDetails.technical.audio_tracks when getAudioTracks rejects, and falls back to HLS on video error', async () => {
+    const hlsSpy = vi.spyOn(api, 'getHlsMasterUrl');
+    vi.spyOn(api, 'getAudioTracks').mockRejectedValue(new Error('endpoint error'));
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue({
+      ...mockDetails,
+      technical: {
+        duration_seconds: 9800,
+        container: 'mp4',
+        video_codec: 'h264',
+        audio_codec: 'aac',
+        audio_tracks: [
+          {
+            audio_index: 0,
+            stream_index: 1,
+            codec: 'aac',
+            channels: 2,
+            language: 'eng',
+            is_default: true,
+            is_commentary: false,
+          },
+        ],
+      },
+    });
+
+    render(<CinemaPlayer itemId={mockItemId} onClose={mockOnClose} />);
+
+    const audioBtn = await screen.findByRole('button', { name: /audio tracks/i });
+    expect(audioBtn).toBeInTheDocument();
+
+    const video = document.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'currentTime', { value: 22, writable: true });
+    act(() => {
+      fireEvent.error(video);
+    });
+
+    await waitFor(() => {
+      expect(hlsSpy).toHaveBeenCalledWith(
+        mockItemId,
+        expect.objectContaining({ startTime: 22 })
+      );
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react';
+import { useState, useEffect, useRef, useCallback, type FC } from 'react';
 import {
   ArrowLeft,
   Play,
@@ -9,6 +9,7 @@ import {
   Film,
   Volume2,
   VolumeX,
+  Headphones,
   Subtitles,
   Maximize,
   Minimize,
@@ -18,11 +19,23 @@ import {
   Loader2,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import type { SubtitleTrack, SubtitleSearchResult, PlaylistItemView } from '../../types';
+import type {
+  AudioStreamInfo,
+  SubtitleTrack,
+  SubtitleSearchResult,
+  PlaylistItemView,
+} from '../../types';
+import {
+  formatAudioTrackLabel,
+  formatChannelLayout,
+} from '../../player/compatibility';
+import type { UseStoryboardResult } from '../../player/useStoryboard';
+import { SeekPreviewThumbnail } from './SeekPreviewThumbnail';
 
 export type { SubtitleSearchResult };
 
 export interface PlayerControlsProps {
+  itemId?: number;
   title: string;
   subtitle?: string;
   releaseYear?: number;
@@ -33,6 +46,11 @@ export interface PlayerControlsProps {
   onPrevTrack?: () => void;
   onNextTrack?: () => void;
   onQueueMenuToggle?: (isOpen: boolean) => void;
+  audioTracks?: AudioStreamInfo[];
+  activeAudioTrackIndex?: number;
+  onSelectAudioTrack?: (audioIndex: number) => void;
+  onAudioMenuToggle?: (isOpen: boolean) => void;
+  storyboard?: Pick<UseStoryboardResult, 'status' | 'manifest'>;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -70,6 +88,7 @@ export function formatPlaybackTime(seconds: number): string {
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
+  itemId,
   title,
   subtitle,
   releaseYear,
@@ -80,6 +99,11 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onPrevTrack,
   onNextTrack,
   onQueueMenuToggle,
+  audioTracks,
+  activeAudioTrackIndex,
+  onSelectAudioTrack,
+  onAudioMenuToggle,
+  storyboard,
   isPlaying,
   currentTime,
   duration,
@@ -101,8 +125,13 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   recentlyDownloadedId,
   onSubtitlesMenuToggle,
 }) => {
+  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
   const [isSubtitlesMenuOpen, setIsSubtitlesMenuOpen] = useState(false);
   const [isQueueMenuOpen, setIsQueueMenuOpen] = useState(false);
+  const [hoverPreview, setHoverPreview] = useState<{
+    seconds: number;
+    percent: number;
+  } | null>(null);
   const [failedThumbIds, setFailedThumbIds] = useState<Record<number, boolean>>({});
   const [popoverView, setPopoverView] = useState<'list' | 'search'>('list');
   const [searchLang, setSearchLang] = useState('en');
@@ -113,7 +142,11 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
+  const audioTriggerRef = useRef<HTMLButtonElement>(null);
+  const audioMenuRef = useRef<HTMLDivElement>(null);
+
   const hasQueue = Boolean(queue && queue.length > 1 && currentIndex !== undefined);
+  const hasAudioTracks = Boolean(audioTracks && audioTracks.length > 0);
 
   const subtitleMeta = [subtitle, releaseYear ? `${releaseYear}` : null]
     .filter(Boolean)
@@ -123,14 +156,57 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   const currentVolume = isMuted ? 0 : volume;
   const volumePercent = Math.min(100, Math.max(0, currentVolume * 100));
 
+  const closeAudioMenuAndRestoreFocus = useCallback(() => {
+    setIsAudioMenuOpen(false);
+    onAudioMenuToggle?.(false);
+    audioTriggerRef.current?.focus();
+  }, [onAudioMenuToggle]);
+
+  useEffect(() => {
+    if (!isAudioMenuOpen) return;
+    const handleCaptureEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeAudioMenuAndRestoreFocus();
+      }
+    };
+    window.addEventListener('keydown', handleCaptureEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleCaptureEscape, true);
+    };
+  }, [isAudioMenuOpen, closeAudioMenuAndRestoreFocus]);
+
   const handleToggleQueueMenu = () => {
     const nextState = !isQueueMenuOpen;
     setIsQueueMenuOpen(nextState);
-    if (nextState && isSubtitlesMenuOpen) {
-      setIsSubtitlesMenuOpen(false);
-      onSubtitlesMenuToggle?.(false);
+    if (nextState) {
+      if (isAudioMenuOpen) {
+        setIsAudioMenuOpen(false);
+        onAudioMenuToggle?.(false);
+      }
+      if (isSubtitlesMenuOpen) {
+        setIsSubtitlesMenuOpen(false);
+        onSubtitlesMenuToggle?.(false);
+      }
     }
     onQueueMenuToggle?.(nextState);
+  };
+
+  const handleToggleAudioMenu = () => {
+    const nextState = !isAudioMenuOpen;
+    setIsAudioMenuOpen(nextState);
+    if (nextState) {
+      if (isQueueMenuOpen) {
+        setIsQueueMenuOpen(false);
+        onQueueMenuToggle?.(false);
+      }
+      if (isSubtitlesMenuOpen) {
+        setIsSubtitlesMenuOpen(false);
+        onSubtitlesMenuToggle?.(false);
+      }
+    }
+    onAudioMenuToggle?.(nextState);
   };
 
   const handleToggleSubtitlesMenu = () => {
@@ -141,6 +217,10 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         setIsQueueMenuOpen(false);
         onQueueMenuToggle?.(false);
       }
+      if (isAudioMenuOpen) {
+        setIsAudioMenuOpen(false);
+        onAudioMenuToggle?.(false);
+      }
       setPopoverView('list');
       setSearchError(null);
       setDownloadError(null);
@@ -148,10 +228,43 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
     onSubtitlesMenuToggle?.(nextState);
   };
 
+  const handleSelectAudioTrack = (audioIndex: number) => {
+    onSelectAudioTrack?.(audioIndex);
+    setIsAudioMenuOpen(false);
+    onAudioMenuToggle?.(false);
+  };
+
   const handleSelectSubtitle = (subtitleId: number | null) => {
     onSelectSubtitle(subtitleId);
     setIsSubtitlesMenuOpen(false);
     onSubtitlesMenuToggle?.(false);
+  };
+
+  const handleSeekPointerMove = (e: {
+    currentTarget: HTMLDivElement;
+    clientX: number;
+  }) => {
+    if (!Number.isFinite(duration) || duration <= 0) {
+      setHoverPreview(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (
+      !Number.isFinite(rect.width) ||
+      rect.width <= 0 ||
+      !Number.isFinite(rect.left) ||
+      !Number.isFinite(e.clientX)
+    ) {
+      setHoverPreview(null);
+      return;
+    }
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const seconds = ratio * duration;
+    if (!Number.isFinite(seconds)) {
+      setHoverPreview(null);
+      return;
+    }
+    setHoverPreview({ seconds, percent: ratio * 100 });
   };
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -243,7 +356,22 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           <span className="font-mono text-xs text-text-main min-w-12 text-right select-none drop-shadow">
             {formatPlaybackTime(currentTime)}
           </span>
-          <div className="relative flex-1 flex items-center group/seek focus-within:ring-3 focus-within:ring-highlight focus-within:ring-offset-2 focus-within:ring-offset-canvas rounded-full">
+          <div
+            onPointerMove={handleSeekPointerMove}
+            onMouseMove={handleSeekPointerMove}
+            onPointerLeave={() => setHoverPreview(null)}
+            onMouseLeave={() => setHoverPreview(null)}
+            className="relative flex-1 flex items-center group/seek focus-within:ring-3 focus-within:ring-highlight focus-within:ring-offset-2 focus-within:ring-offset-canvas rounded-full"
+          >
+            {hoverPreview && Number.isFinite(duration) && duration > 0 && (
+              <SeekPreviewThumbnail
+                itemId={itemId}
+                seconds={hoverPreview.seconds}
+                percent={hoverPreview.percent}
+                status={storyboard?.status ?? 'unavailable'}
+                manifest={storyboard?.manifest ?? null}
+              />
+            )}
             <div className="relative w-full bg-muted/40 h-1.5 group-hover/seek:h-2.5 hover:h-2.5 rounded-full transition-all cursor-pointer flex items-center">
               <div
                 className="bg-accent rounded-full relative h-full flex items-center justify-end"
@@ -433,6 +561,144 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                               <span className="font-mono text-[11px] text-muted shrink-0">
                                 {formatPlaybackTime(item.duration_seconds)}
                               </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Audio Tracks Popover Toggle */}
+            {hasAudioTracks && (
+              <div className="relative">
+                <button
+                  ref={audioTriggerRef}
+                  type="button"
+                  onClick={handleToggleAudioMenu}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && isAudioMenuOpen) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      closeAudioMenuAndRestoreFocus();
+                    } else if (e.key === 'ArrowDown' && isAudioMenuOpen) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const firstRadio =
+                        audioMenuRef.current?.querySelector<HTMLButtonElement>(
+                          '[role="menuitemradio"]:not(:disabled)'
+                        );
+                      firstRadio?.focus();
+                    }
+                  }}
+                  aria-label="Audio Tracks"
+                  aria-haspopup="menu"
+                  aria-expanded={isAudioMenuOpen}
+                  className={`p-2 rounded-lg border transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                    isAudioMenuOpen ||
+                    (activeAudioTrackIndex !== undefined && activeAudioTrackIndex > 0)
+                      ? 'text-accent bg-accent/15 border-accent/40'
+                      : 'text-muted hover:text-accent hover:bg-panel-hover/60 border-transparent'
+                  }`}
+                >
+                  <Headphones className="w-5 h-5" aria-hidden="true" />
+                </button>
+
+                {isAudioMenuOpen && (
+                  <div
+                    ref={audioMenuRef}
+                    role="menu"
+                    aria-label="Audio Tracks"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeAudioMenuAndRestoreFocus();
+                        return;
+                      }
+                      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+                        const items = Array.from(
+                          e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                            '[role="menuitemradio"]:not(:disabled)'
+                          )
+                        );
+                        if (items.length === 0) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const currentIdx = items.indexOf(
+                          document.activeElement as HTMLButtonElement
+                        );
+                        let nextIdx = 0;
+                        if (e.key === 'Home') {
+                          nextIdx = 0;
+                        } else if (e.key === 'End') {
+                          nextIdx = items.length - 1;
+                        } else if (e.key === 'ArrowDown') {
+                          nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % items.length;
+                        } else if (e.key === 'ArrowUp') {
+                          nextIdx =
+                            currentIdx <= 0 ? items.length - 1 : currentIdx - 1;
+                        }
+                        items[nextIdx]?.focus();
+                      }
+                    }}
+                    className="absolute right-0 bottom-full mb-2 w-80 sm:w-96 max-w-[calc(100vw-3rem)] bg-panel border border-border-subtle rounded-xl p-3 shadow-2xl text-text-main backdrop-blur-md z-50"
+                  >
+                    <div className="flex items-center justify-between px-1 py-1 text-xs font-semibold text-muted uppercase tracking-wider border-b border-border-subtle mb-2">
+                      <span>Audio Tracks</span>
+                    </div>
+                    <div
+                      role="group"
+                      aria-label="Available audio tracks"
+                      className="space-y-1 max-h-56 overflow-y-auto pr-0.5"
+                    >
+                      {audioTracks!.map((track) => {
+                        const isSelected =
+                          (activeAudioTrackIndex ?? 0) === track.audio_index;
+                        const codecBadge = track.codec?.trim()
+                          ? track.codec.trim().toUpperCase()
+                          : null;
+                        const channelBadge = formatChannelLayout(track.channels);
+                        return (
+                          <button
+                            key={track.audio_index}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={isSelected}
+                            onClick={() => handleSelectAudioTrack(track.audio_index)}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                              isSelected
+                                ? 'bg-accent/20 text-accent font-semibold'
+                                : 'text-text-main hover:bg-panel-hover hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                              <span className="truncate">
+                                {formatAudioTrackLabel(track)}
+                              </span>
+                              {codecBadge && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-canvas/80 text-muted border border-border-subtle uppercase shrink-0">
+                                  {codecBadge}
+                                </span>
+                              )}
+                              {channelBadge && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-canvas/80 text-muted border border-border-subtle shrink-0">
+                                  {channelBadge}
+                                </span>
+                              )}
+                              {track.is_commentary && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-highlight/20 text-highlight border border-highlight/30 shrink-0">
+                                  Commentary
+                                </span>
+                              )}
+                            </div>
+                            {isSelected && (
+                              <Check
+                                className="w-4 h-4 text-accent shrink-0 ml-2"
+                                aria-hidden="true"
+                              />
                             )}
                           </button>
                         );

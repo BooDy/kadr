@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback, type FC } from 'react';
 import { api } from '../../api/client';
 import type {
+  AudioStreamInfo,
   SubtitleTrack,
   SubtitleSearchResult,
   ItemDetailsPayload,
   PlaylistItemView,
 } from '../../types';
+import { useHlsPlayback, syncCueOffsets } from '../../player/useHlsPlayback';
+import { useStoryboard } from '../../player/useStoryboard';
 import { PlayerControls, formatPlaybackTime } from './PlayerControls';
 
 export interface CinemaPlayerProps {
@@ -29,15 +32,18 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const [itemDetails, setItemDetails] = useState<ItemDetailsPayload | null>(null);
+  const [audioTracks, setAudioTracks] = useState<AudioStreamInfo[]>([]);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSubtitleId, setActiveSubtitleId] = useState<number | null>(null);
   const [recentlyDownloadedId, setRecentlyDownloadedId] = useState<number | null>(null);
+  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
   const [isSubtitlesMenuOpen, setIsSubtitlesMenuOpen] = useState(false);
   const [isQueueMenuOpen, setIsQueueMenuOpen] = useState(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [resumePosition, setResumePosition] = useState<number | null>(null);
+  const [initialResumeSeconds, setInitialResumeSeconds] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -51,10 +57,51 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
   const isMetadataLoadedRef = useRef(false);
   const hasSeekedResumeRef = useRef(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAudioMenuOpenRef = useRef(false);
   const isSubtitlesMenuOpenRef = useRef(false);
   const isQueueMenuOpenRef = useRef(false);
 
-  const streamUrl = api.getStreamUrl(itemId);
+  const defaultAudioTrackIndex =
+    audioTracks.find((t) => t.is_default)?.audio_index ?? 0;
+  const knownDurationSeconds =
+    itemDetails?.duration_seconds || itemDetails?.technical?.duration_seconds;
+
+  const {
+    isUsingHls,
+    timeOffset,
+    activeAudioTrackIndex,
+    switchAudioTrack,
+    seekTo,
+    handleVideoError,
+    getEffectiveCurrentTime,
+    getEffectiveDuration,
+  } = useHlsPlayback({
+    itemId,
+    videoRef,
+    mediaType: itemDetails?.card?.media_type,
+    technical: itemDetails?.technical,
+    knownDurationSeconds,
+    initialResumeSeconds,
+    defaultAudioTrackIndex,
+  });
+
+  const getEffectiveCurrentTimeRef = useRef(getEffectiveCurrentTime);
+  getEffectiveCurrentTimeRef.current = getEffectiveCurrentTime;
+  const isUsingHlsRef = useRef(isUsingHls);
+  isUsingHlsRef.current = isUsingHls;
+
+  useEffect(() => {
+    if (knownDurationSeconds && knownDurationSeconds > 0) {
+      setDuration(knownDurationSeconds);
+    }
+  }, [knownDurationSeconds]);
+
+  const storyboard = useStoryboard({
+    itemId,
+    mediaType: itemDetails?.card?.media_type,
+    technical: itemDetails?.technical,
+    durationSeconds: duration,
+  });
 
   const showControls = useCallback(() => {
     setIsControlsVisible(true);
@@ -62,7 +109,11 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
       clearTimeout(hideTimeoutRef.current);
       hideTimeoutRef.current = null;
     }
-    if (!isSubtitlesMenuOpenRef.current && !isQueueMenuOpenRef.current) {
+    if (
+      !isAudioMenuOpenRef.current &&
+      !isSubtitlesMenuOpenRef.current &&
+      !isQueueMenuOpenRef.current
+    ) {
       hideTimeoutRef.current = setTimeout(() => {
         setIsControlsVisible(false);
       }, 3000);
@@ -70,9 +121,10 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
   }, []);
 
   useEffect(() => {
+    isAudioMenuOpenRef.current = isAudioMenuOpen;
     isSubtitlesMenuOpenRef.current = isSubtitlesMenuOpen;
     isQueueMenuOpenRef.current = isQueueMenuOpen;
-    if (isSubtitlesMenuOpen || isQueueMenuOpen) {
+    if (isAudioMenuOpen || isSubtitlesMenuOpen || isQueueMenuOpen) {
       setIsControlsVisible(true);
       if (hideTimeoutRef.current) {
         clearTimeout(hideTimeoutRef.current);
@@ -81,7 +133,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
     } else {
       showControls();
     }
-  }, [isSubtitlesMenuOpen, isQueueMenuOpen, showControls]);
+  }, [isAudioMenuOpen, isSubtitlesMenuOpen, isQueueMenuOpen, showControls]);
 
   const handleSearchSubtitles = useCallback(
     async (language: string): Promise<SubtitleSearchResult[]> => {
@@ -147,12 +199,15 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
       resumeTimerRef.current = null;
     }
     setResumePosition(null);
+    setInitialResumeSeconds(null);
     setCurrentTime(0);
     setDuration(0);
     setActiveSubtitleId(null);
+    setAudioTracks([]);
     setSubtitles([]);
     setItemDetails(null);
     setRecentlyDownloadedId(null);
+    setIsAudioMenuOpen(false);
     setIsLoading(false);
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
@@ -176,7 +231,12 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
         sessionIdRef.current = session.session_id;
         heartbeatInterval = setInterval(() => {
           if (sessionId && videoRef.current) {
-            api.sendPlaybackHeartbeat(sessionId, Math.floor(videoRef.current.currentTime)).catch(() => {});
+            api
+              .sendPlaybackHeartbeat(
+                sessionId,
+                Math.floor(getEffectiveCurrentTimeRef.current())
+              )
+              .catch(() => {});
           }
         }, 10000);
       })
@@ -208,12 +268,18 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
           state.playback_position_seconds > 0
         ) {
           resumePositionRef.current = state.playback_position_seconds;
+          setInitialResumeSeconds(state.playback_position_seconds);
           setResumePosition(state.playback_position_seconds);
           if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
           resumeTimerRef.current = setTimeout(() => {
             setResumePosition(null);
           }, 4000);
-          if (videoRef.current && isMetadataLoadedRef.current && !hasSeekedResumeRef.current) {
+          if (
+            !isUsingHlsRef.current &&
+            videoRef.current &&
+            isMetadataLoadedRef.current &&
+            !hasSeekedResumeRef.current
+          ) {
             videoRef.current.currentTime = state.playback_position_seconds;
             hasSeekedResumeRef.current = true;
           }
@@ -227,9 +293,32 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
     };
   }, [itemId]);
 
-  // Fetch subtitles and item details
+  // Fetch audio tracks, subtitles, and item details
   useEffect(() => {
     let isCancelled = false;
+    let fetchedAudioTracks: AudioStreamInfo[] | null = null;
+    let fallbackAudioTracks: AudioStreamInfo[] = [];
+
+    api.getAudioTracks(itemId)
+      .then((tracks) => {
+        if (isCancelled) return;
+        if (Array.isArray(tracks) && tracks.length > 0) {
+          fetchedAudioTracks = tracks;
+          setAudioTracks(tracks);
+        } else if (fallbackAudioTracks.length > 0) {
+          setAudioTracks(fallbackAudioTracks);
+        } else {
+          fetchedAudioTracks = [];
+          setAudioTracks([]);
+        }
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        if (fallbackAudioTracks.length > 0) {
+          setAudioTracks(fallbackAudioTracks);
+        }
+      });
+
     api.getSubtitles(itemId)
       .then((tracks) => {
         if (isCancelled) return;
@@ -245,6 +334,14 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
       .then((details) => {
         if (isCancelled) return;
         setItemDetails(details);
+        const techTracks = details.technical?.audio_tracks ?? [];
+        fallbackAudioTracks = techTracks;
+        if (
+          (!fetchedAudioTracks || fetchedAudioTracks.length === 0) &&
+          techTracks.length > 0
+        ) {
+          setAudioTracks(techTracks);
+        }
       })
       .catch(() => {});
 
@@ -253,7 +350,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
     };
   }, [itemId]);
 
-  // Sync subtitle tracks mode with activeSubtitleId
+  // Sync subtitle tracks mode and cue offsets with activeSubtitleId / timeOffset
   useEffect(() => {
     if (videoRef.current && videoRef.current.textTracks) {
       const tracks = videoRef.current.textTracks;
@@ -266,8 +363,9 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
           textTrack.mode = 'disabled';
         }
       }
+      syncCueOffsets(videoRef.current, timeOffset);
     }
-  }, [activeSubtitleId, subtitles]);
+  }, [activeSubtitleId, subtitles, timeOffset]);
 
   const safePlay = useCallback((video: HTMLVideoElement) => {
     try {
@@ -280,19 +378,29 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
     }
   }, []);
 
-  const handleSeek = useCallback((seconds: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = seconds;
-    setCurrentTime(seconds);
-  }, []);
+  const handleSeek = useCallback(
+    (seconds: number) => {
+      seekTo(seconds);
+      setCurrentTime(Math.max(0, seconds));
+    },
+    [seekTo]
+  );
 
   const handlePrevTrack = useCallback(() => {
-    if ((videoRef.current?.currentTime ?? currentTime) > 5) {
+    const effectiveNow = videoRef.current ? getEffectiveCurrentTime() : currentTime;
+    if (effectiveNow > 5) {
       handleSeek(0);
     } else if (queue && currentIndex !== undefined && currentIndex > 0) {
       onSelectQueueIndex?.(currentIndex - 1);
     }
-  }, [currentTime, queue, currentIndex, onSelectQueueIndex, handleSeek]);
+  }, [
+    currentTime,
+    queue,
+    currentIndex,
+    onSelectQueueIndex,
+    handleSeek,
+    getEffectiveCurrentTime,
+  ]);
 
   const handleNextTrack = useCallback(() => {
     if (queue && currentIndex !== undefined && currentIndex + 1 < queue.length) {
@@ -344,14 +452,21 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
             video.pause();
           }
           break;
-        case 'ArrowLeft':
+        case 'ArrowLeft': {
           e.preventDefault();
-          video.currentTime = Math.max(0, video.currentTime - 10);
+          const targetTime = Math.max(0, getEffectiveCurrentTime() - 10);
+          seekTo(targetTime);
+          setCurrentTime(targetTime);
           break;
-        case 'ArrowRight':
+        }
+        case 'ArrowRight': {
           e.preventDefault();
-          video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
+          const maxDur = getEffectiveDuration(video.duration) || Infinity;
+          const targetTime = Math.min(maxDur, getEffectiveCurrentTime() + 10);
+          seekTo(targetTime);
+          setCurrentTime(targetTime);
           break;
+        }
         case 'ArrowUp':
           e.preventDefault();
           video.volume = Math.min(1, Math.round((video.volume + 0.1) * 10) / 10);
@@ -371,6 +486,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
           toggleFullscreen();
           break;
         case 'Escape':
+          if (e.defaultPrevented) break;
           e.preventDefault();
           onClose();
           break;
@@ -384,24 +500,43 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
         clearTimeout(hideTimeoutRef.current);
       }
     };
-  }, [onClose, safePlay, showControls, toggleFullscreen, handleNextTrack, handlePrevTrack]);
+  }, [
+    onClose,
+    safePlay,
+    showControls,
+    toggleFullscreen,
+    handleNextTrack,
+    handlePrevTrack,
+    getEffectiveCurrentTime,
+    getEffectiveDuration,
+    seekTo,
+  ]);
 
   // Video event handlers
   const handleLoadedMetadata = () => {
     isMetadataLoadedRef.current = true;
     if (videoRef.current) {
-      setDuration(videoRef.current.duration || 0);
-      if (resumePositionRef.current && resumePositionRef.current > 0 && !hasSeekedResumeRef.current) {
-        videoRef.current.currentTime = resumePositionRef.current;
+      setDuration(getEffectiveDuration(videoRef.current.duration));
+      if (
+        resumePositionRef.current &&
+        resumePositionRef.current > 0 &&
+        !hasSeekedResumeRef.current
+      ) {
+        if (!isUsingHls) {
+          videoRef.current.currentTime = resumePositionRef.current;
+        }
         hasSeekedResumeRef.current = true;
       }
+      setCurrentTime(getEffectiveCurrentTime());
       // Autoplay
       safePlay(videoRef.current);
     }
   };
 
   const handleVideoEnded = async () => {
-    const finalSec = Math.floor(videoRef.current?.duration || duration || 0);
+    const finalSec = Math.floor(
+      getEffectiveDuration(videoRef.current?.duration) || duration || 0
+    );
     if (sessionIdRef.current && finalSec > 0) {
       await api.sendPlaybackHeartbeat(sessionIdRef.current, finalSec).catch(() => {});
     }
@@ -414,7 +549,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+      setCurrentTime(getEffectiveCurrentTime());
     }
   };
 
@@ -471,7 +606,6 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
       <span className="sr-only">Cinema Player</span>
       <video
         ref={videoRef}
-        src={streamUrl}
         autoPlay
         playsInline
         onLoadedMetadata={handleLoadedMetadata}
@@ -479,6 +613,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
         onPlay={handlePlay}
         onPause={handlePause}
         onEnded={handleVideoEnded}
+        onError={() => handleVideoError(getEffectiveCurrentTime())}
         onWaiting={() => setIsLoading(true)}
         onPlaying={() => setIsLoading(false)}
         onCanPlay={() => setIsLoading(false)}
@@ -494,6 +629,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
             srcLang={track.language}
             label={track.title || track.language}
             default={track.is_default}
+            onLoad={() => syncCueOffsets(videoRef.current, timeOffset)}
           />
         ))}
       </video>
@@ -512,15 +648,16 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
             Resumed at <span className="font-mono text-accent">{formatPlaybackTime(resumePosition)}</span>
           </span>
           <button
+            type="button"
             onClick={() => {
               if (resumeTimerRef.current) {
                 clearTimeout(resumeTimerRef.current);
                 resumeTimerRef.current = null;
               }
-              if (videoRef.current) {
-                videoRef.current.currentTime = 0;
-                setCurrentTime(0);
-              }
+              resumePositionRef.current = null;
+              setInitialResumeSeconds(null);
+              seekTo(0);
+              setCurrentTime(0);
               setResumePosition(null);
             }}
             className="text-xs text-muted hover:text-text-main underline cursor-pointer ml-1 focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none rounded"
@@ -531,6 +668,7 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
       )}
 
       <PlayerControls
+        itemId={itemId}
         title={displayTitle}
         subtitle={displaySubtitle}
         releaseYear={displayYear}
@@ -548,6 +686,20 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
             hideTimeoutRef.current = null;
           }
         }}
+        audioTracks={audioTracks}
+        activeAudioTrackIndex={activeAudioTrackIndex}
+        onSelectAudioTrack={(audioIndex) =>
+          switchAudioTrack(audioIndex, getEffectiveCurrentTime())
+        }
+        onAudioMenuToggle={(isOpen) => {
+          setIsAudioMenuOpen(isOpen);
+          isAudioMenuOpenRef.current = isOpen;
+          if (isOpen && hideTimeoutRef.current) {
+            clearTimeout(hideTimeoutRef.current);
+            hideTimeoutRef.current = null;
+          }
+        }}
+        storyboard={storyboard}
         isPlaying={isPlaying}
         currentTime={currentTime}
         duration={duration}
