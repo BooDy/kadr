@@ -27,7 +27,7 @@ export const WatchStateButton: FC<WatchStateButtonProps> = ({
 
   useEffect(() => {
     setOptimisticWatched(propWatched);
-  }, [propWatched]);
+  }, [itemId, propWatched]);
 
   if (mediaType === 'live_channel') {
     return null;

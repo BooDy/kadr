@@ -479,4 +479,161 @@ describe('useHlsPlayback', () => {
     );
     expect(mockHlsInstances).toHaveLength(2);
   });
+
+  it('preserves initialResumeSeconds across Direct Play <video> error for both pre-resolved and late-arriving resume state', async () => {
+    let latestHls: UseHlsPlaybackResult | null = null;
+
+    // Order A: initialResumeSeconds already resolved (145s) when Direct Play errors at 0s
+    const { unmount } = render(
+      <Harness
+        itemId={61}
+        mediaType="movie"
+        technical={{ duration_seconds: 500 }}
+        initialResumeSeconds={145}
+        onResult={(r) => {
+          latestHls = r;
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('mode').textContent).toBe('direct');
+    await act(async () => {
+      latestHls!.handleVideoError(0);
+    });
+
+    await waitFor(() => {
+      expect(mockHlsInstances).toHaveLength(1);
+    });
+    expect(screen.getByTestId('offset').textContent).toBe('145');
+    expect(mockHlsInstances[0].loadedSrc).toContain('start_time=145');
+    unmount();
+
+    mockHlsInstances.length = 0;
+
+    // Order B: initialResumeSeconds is still null when Direct Play errors at 0s, then resolves to 210s
+    const { rerender } = render(
+      <Harness
+        itemId={62}
+        mediaType="movie"
+        technical={{ duration_seconds: 500 }}
+        initialResumeSeconds={null}
+        onResult={(r) => {
+          latestHls = r;
+        }}
+      />
+    );
+
+    await act(async () => {
+      latestHls!.handleVideoError(0);
+    });
+
+    await waitFor(() => {
+      expect(mockHlsInstances).toHaveLength(1);
+    });
+    expect(screen.getByTestId('offset').textContent).toBe('0');
+
+    rerender(
+      <Harness
+        itemId={62}
+        mediaType="movie"
+        technical={{ duration_seconds: 500 }}
+        initialResumeSeconds={210}
+        onResult={(r) => {
+          latestHls = r;
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockHlsInstances).toHaveLength(2);
+    });
+    expect(screen.getByTestId('offset').textContent).toBe('210');
+    expect(mockHlsInstances[1].loadedSrc).toContain('start_time=210');
+  });
+
+  it('deletes leaked Safari native HLS session and avoids overwriting activeHlsSessionRef or video.src on mid-flight cancellation', async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(false);
+    const canPlaySpy = vi
+      .spyOn(HTMLMediaElement.prototype, 'canPlayType')
+      .mockImplementation((mime: string) =>
+        mime === 'application/vnd.apple.mpegurl' ? 'maybe' : ''
+      );
+
+    let resolveFirstText!: (text: string) => void;
+    const firstPlaylistPromise = new Promise<string>((resolve) => {
+      resolveFirstText = resolve;
+    });
+
+    const staleSid = '11111111-aaaa-bbbb-cccc-000000000001';
+    const activeSid = '22222222-aaaa-bbbb-cccc-000000000002';
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(
+        async () =>
+          ({
+            ok: true,
+            text: () => firstPlaylistPromise,
+          }) as Response
+      )
+      .mockImplementationOnce(
+        async () =>
+          ({
+            ok: true,
+            text: async () =>
+              `#EXTM3U\n/api/v1/media/89/hls/sessions/${activeSid}/segment_0000.ts`,
+          }) as Response
+      );
+
+    let latestHls: UseHlsPlaybackResult | null = null;
+    const { unmount } = render(
+      <Harness
+        itemId={89}
+        mediaType="movie"
+        technical={{
+          duration_seconds: 400,
+          container: 'mkv',
+          video_codec: 'hevc',
+          audio_codec: 'dts',
+        }}
+        onResult={(r) => {
+          latestHls = r;
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Seek to 120s while first Safari playlist text() is still pending -> cancels first effect
+    await act(async () => {
+      latestHls!.seekTo(120);
+    });
+
+    const video = screen.getByTestId('video') as HTMLVideoElement;
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(video.getAttribute('src')).toContain('start_time=120');
+    });
+
+    // Now resolve the cancelled first playlist body -> must immediately delete staleSid and NOT clobber activeSid or video.src
+    await act(async () => {
+      resolveFirstText(
+        `#EXTM3U\n/api/v1/media/89/hls/sessions/${staleSid}/segment_0000.ts`
+      );
+      await firstPlaylistPromise;
+    });
+
+    await waitFor(() => {
+      expect(api.deleteHlsSession).toHaveBeenCalledWith(89, staleSid);
+    });
+    expect(video.getAttribute('src')).toContain('start_time=120');
+
+    // Unmounting must still clean up activeSid (proving activeHlsSessionRef was not overwritten)
+    unmount();
+    expect(api.deleteHlsSession).toHaveBeenCalledWith(89, activeSid);
+
+    canPlaySpy.mockRestore();
+  });
 });

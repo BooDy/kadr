@@ -393,7 +393,14 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   };
 
   const handleToggleSeriesWatched = async () => {
-    if (!details?.episodes || details.episodes.length === 0 || seriesBatchBusy) return;
+    if (
+      !details?.episodes ||
+      details.episodes.length === 0 ||
+      seriesBatchBusy ||
+      seasonBatchBusy
+    ) {
+      return;
+    }
     const targetIds = details.episodes.map((e) => e.id);
     const nextWatched = !allSeriesWatched;
     const previousEpisodes = details.episodes;
@@ -421,7 +428,12 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
   };
 
   const handleToggleSeasonWatched = async () => {
-    if (episodesForCurrentSeason.length === 0 || seasonBatchBusy || !details?.episodes) {
+    if (
+      episodesForCurrentSeason.length === 0 ||
+      seriesBatchBusy ||
+      seasonBatchBusy ||
+      !details?.episodes
+    ) {
       return;
     }
     const targetIds = episodesForCurrentSeason.map((e) => e.id);
@@ -714,7 +726,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                     <button
                       type="button"
                       aria-pressed={allSeriesWatched}
-                      disabled={seriesBatchBusy}
+                      disabled={seriesBatchBusy || seasonBatchBusy}
                       onClick={handleToggleSeriesWatched}
                       className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
                         allSeriesWatched
@@ -896,7 +908,7 @@ export const ItemDetailsModal: FC<ItemDetailsModalProps> = ({
                               <button
                                 type="button"
                                 aria-pressed={allSeasonWatched}
-                                disabled={seasonBatchBusy}
+                                disabled={seriesBatchBusy || seasonBatchBusy}
                                 onClick={handleToggleSeasonWatched}
                                 className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
                                   allSeasonWatched

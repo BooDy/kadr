@@ -738,4 +738,70 @@ describe('CinemaPlayer Component', () => {
       );
     });
   });
+
+  it('preserves saved resume position when Direct Play errors at 0s both after and before getPlaybackState resolves', async () => {
+    const hlsSpy = vi.spyOn(api, 'getHlsMasterUrl');
+
+    // Order 1: getPlaybackState resolves (145s) BEFORE <video> fires error (loadedmetadata never fired, currentTime=0)
+    const { unmount } = render(<CinemaPlayer itemId={mockItemId} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Resumed at/i)).toBeInTheDocument();
+    });
+
+    const video1 = document.querySelector('video') as HTMLVideoElement;
+    expect(video1.currentTime).toBe(0);
+
+    act(() => {
+      fireEvent.error(video1);
+    });
+
+    await waitFor(() => {
+      expect(hlsSpy).toHaveBeenCalledWith(
+        mockItemId,
+        expect.objectContaining({ startTime: 145 })
+      );
+    });
+
+    unmount();
+    hlsSpy.mockClear();
+
+    // Order 2: <video> fires error immediately at 0s BEFORE getPlaybackState resolves
+    let resolvePlaybackState!: (state: PlaybackState) => void;
+    vi.spyOn(api, 'getPlaybackState').mockImplementationOnce(
+      () =>
+        new Promise<PlaybackState>((resolve) => {
+          resolvePlaybackState = resolve;
+        })
+    );
+
+    render(<CinemaPlayer itemId={mockItemId} onClose={mockOnClose} />);
+
+    const video2 = document.querySelector('video') as HTMLVideoElement;
+    act(() => {
+      fireEvent.error(video2);
+    });
+
+    await waitFor(() => {
+      expect(hlsSpy).toHaveBeenCalledWith(
+        mockItemId,
+        expect.objectContaining({ startTime: 0 })
+      );
+    });
+
+    await act(async () => {
+      resolvePlaybackState({
+        ...mockPlaybackState,
+        playback_position_seconds: 185,
+        watch_state: 'in_progress',
+      });
+    });
+
+    await waitFor(() => {
+      expect(hlsSpy).toHaveBeenCalledWith(
+        mockItemId,
+        expect.objectContaining({ startTime: 185 })
+      );
+    });
+  });
 });

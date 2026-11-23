@@ -115,4 +115,37 @@ describe('WatchStateButton', () => {
     expect(btn.className).toContain('opacity-100');
     expect(btn.className).not.toContain('opacity-0');
   });
+
+  it('resets optimisticWatched when itemId changes even if watched prop stays false', async () => {
+    vi.spyOn(api, 'setPlaybackState').mockResolvedValue({
+      user_id: 'u1',
+      media_item_id: 10,
+      playback_position_seconds: 0,
+      watch_state: 'completed',
+      last_watched_at: 1000,
+      play_count: 1,
+    });
+
+    const { rerender } = render(
+      <WatchStateButton itemId={10} title="Ep 1" mediaType="episode" watched={false} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Ep 1 as watched' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Mark Ep 1 as unwatched' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+    });
+
+    // Parent reuses WatchStateButton for itemId=11 whose watched prop is also false
+    rerender(
+      <WatchStateButton itemId={11} title="Ep 2" mediaType="episode" watched={false} />
+    );
+
+    expect(screen.getByRole('button', { name: 'Mark Ep 2 as watched' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+  });
 });

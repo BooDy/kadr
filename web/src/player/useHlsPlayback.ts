@@ -318,9 +318,15 @@ export function useHlsPlayback({
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           try {
             const resp = await fetch(masterUrl);
-            if (!cancelled && resp.ok) {
+            if (resp.ok) {
               const playlistText = await resp.text();
               const sid = extractHlsSessionId(playlistText);
+              if (cancelled) {
+                if (sid) {
+                  api.deleteHlsSession(itemId, sid).catch(() => {});
+                }
+                return;
+              }
               if (sid) {
                 activeHlsSessionRef.current = { itemId, sessionId: sid };
               }
@@ -436,12 +442,23 @@ export function useHlsPlayback({
   const handleVideoError = useCallback(
     (currentEffectiveTime: number) => {
       if (!decision.useHls && !effectiveForceHls) {
-        hasAppliedInitialResumeRef.current = true;
-        setHlsStartTime(Math.max(0, Math.floor(currentEffectiveTime)));
+        const fallbackStart =
+          currentEffectiveTime > 0
+            ? currentEffectiveTime
+            : initialResumeSeconds && initialResumeSeconds > 0
+              ? initialResumeSeconds
+              : 0;
+        if (
+          fallbackStart > 0 ||
+          (initialResumeSeconds !== null && initialResumeSeconds !== undefined)
+        ) {
+          hasAppliedInitialResumeRef.current = true;
+        }
+        setHlsStartTime(Math.max(0, Math.floor(fallbackStart)));
         setForceHls(true);
       }
     },
-    [decision.useHls, effectiveForceHls]
+    [decision.useHls, effectiveForceHls, initialResumeSeconds]
   );
 
   return {

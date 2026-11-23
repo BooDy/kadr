@@ -341,7 +341,8 @@ export class ApiClient {
     seconds: number,
     width: number = 320
   ): string {
-    const snapped = Math.max(0, Math.floor(seconds / 2) * 2);
+    const safeSecs = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+    const snapped = Math.max(0, Math.floor(safeSecs / 2) * 2);
     return this.appendMediaAuthParams(
       `/api/v1/media/${itemId}/frame?t=${snapped}&w=${width}`
     );

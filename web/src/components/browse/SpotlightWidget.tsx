@@ -2,6 +2,7 @@ import { useState, type FC } from 'react';
 import { Play, Info, Clapperboard, Sparkles, ListPlus } from 'lucide-react';
 import type { CardViewModel } from '../../types';
 import { api } from '../../api/client';
+import { isCardWatched } from '../../utils/watchStateEvents';
 import { AddToPlaylistModal } from '../playlists/AddToPlaylistModal';
 
 export interface SpotlightWidgetProps {
@@ -22,8 +23,11 @@ export const SpotlightWidget: FC<SpotlightWidgetProps> = ({
     item.backdrop_url || item.poster_url || api.getArtworkUrl(item.id, 'backdrop');
 
   // Determine badges
-  const isResume =
-    typeof item.playback_progress === 'number' && item.playback_progress > 0;
+  const hasProgress =
+    typeof item.playback_progress === 'number' &&
+    item.playback_progress > 0 &&
+    !isCardWatched(item);
+  const isResume = hasProgress;
   const isNewRelease =
     !isResume && item.release_year && item.release_year >= 2024;
   const qualityBadge = item.badge || '4K ULTRA HD';

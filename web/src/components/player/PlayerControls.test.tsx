@@ -328,6 +328,7 @@ describe('PlayerControls Component', () => {
     expect(radios[1]).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('AAC')).toBeInTheDocument();
     expect(screen.getByText('Stereo')).toBeInTheDocument();
+    expect(screen.getByText('Default')).toBeInTheDocument();
     expect(screen.getByText('EAC3')).toBeInTheDocument();
     expect(screen.getByText('5.1')).toBeInTheDocument();
     expect(screen.getByText('Commentary')).toBeInTheDocument();
@@ -410,5 +411,115 @@ describe('PlayerControls Component', () => {
 
     fireEvent.pointerLeave(seekContainer);
     expect(screen.queryByTestId('seek-preview-sprite')).not.toBeInTheDocument();
+  });
+
+  it('resets open Audio Tracks menu, hover preview, and capture-phase Escape listener on itemId transition or empty audioTracks', () => {
+    const onAudioMenuToggle = vi.fn();
+    const manifest = {
+      interval_ms: 10000,
+      tile_width: 320,
+      tile_height: 180,
+      columns: 10,
+      rows: 10,
+      total_tiles: 720,
+      sheets: [
+        { index: 0, url: '/api/v1/media/10/storyboard/0.jpg', first_tile: 0, tile_count: 720 },
+      ],
+    };
+    const tracks = [
+      {
+        audio_index: 0,
+        stream_index: 1,
+        codec: 'aac',
+        channels: 2,
+        language: 'eng',
+        title: 'English',
+        is_default: true,
+        is_commentary: false,
+      },
+    ];
+
+    const { rerender } = render(
+      <PlayerControls
+        {...defaultProps}
+        itemId={10}
+        audioTracks={tracks}
+        activeAudioTrackIndex={0}
+        onAudioMenuToggle={onAudioMenuToggle}
+        storyboard={{ status: 'ready', manifest }}
+      />
+    );
+
+    // Activate hover preview and open Audio Tracks menu (single track omits Default pill)
+    const seekContainer = screen.getByRole('slider', { name: /seek/i })
+      .parentElement as HTMLElement;
+    vi.spyOn(seekContainer, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 10,
+      right: 400,
+      bottom: 10,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent(seekContainer, new MouseEvent('pointermove', { bubbles: true, clientX: 200 }));
+    expect(screen.getByTestId('seek-preview-sprite')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /audio tracks/i }));
+    expect(screen.getByRole('menu', { name: /audio tracks/i })).toBeInTheDocument();
+    expect(screen.queryByText('Default')).not.toBeInTheDocument();
+    onAudioMenuToggle.mockClear();
+
+    // Transition itemId from 10 -> 20 while audioTracks remain present: closes menu & clears hover preview
+    rerender(
+      <PlayerControls
+        {...defaultProps}
+        itemId={20}
+        audioTracks={tracks}
+        activeAudioTrackIndex={0}
+        onAudioMenuToggle={onAudioMenuToggle}
+        storyboard={{ status: 'ready', manifest }}
+      />
+    );
+
+    expect(screen.queryByRole('menu', { name: /audio tracks/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('seek-preview-sprite')).not.toBeInTheDocument();
+    expect(onAudioMenuToggle).toHaveBeenCalledWith(false);
+
+    // Escape event is NOT intercepted when menu was auto-closed
+    const escAfterItemChange = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escAfterItemChange);
+    expect(escAfterItemChange.defaultPrevented).toBe(false);
+
+    // Reopen Audio Tracks on item 20, then clear audioTracks -> closes menu and disarms Escape listener
+    fireEvent.click(screen.getByRole('button', { name: /audio tracks/i }));
+    expect(screen.getByRole('menu', { name: /audio tracks/i })).toBeInTheDocument();
+    onAudioMenuToggle.mockClear();
+
+    rerender(
+      <PlayerControls
+        {...defaultProps}
+        itemId={20}
+        audioTracks={[]}
+        activeAudioTrackIndex={0}
+        onAudioMenuToggle={onAudioMenuToggle}
+        storyboard={{ status: 'ready', manifest }}
+      />
+    );
+
+    expect(onAudioMenuToggle).toHaveBeenCalledWith(false);
+    const escWithoutTracks = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escWithoutTracks);
+    expect(escWithoutTracks.defaultPrevented).toBe(false);
   });
 });

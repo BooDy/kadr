@@ -641,4 +641,67 @@ describe('BrowseScreen & Declarative Widgets', () => {
       ).toHaveAttribute('aria-pressed', 'true');
     });
   });
+
+  it('shows RESUME badge on in-progress Spotlight item and removes/omits RESUME when Spotlight item is marked watched', async () => {
+    const spotlightAndCardLayout: ScreenLayout = {
+      id: 'movies',
+      title: 'Movies',
+      widgets: [
+        {
+          type: 'hero_banner',
+          id: 'spotlight_hero',
+          binding: { macro_type: 'spotlight_item', limit: 1 },
+          data: {
+            id: 101,
+            title: 'Blade Runner 2049',
+            media_type: 'movie',
+            release_year: 2017,
+            playback_progress: 0.45,
+          },
+        },
+        {
+          type: 'grid',
+          id: 'all_movies',
+          title: 'All Movies',
+          columns: 4,
+          binding: { macro_type: 'top_rated', limit: 20 },
+          items: [
+            {
+              id: 101,
+              title: 'Blade Runner 2049',
+              media_type: 'movie',
+              release_year: 2017,
+              playback_progress: 0.45,
+            },
+          ],
+        },
+      ],
+    };
+
+    vi.spyOn(api, 'getScreen').mockResolvedValueOnce(spotlightAndCardLayout);
+    vi.spyOn(api, 'setPlaybackState').mockResolvedValue({
+      user_id: 'u1',
+      media_item_id: 101,
+      playback_position_seconds: 0,
+      watch_state: 'completed',
+      last_watched_at: 1000,
+      play_count: 1,
+    });
+
+    render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
+
+    const spotlightSection = await screen.findByRole('region', {
+      name: 'Spotlight: Blade Runner 2049',
+    });
+    expect(spotlightSection).toHaveTextContent('RESUME');
+
+    // Mark Blade Runner 2049 as watched -> HydratedSpotlight updates playback_progress to 1, and RESUME badge must disappear
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Mark Blade Runner 2049 as watched' })
+    );
+
+    await waitFor(() => {
+      expect(spotlightSection).not.toHaveTextContent('RESUME');
+    });
+  });
 });

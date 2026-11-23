@@ -144,6 +144,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 
   const audioTriggerRef = useRef<HTMLButtonElement>(null);
   const audioMenuRef = useRef<HTMLDivElement>(null);
+  const prevItemIdRef = useRef(itemId);
+  const onAudioMenuToggleRef = useRef(onAudioMenuToggle);
+  onAudioMenuToggleRef.current = onAudioMenuToggle;
 
   const hasQueue = Boolean(queue && queue.length > 1 && currentIndex !== undefined);
   const hasAudioTracks = Boolean(audioTracks && audioTracks.length > 0);
@@ -156,6 +159,20 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   const currentVolume = isMuted ? 0 : volume;
   const volumePercent = Math.min(100, Math.max(0, currentVolume * 100));
 
+  useEffect(() => {
+    const itemChanged = prevItemIdRef.current !== itemId;
+    prevItemIdRef.current = itemId;
+
+    if (itemChanged) {
+      setHoverPreview(null);
+    }
+
+    if ((itemChanged || !hasAudioTracks) && isAudioMenuOpen) {
+      setIsAudioMenuOpen(false);
+      onAudioMenuToggleRef.current?.(false);
+    }
+  }, [itemId, hasAudioTracks, isAudioMenuOpen]);
+
   const closeAudioMenuAndRestoreFocus = useCallback(() => {
     setIsAudioMenuOpen(false);
     onAudioMenuToggle?.(false);
@@ -163,7 +180,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   }, [onAudioMenuToggle]);
 
   useEffect(() => {
-    if (!isAudioMenuOpen) return;
+    if (!isAudioMenuOpen || !hasAudioTracks) return;
     const handleCaptureEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -175,7 +192,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
     return () => {
       window.removeEventListener('keydown', handleCaptureEscape, true);
     };
-  }, [isAudioMenuOpen, closeAudioMenuAndRestoreFocus]);
+  }, [isAudioMenuOpen, hasAudioTracks, closeAudioMenuAndRestoreFocus]);
 
   const handleToggleQueueMenu = () => {
     const nextState = !isQueueMenuOpen;
@@ -264,7 +281,12 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       setHoverPreview(null);
       return;
     }
-    setHoverPreview({ seconds, percent: ratio * 100 });
+    const percent = ratio * 100;
+    setHoverPreview((prev) =>
+      prev && prev.seconds === seconds && prev.percent === percent
+        ? prev
+        : { seconds, percent }
+    );
   };
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -686,6 +708,11 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                               {channelBadge && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-canvas/80 text-muted border border-border-subtle shrink-0">
                                   {channelBadge}
+                                </span>
+                              )}
+                              {track.is_default && audioTracks!.length > 1 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/15 text-accent border border-accent/30 shrink-0">
+                                  Default
                                 </span>
                               )}
                               {track.is_commentary && (

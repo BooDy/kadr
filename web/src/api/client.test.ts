@@ -1010,6 +1010,18 @@ describe('Player, Storyboard & Watch-State API methods', () => {
     expect(client.getStoryboardSheetUrl('/api/v1/media/5/storyboard/0.jpg')).toBe(
       '/api/v1/media/5/storyboard/0.jpg?token=jwt-sess&unlocked=unlock-a'
     );
+    expect(client.getFramePreviewUrl(5, 13.7, 320)).toBe(
+      '/api/v1/media/5/frame?t=12&w=320&token=jwt-sess&unlocked=unlock-a'
+    );
+    expect(client.getFramePreviewUrl(5, Number.NaN, 320)).toBe(
+      '/api/v1/media/5/frame?t=0&w=320&token=jwt-sess&unlocked=unlock-a'
+    );
+    expect(client.getFramePreviewUrl(5, Number.POSITIVE_INFINITY, 320)).toBe(
+      '/api/v1/media/5/frame?t=0&w=320&token=jwt-sess&unlocked=unlock-a'
+    );
+    expect(client.getFramePreviewUrl(5, -8, 320)).toBe(
+      '/api/v1/media/5/frame?t=0&w=320&token=jwt-sess&unlocked=unlock-a'
+    );
 
     const mockState = {
       user_id: 'u-1',

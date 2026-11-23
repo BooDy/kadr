@@ -420,6 +420,23 @@ describe('ItemDetailsModal Seasons & Episodes', () => {
         'false'
       );
     });
+
+    // Disables both Series and Season batch buttons while either batch request is in-flight
+    let resolveInFlightBatch!: (val: { updated: number; watched: boolean }) => void;
+    batchSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInFlightBatch = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Season Watched' }));
+    expect(screen.getByRole('button', { name: 'Season Watched' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Mark Series Watched' })).toBeDisabled();
+    resolveInFlightBatch({ updated: 1, watched: true });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Season Watched' })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Mark Series Watched' })).not.toBeDisabled();
+    });
   });
 
   it('renders technical audio stream badges from details.technical.audio_tracks and falls back to api.getAudioTracks', async () => {

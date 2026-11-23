@@ -613,7 +613,12 @@ export const CinemaPlayer: FC<CinemaPlayerProps> = ({
         onPlay={handlePlay}
         onPause={handlePause}
         onEnded={handleVideoEnded}
-        onError={() => handleVideoError(getEffectiveCurrentTime())}
+        onError={() =>
+          handleVideoError(
+            getEffectiveCurrentTime() ||
+              (!hasSeekedResumeRef.current ? resumePositionRef.current ?? 0 : 0)
+          )
+        }
         onWaiting={() => setIsLoading(true)}
         onPlaying={() => setIsLoading(false)}
         onCanPlay={() => setIsLoading(false)}
