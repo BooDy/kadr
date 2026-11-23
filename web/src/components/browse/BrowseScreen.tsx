@@ -98,24 +98,37 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
   };
 
   const refreshSeqRef = useRef(0);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchScreen = useCallback(async () => {
     const seq = ++refreshSeqRef.current;
+    isFetchingRef.current = true;
     setLoading(true);
     setError(null);
     try {
       const data = await api.getScreen(screenId);
-      if (seq === refreshSeqRef.current) {
+      if (mountedRef.current && seq === refreshSeqRef.current) {
         setLayout(data);
       }
     } catch (err: unknown) {
-      if (seq === refreshSeqRef.current) {
+      if (mountedRef.current && seq === refreshSeqRef.current) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
         setError(`Failed to load screen layout: ${msg}`);
       }
     } finally {
       if (seq === refreshSeqRef.current) {
-        setLoading(false);
+        isFetchingRef.current = false;
+        if (mountedRef.current) {
+          setLoading(false);
+        }
       }
     }
   }, [screenId]);
@@ -129,6 +142,10 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
     let isMounted = true;
     const refreshHome = () => {
       if (typeof api.getScreen !== 'function') return;
+      if (isFetchingRef.current) {
+        void fetchScreen();
+        return;
+      }
       const seq = ++refreshSeqRef.current;
       api
         .getScreen('home')
@@ -146,7 +163,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
       unsubscribeWatch();
       unsubscribeFavorite();
     };
-  }, [screenId]);
+  }, [screenId, fetchScreen]);
 
   return (
     <div className="min-h-screen bg-canvas text-text-main space-y-8 pb-12">

@@ -214,6 +214,7 @@ interface FavoritesState {
   items: FavoriteItemView[];
   totalCount: number;
   lockedCount: number;
+  hasMorePages: boolean;
 }
 
 export const FavoritesScreen: FC<FavoritesScreenProps> = ({
@@ -229,10 +230,10 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
     items: [],
     totalCount: 0,
     lockedCount: 0,
+    hasMorePages: true,
   });
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const [hasMorePages, setHasMorePages] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
@@ -256,7 +257,6 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
     const reqId = ++requestIdRef.current;
     setLoading(true);
     setLoadingMore(false);
-    setHasMorePages(true);
     setError(null);
     setLoadMoreError(null);
     try {
@@ -272,10 +272,8 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
         items: dedupeFavoriteItems(incoming),
         totalCount: res.total_count ?? 0,
         lockedCount: res.locked_item_count ?? 0,
+        hasMorePages: incoming.length > 0,
       });
-      if (incoming.length === 0) {
-        setHasMorePages(false);
-      }
     } catch (err) {
       if (!mountedRef.current || reqId !== requestIdRef.current) return;
       setError(describeApiError(err));
@@ -307,18 +305,14 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
       });
       if (!mountedRef.current || activeReqId !== requestIdRef.current) return;
       const incoming = res.items || [];
-      if (incoming.length === 0) {
-        setHasMorePages(false);
-      }
       setData((prev) => {
         const merged = dedupeFavoriteItems([...prev.items, ...incoming]);
-        if (merged.length === prev.items.length) {
-          setHasMorePages(false);
-        }
+        const grew = incoming.length > 0 && merged.length > prev.items.length;
         return {
           items: merged,
           totalCount: res.total_count ?? prev.totalCount,
           lockedCount: res.locked_item_count ?? prev.lockedCount,
+          hasMorePages: grew,
         };
       });
     } catch (err) {
@@ -534,7 +528,7 @@ export const FavoritesScreen: FC<FavoritesScreenProps> = ({
             ))}
           </div>
 
-          {hasMorePages && data.items.length < data.totalCount && (
+          {data.hasMorePages && data.items.length < data.totalCount && (
             <div className="flex flex-col items-center gap-2 pt-4">
               {loadMoreError && (
                 <p role="alert" className="text-xs text-highlight">

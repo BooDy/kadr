@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { BrowseScreen } from './BrowseScreen';
 import { api } from '../../api/client';
 import type {
@@ -879,8 +879,10 @@ describe('BrowseScreen & Declarative Widgets', () => {
     });
 
     // Trigger two rapid home refreshes
-    emitFavoriteChanged(101, true);
-    emitFavoriteChanged(102, true);
+    act(() => {
+      emitFavoriteChanged(101, true);
+      emitFavoriteChanged(102, true);
+    });
 
     // Newer (2nd) refresh resolves first
     resolveSecondRefresh({
@@ -919,6 +921,54 @@ describe('BrowseScreen & Declarative Widgets', () => {
     await waitFor(() => {
       expect(screen.getByText('Newest Favorites Snapshot')).toBeInTheDocument();
       expect(screen.queryByText('Stale Favorites Snapshot')).toBeNull();
+    });
+  });
+
+  it('clears loading skeleton and renders updated home layout when emitFavoriteChanged fires while initial fetchScreen is still pending', async () => {
+    const { emitFavoriteChanged } = await import('../../utils/favoriteEvents');
+    let resolveInitialFetch!: (value: ScreenLayout) => void;
+    let resolveSecondFetch!: (value: ScreenLayout) => void;
+
+    vi.spyOn(api, 'getScreen')
+      .mockImplementationOnce(
+        () =>
+          new Promise<ScreenLayout>((resolve) => {
+            resolveInitialFetch = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ScreenLayout>((resolve) => {
+            resolveSecondFetch = resolve;
+          })
+      );
+
+    const { container } = render(<BrowseScreen screenId="home" onPlayItem={onPlayItem} />);
+    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+
+    // Fire favorite change BEFORE initial getScreen('home') settles
+    act(() => {
+      emitFavoriteChanged(102, true);
+    });
+
+    resolveInitialFetch(mockHomeLayout);
+    resolveSecondFetch({
+      id: 'home',
+      title: 'Home Cinema',
+      widgets: [
+        {
+          type: 'carousel',
+          id: 'home_favorites',
+          title: 'Preempted Favorites Rail',
+          binding: { macro_type: 'favorites', limit: 20 },
+          items: [{ id: 102, title: 'Dune: Part Two', media_type: 'movie', is_favorite: true }],
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.animate-pulse')).toBeNull();
+      expect(screen.getByText('Preempted Favorites Rail')).toBeInTheDocument();
     });
   });
 });
