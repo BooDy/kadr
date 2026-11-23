@@ -921,4 +921,29 @@ describe('LayoutStudio Component', () => {
     expect(within(dialog).queryByRole('alert')).toBeNull();
     expect(saveWidgetBtn.disabled).toBe(false);
   });
+
+  it('displays My Favorites binding summary in Widget Tree Inspector for favorites macro widgets', async () => {
+    vi.spyOn(api, 'getScreen').mockResolvedValue({
+      id: 'home',
+      title: 'Home',
+      widgets: [
+        {
+          type: 'carousel',
+          id: 'my_favorites',
+          title: 'Personal Watchlist',
+          binding: { macro_type: 'favorites', limit: 20 },
+          items: [{ id: 501, title: 'Past Lives', media_type: 'movie', is_favorite: true }],
+        },
+      ],
+    });
+
+    render(<LayoutStudio />);
+
+    await waitFor(() => {
+      expect(screen.getByText('my_favorites')).toBeDefined();
+    });
+
+    const treeItem = screen.getByTestId('widget-tree-item');
+    expect(within(treeItem).getByText('My Favorites')).toBeDefined();
+  });
 });

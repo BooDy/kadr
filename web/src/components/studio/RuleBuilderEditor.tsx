@@ -50,6 +50,24 @@ interface QuickTemplate {
 
 const QUICK_TEMPLATES: QuickTemplate[] = [
   {
+    id: 'unwatched-favorites',
+    label: 'Unwatched Favorites',
+    build: () => ({
+      kind: 'group',
+      op: 'and',
+      children: [
+        {
+          kind: 'rule',
+          condition: { field: 'is_favorite', op: 'eq', value: true },
+        },
+        {
+          kind: 'rule',
+          condition: { field: 'watch_state', op: 'state_in', values: ['unwatched'] },
+        },
+      ],
+    }),
+  },
+  {
     id: 'short-films',
     label: 'Short Films (< 90 min)',
     build: () => ({
@@ -201,6 +219,7 @@ const FIELD_GROUPS: { group: string; options: { value: FilterField; label: strin
     group: 'Activity & Playback',
     options: [
       { value: 'watch_state', label: 'Watch State' },
+      { value: 'is_favorite', label: 'Is Favorite' },
       { value: 'play_count', label: 'Play Count' },
       { value: 'added_at', label: 'Date Added' },
       { value: 'last_watched_at', label: 'Last Watched' },
@@ -414,6 +433,9 @@ function createDefaultConditionForField(
   if (isTimeField(field)) {
     return { field, op: 'within_last_days', days: 30 };
   }
+  if (field === 'is_favorite') {
+    return { field: 'is_favorite', op: 'eq', value: true };
+  }
   return {
     field: 'watch_state',
     op: 'state_in',
@@ -427,7 +449,7 @@ function convertConditionOperator(
 ): FilterCondition {
   const field = condition.field;
 
-  if (field === 'library_id' || field === 'item_type') {
+  if (field === 'library_id' || field === 'item_type' || field === 'is_favorite') {
     return condition;
   }
 
@@ -724,6 +746,8 @@ const RuleRow: React.FC<RuleRowProps> = ({
       ops = TIME_OPS;
     } else if (field === 'watch_state') {
       ops = WATCH_STATE_OPS;
+    } else if (field === 'is_favorite') {
+      ops = [{ value: 'eq', label: 'Equals' }];
     }
 
     return (
@@ -1188,6 +1212,41 @@ const RuleRow: React.FC<RuleRowProps> = ({
             className="w-20 bg-canvas border border-border-subtle rounded-xl px-2.5 py-2 text-xs text-text-main focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
           />
           <span className="text-xs text-muted">%</span>
+        </div>
+      );
+    }
+
+    if (condition.field === 'is_favorite') {
+      return (
+        <div className="flex flex-wrap gap-1.5 flex-1">
+          <button
+            type="button"
+            aria-pressed={condition.value === true}
+            onClick={() =>
+              updateCondition({ field: 'is_favorite', op: 'eq', value: true })
+            }
+            className={`min-w-7 min-h-7 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+              condition.value === true
+                ? 'bg-accent text-canvas font-semibold'
+                : 'bg-canvas border border-border-subtle text-muted hover:text-text-main hover:bg-panel-hover'
+            }`}
+          >
+            Yes — Favorited
+          </button>
+          <button
+            type="button"
+            aria-pressed={condition.value === false}
+            onClick={() =>
+              updateCondition({ field: 'is_favorite', op: 'eq', value: false })
+            }
+            className={`min-w-7 min-h-7 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+              condition.value === false
+                ? 'bg-accent text-canvas font-semibold'
+                : 'bg-canvas border border-border-subtle text-muted hover:text-text-main hover:bg-panel-hover'
+            }`}
+          >
+            No — Not Favorited
+          </button>
         </div>
       );
     }

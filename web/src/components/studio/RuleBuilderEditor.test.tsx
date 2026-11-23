@@ -366,4 +366,83 @@ describe('RuleBuilderEditor', () => {
     expect(onValidationErrorChange).toHaveBeenLastCalledWith(null);
     expect(onChange).toHaveBeenLastCalledWith(unknownTypeAst);
   });
+
+  it('supports Is Favorite boolean rule toggle and the "Unwatched Favorites" quick template', () => {
+    let latestTree: FilterNode | null = null;
+    render(
+      <ControlledHarness
+        onEmit={(next) => {
+          latestTree = next;
+        }}
+      />
+    );
+
+    // 1. Add rule and select Is Favorite field -> defaults to { field: 'is_favorite', op: 'eq', value: true }
+    fireEvent.click(screen.getByRole('button', { name: /^\+ Add Rule$/i }));
+    fireEvent.change(screen.getByLabelText('Rule 1 field'), { target: { value: 'is_favorite' } });
+
+    expect(latestTree).toEqual({
+      kind: 'group',
+      op: 'and',
+      children: [
+        {
+          kind: 'rule',
+          condition: {
+            field: 'is_favorite',
+            op: 'eq',
+            value: true,
+          },
+        },
+      ],
+    });
+
+    const yesBtn = screen.getByRole('button', { name: /Yes — Favorited/i });
+    const noBtn = screen.getByRole('button', { name: /No — Not Favorited/i });
+    expect(yesBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(noBtn).toHaveAttribute('aria-pressed', 'false');
+
+    // 2. Toggle to false -> { field: 'is_favorite', op: 'eq', value: false }
+    fireEvent.click(noBtn);
+    expect(noBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(yesBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(latestTree).toEqual({
+      kind: 'group',
+      op: 'and',
+      children: [
+        {
+          kind: 'rule',
+          condition: {
+            field: 'is_favorite',
+            op: 'eq',
+            value: false,
+          },
+        },
+      ],
+    });
+
+    // 3. Apply "Unwatched Favorites" Quick Template
+    fireEvent.click(screen.getByRole('button', { name: /Unwatched Favorites/i }));
+    expect(latestTree).toEqual({
+      kind: 'group',
+      op: 'and',
+      children: [
+        {
+          kind: 'rule',
+          condition: {
+            field: 'is_favorite',
+            op: 'eq',
+            value: true,
+          },
+        },
+        {
+          kind: 'rule',
+          condition: {
+            field: 'watch_state',
+            op: 'state_in',
+            values: ['unwatched'],
+          },
+        },
+      ],
+    });
+  });
 });

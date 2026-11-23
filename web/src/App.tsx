@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type FC } from 'react';
 import {
   Film,
+  Heart,
   Home,
   ListVideo,
   Tv,
@@ -25,9 +26,16 @@ import { ItemDetailsModal } from './components/browse/ItemDetailsModal';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { PlaylistsScreen } from './components/playlists/PlaylistsScreen';
+import { FavoritesScreen } from './components/favorites/FavoritesScreen';
 import { GlobalSearchModal } from './components/search/GlobalSearchModal';
 
-export type NavView = 'home' | `library-${string}` | 'playlists' | 'player' | 'admin';
+export type NavView =
+  | 'home'
+  | `library-${string}`
+  | 'playlists'
+  | 'favorites'
+  | 'player'
+  | 'admin';
 
 const getLibraryIcon = (mediaType: MediaType | string) => {
   switch (mediaType) {
@@ -273,26 +281,42 @@ export const App: FC = () => {
             </button>
 
             {/* Navigation Links */}
-            <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
+            <nav aria-label="Primary" className="hidden md:flex items-center gap-1 text-sm font-medium">
               <button
+                type="button"
+                aria-current={currentView === 'home' ? 'page' : undefined}
                 onClick={() => handleNavigate('home')}
                 className={navItemClass(currentView === 'home')}
               >
-                <Home className="h-4 w-4" />
+                <Home aria-hidden="true" className="h-4 w-4" />
                 Home
               </button>
 
               {currentUser && (
-                <button
-                  onClick={() => {
-                    setActivePlaylistId(null);
-                    handleNavigate('playlists');
-                  }}
-                  className={navItemClass(currentView === 'playlists')}
-                >
-                  <ListVideo className="h-4 w-4" />
-                  Playlists
-                </button>
+                <>
+                  <button
+                    type="button"
+                    aria-current={currentView === 'playlists' ? 'page' : undefined}
+                    onClick={() => {
+                      setActivePlaylistId(null);
+                      handleNavigate('playlists');
+                    }}
+                    className={navItemClass(currentView === 'playlists')}
+                  >
+                    <ListVideo aria-hidden="true" className="h-4 w-4" />
+                    Playlists
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-current={currentView === 'favorites' ? 'page' : undefined}
+                    onClick={() => handleNavigate('favorites')}
+                    className={navItemClass(currentView === 'favorites')}
+                  >
+                    <Heart aria-hidden="true" className="h-4 w-4" />
+                    Favorites
+                  </button>
+                </>
               )}
 
               {/* Dynamic Library Navigation Tabs */}
@@ -439,10 +463,26 @@ export const App: FC = () => {
               />
             )}
 
+            {currentView === 'favorites' && (
+              <FavoritesScreen
+                key={`favorites-${currentUser.id}-${unlockedLibraryIds.join(',')}`}
+                currentUser={currentUser}
+                onPlayItem={handlePlayItem}
+                onPlayQueue={handlePlayQueue}
+                onNavigateToFolder={handleNavigateToFolder}
+              />
+            )}
+
             {currentView === 'player' && activePlayingItemId !== null && (
               <CinemaPlayer
                 itemId={activePlayingItemId}
-                returnLabel={previousView === 'playlists' ? 'Back to Playlist' : 'Back to Browse'}
+                returnLabel={
+                  previousView === 'playlists'
+                    ? 'Back to Playlist'
+                    : previousView === 'favorites'
+                    ? 'Back to Favorites'
+                    : 'Back to Browse'
+                }
                 queue={playerQueue ?? undefined}
                 currentIndex={playerQueue ? playerQueueIndex : undefined}
                 onSelectQueueIndex={(idx) => {

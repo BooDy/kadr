@@ -38,7 +38,8 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Global SQLite FTS5 Search & Instant Search Modal**: Sub-millisecond full-text catalog search (`GET /api/v1/search`) backed by SQLite FTS5 (`unicode61 remove_diacritics 2`), trigger-synchronized indexing across titles, series/episode `SxxExx` codes, cast, directors, writers, genres, tags, studios, overviews, filenames, and years, BM25 column weighting, safe punctuation/Unicode query sanitization, fail-closed PIN-locked private library isolation, and an instant `Ctrl+K` / `/` search modal in the Web UI.
 - **Inline Metadata & Artwork Editor + Opt-In TMDb Scraper**: Edit titles, credits, genres, tags, ratings, and cached local posters/backdrops directly from Item Details (`PATCH /api/v1/items/:id/metadata`) with per-field lock protection (`locked_fields`) that survives filesystem rescans, paired with an opt-in TMDb v3/v4 scraper (`Identify` modal, per-library `Fetch Missing Metadata`, and optional `auto_fetch_on_scan` ingest enrichment) that caches artwork locally under `<data_dir>/artwork/` for offline operation.
 - **Playlists & Queue Playback**: Manual ordered playlists with per-user ownership and server-wide multi-user sharing (`is_public`), 1-step Create & Add, batch TV Show / Season / sandboxed Folder expansion, fail-closed PIN-locked library isolation (`locked_item_count`), `playlist_items` Declarative Widget AST rails, and multi-track queue playback (auto-advance, Prev/Next, shuffle, and interactive queue popover) in Cinema Player and native clients.
-- **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (`001–014`).
+- **Per-User Favorites & Watchlist**: Strictly per-profile isolated favorites (`user_favorites`) across movies, TV shows, episodes, anime, music, home videos, audiobooks, and live channels, with zero-extra-roundtrip `is_favorite` card hydration, optimistic heart toggles across every browse surface, a dedicated `Favorites` screen with type filters, sorting, and `Play All` / `Shuffle` queue playback, a factory-default `Home` `"My Favorites"` rail (`"favorites"` macro), and `"is_favorite"` Declarative Filter AST rules.
+- **Embedded SQLite Storage Engine**: High-concurrency WAL mode (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 5000`) with connection pooling and automated schema migrations (`001–015`).
 - **Network Autodiscovery & Server Identity**: Zero-conf unauthenticated `/api/v1/discovery` endpoint and persistent server identity configuration for instantaneous client detection across local networks.
 - **Declarative Widget AST Layout Engine**: Single-roundtrip screen hydration (`Home`, `Movies`, `Shows`, plus custom screens) powering hero spotlights, horizontal card carousels, and catalog grids with badge computation (`4K`, `NEW`, `RESUME` progress bars).
 - **TV Shows & Seasons Grouping**: Automated TV episode filename and directory cue parsing (`S01E02`), parent series aggregation, season tabs navigation, and 1-click episode playback.
@@ -46,14 +47,14 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
 - **Multi-Path & Private PIN-Locked Libraries**: Media libraries spanning multiple local filesystem paths with directory picking, 4-digit PIN protection, database query isolation, and signed HMAC unlock tokens.
 - **Embedded, Sidecar & Online Subtitles with In-Player Search**: Automatic discovery of embedded container text subtitle streams (`SRT`/`SubRip`, `ASS`/`SSA`, `WebVTT`, `mov_text`/`tx3g` via `ffprobe`, with lazy backfill probing for pre-existing catalog items while ignoring bitmap subtitle streams) and local sidecars (`.srt`, `.vtt`, `.ass`, `.sub`), language tag normalization, on-demand `ffmpeg` extraction/conversion and pure-Rust bounded streaming SRT $\to$ WebVTT transcoding, singleflight disk caching, and live in-player OpenSubtitles search and on-the-fly download.
 - **Video Thumbnail Extraction Engine**: Background `ffmpeg` frame extraction during library scans with SHA-256 disk caching and on-demand fallback routes (`/api/v1/artwork/:item_id/poster`, `/api/v1/libraries/:id/thumbnail`).
-- **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `layout:changed`, `session:synced`, `subtitle:downloaded`, `plugin:error`, `playlist:updated`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
+- **Real-Time Event Bus (SSE)**: Bounded in-memory event bus (`tokio::sync::broadcast`) broadcasting domain events (`library:updated`, `layout:changed`, `session:synced`, `subtitle:downloaded`, `plugin:error`, `playlist:updated`, `favorite:updated`, `system:telemetry`) over `/api/v1/events` with 15s keep-alive pings.
 - **System Telemetry & Health**: Non-blocking collector querying Linux process RSS memory via `/proc/self/statm`, SQLite DB/WAL file sizes, and active playback session counters.
 - **Integrated Cinema Web App & Studio**:
   - **Cinema Player**: Full-screen dark video player with dynamic `hls.js` automatic HLS fallback (including `video_codec=none` audio-only HLS for `music` & `audiobook` streams), multi-audio track selector (`/audio-tracks`), 10×10 storyboard seek-bar hover previews (with `/frame` fallback), multi-track queue playback (auto-advance, Prev/Next track controls, interactive Queue popover, return-to-previous-view navigation), native HTML5 `<track>` WebVTT subtitles (with HLS `start_time` cue offset sync), in-player subtitle downloading, auto-resume seeking, 10s playback scrobbling heartbeats, media keyboard shortcuts, and single / season / series Mark Watched controls across catalog cards and Item Details.
-  - **Playlists View**: Top-bar `Playlists` screen with `PlaylistDetailView` (Play All, Shuffle, drag-and-drop / button item reordering, public/private visibility toggle) and 1-step `AddToPlaylistModal` across catalog cards, TV shows/seasons, and folders.
+  - **Playlists & Favorites Views**: Top-bar `Playlists` screen with `PlaylistDetailView` (Play All, Shuffle, drag-and-drop / button item reordering, public/private visibility toggle) and 1-step `AddToPlaylistModal`, alongside a dedicated per-profile `Favorites` watchlist screen with media-type filter pills, sort controls, locked-vault notices, and `Play All` / `Shuffle` queue playback.
   - **Global Search & Metadata Tools**: Instant `Ctrl+K` / `/` Global Search modal across public and unlocked libraries, plus inline `Edit Metadata` & TMDb `Identify` modals on Item Details.
   - **Plugins & Metadata Admin Panels**: Live administration tabs (`Administration > Plugins` and `Administration > Metadata & TMDb`) to install/update managed Git plugins or external URL plugins, approve permissions, configure opt-in TMDb credentials & scan enrichment, and monitor plugin health.
-  - **Layout Studio**: Visual device simulator (TV 16:9, Tablet 4:3, Mobile 9:16) with widget tree inspection, `playlist_items` rail picker, query filter rules (ratings, genres, exclusions), and custom screen persistence.
+  - **Layout Studio**: Visual device simulator (TV 16:9, Tablet 4:3, Mobile 9:16) with widget tree inspection, `favorites` & `playlist_items` rail pickers, recursive Declarative Rule Builder (`is_favorite`, `watch_state`, ratings, genres, technical specs), live preview, and custom screen persistence.
   - **Telemetry Dashboard**: Real-time resource gauges and live streaming SSE log feed.
   - **Static File Serving**: Served directly by the Axum server with HTML5 history pushState fallback to `index.html`.
 
@@ -87,7 +88,7 @@ Engineered for resource-constrained single-board computers (Raspberry Pi, low-sp
                |                           |                          |
 +--------------v---------------------------|-----------+              |
 |        kadr-storage                      |           |              |
-| (SQLite WAL Pool, Migrations 001-014)    |           |              |
+| (SQLite WAL Pool, Migrations 001-015)    |           |              |
 +--------------+---------------------------+-----------+              |
                |                           |                          |
 +--------------v-----------+   +-----------+-----------+              |
@@ -111,11 +112,11 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 
 | Directory | Crate / Component | Description |
 |:---|:---|:---|
-| `crates/kadr-core` | `kadr-core` | Shared domain models (`locked_fields`, metadata overrides), unified video container definitions (`video_formats`), Declarative Widget AST definitions (`playlist_items`, filter rules), search, plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
-| `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–014`, including FTS5 full-text index, audio tracks & filter AST indexes), and repositories (`User`, `Library`, `MediaItem`, `Search`, `Playback`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
+| `crates/kadr-core` | `kadr-core` | Shared domain models (`locked_fields`, metadata overrides), unified video container definitions (`video_formats`), Declarative Widget & Filter AST definitions (`favorites`, `playlist_items`, `is_favorite`, recursive filter rules), search, favorites, plugin & playlist domain types, transcoding decision engine & `ffmpeg` builder, pure-Rust SRT $\to$ WebVTT transcoder, and domain events. |
+| `crates/kadr-storage` | `kadr-storage` | Embedded SQLite WAL storage engine, connection pooling, migrations (`001–015`, including FTS5 full-text index, audio tracks, filter AST indexes & `user_favorites`), and repositories (`User`, `Library`, `MediaItem`, `Search`, `Playback`, `Favorites`, `Subtitle`, `Playlist`, `Plugin`, `Settings`). |
 | `crates/kadr-ingest` | `kadr-ingest` | Filesystem watcher (`notify`), media scanner, 256-byte pure-Rust container inspector, `ffprobe` technical & embedded subtitle stream parser, sidecar subtitle detector, background `ffmpeg` thumbnail extractor, and batch ingestion worker. |
-| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, managed Git plugin installer & supervisor + HTTP plugin framework, global FTS5 search, inline metadata & opt-in TMDb scraper, ordered playlists & AST widget resolver, embedded/sidecar/OpenSubtitles WebVTT delivery, SSE event bus, and static web serving. |
-| `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React (Browse, Global Search, Cinema Player, Playlists, Metadata & TMDb Editor, Layout Studio, Plugins Admin, and Telemetry Dashboard). |
+| `crates/kadr-server` | `kadr-server` | Axum HTTP server, JWT/PIN authentication, HTTP 206 Direct Play & HLS fallback streaming, storyboard seek-preview service, managed Git plugin installer & supervisor + HTTP plugin framework, global FTS5 search, inline metadata & opt-in TMDb scraper, per-user favorites, ordered playlists & AST widget resolver, embedded/sidecar/OpenSubtitles WebVTT delivery, SSE event bus, and static web serving. |
+| `web/` | `kadr-web` | Modern single-page web app built with React 19, TypeScript, Vite 6, Tailwind CSS, and Lucide React (Browse, Global Search, Cinema Player, Playlists, Favorites, Metadata & TMDb Editor, Layout Studio, Plugins Admin, and Telemetry Dashboard). |
 | `examples/plugin-hello` | `plugin-hello` | Minimal standalone Axum HTTP plugin template publishing virtual sample videos and resolving `direct` playback descriptors. |
 | `tests/` & `crates/*/tests/` | Workspace & Crate Tests | Comprehensive unit, integration, and end-to-end test suites covering ingestion, auth, Direct Play & HLS streaming, storyboards, plugins, playlists, AST resolution, subtitles, SSE events, and web serving. |
 
@@ -374,7 +375,7 @@ The server will start at `http://localhost:8492` (or configured host/port).
 Kadr maintains a 100% passing test suite across all crates, frontend suites, and end-to-end integration tests:
 
 ```bash
-# Run all Rust workspace unit, integration, and E2E tests (542 tests across 93 suites in 4 crates)
+# Run all Rust workspace unit, integration, and E2E tests (552 tests across 95 suites in 4 crates)
 cargo test --workspace
 
 # Run end-to-end user journey test suites specifically
@@ -382,6 +383,7 @@ cargo test --test e2e_streaming_auth_test
 cargo test --test e2e_hls_transcoding_test
 cargo test --test e2e_widget_ast_test
 cargo test --test e2e_playlists_test
+cargo test --test e2e_favorites_test
 cargo test --test e2e_subtitles_test
 cargo test --test e2e_events_telemetry_test
 cargo test --test e2e_web_serving_test
@@ -396,7 +398,7 @@ cargo test --test plugin_admin_test --test plugin_settings_test --test plugin_pu
   --test plugin_health_test --test plugin_client_test --test plugin_auth_test --test plugin_url_guard_test \
   --test plugin_forge_test --test plugin_installer_test --test plugin_supervisor_test --test plugin_install_test
 
-# Run frontend tests (Vitest — 326 tests across 30 test suites)
+# Run frontend tests (Vitest — 351 tests across 32 test suites)
 cd web
 npm test -- --run
 cd ..
@@ -462,9 +464,9 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 
 ### Declarative Screens, Global Search & Metadata Management
 - `GET /api/v1/screens` / `POST /api/v1/screens` — List available screen layouts (`home`, `movies`, `shows`, plus custom screens) or create a custom screen (admin).
-- `GET /api/v1/screens/:screen_id` / `PUT /api/v1/screens/:screen_id` / `DELETE /api/v1/screens/:screen_id` — Retrieve hydrated/unhydrated screen AST, save layout changes (admin), or delete a custom screen (admin).
-- `GET /api/v1/widgets/:widget_id/data?offset=0&limit=20` — Fetch paginated items for a specific widget query (including `playlist_items` macro and filter rules).
-- `GET /api/v1/search?q=<query>&item_type=<optional>&library_id=<optional>&limit=<1..100>` — Global SQLite FTS5 catalog search ranked by BM25 with viewer playback progress hydration and PIN-locked library isolation.
+- `GET /api/v1/screens/:screen_id` / `PUT /api/v1/screens/:screen_id` / `DELETE /api/v1/screens/:screen_id` — Retrieve hydrated/unhydrated screen AST (hydrating `CardViewModel.is_favorite` and `playback_progress` in batch), save layout changes (admin), or delete a custom screen (admin).
+- `GET /api/v1/widgets/:widget_id/data?offset=0&limit=20` — Fetch paginated items for a specific widget query (including `favorites`, `playlist_items`, `custom_query`, and `is_favorite` filter rules).
+- `GET /api/v1/search?q=<query>&item_type=<optional>&library_id=<optional>&limit=<1..100>` — Global SQLite FTS5 catalog search ranked by BM25 with viewer `playback_progress` & `is_favorite` hydration and PIN-locked library isolation.
 - `GET /api/v1/items/:item_id` (or `/api/v1/items/:item_id/details`) — Detailed metadata payload for modal inspection (including credits, `locked_fields`, `tmdb_id`, directory, series/season episodes, and live/plugin fields).
 - `PATCH /api/v1/items/:item_id/metadata` — Update item metadata fields, lock edited fields against rescans (`reset_locks: true` to clear locks), and optionally download/cache custom `poster_url` / `backdrop_url` artwork (admin).
 - `GET /api/v1/items/:item_id/tmdb/search?q=&year=&media_type=` — Search TMDb (`movie` or `tv`) for candidate matches on an item (admin).
@@ -491,6 +493,11 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `DELETE /api/v1/playlists/:id/items/:media_item_id` — Remove an item from a playlist and re-compact positions (`0..N-1`).
 - `PUT /api/v1/playlists/:id/items/order` — Reorder visible playlist items (`{"item_ids": [...]}`) while preserving any PIN-locked private library items.
 
+### Per-User Favorites & Watchlist
+- `GET /api/v1/favorites?item_type=<optional>&library_id=<optional>&sort=<favorited_at:desc|...>&limit=<1..200>&offset=<0..>` — List the authenticated user's favorited items (`FavoritesListResponse`: `items: FavoriteItemView[]` hydrated with `card.is_favorite: true` and `resume_position_seconds`, `total_count`, and `locked_item_count` for hidden PIN-locked private library items).
+- `PUT /api/v1/favorites/:item_id` — Idempotently add any catalog item (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`) to the authenticated user's favorites (`403 LIBRARY_LOCKED` when locked), returning `{"item_id", "is_favorite": true}` and broadcasting `favorite:updated`.
+- `DELETE /api/v1/favorites/:item_id` — Remove an item from the authenticated user's favorites (`403 LIBRARY_LOCKED` when locked), returning `{"item_id", "is_favorite": false}` and broadcasting `favorite:updated`.
+
 ### HTTP Plugin Framework (Admin, Git Install & Plugin Publishing)
 - `GET /api/v1/admin/plugins/settings` / `PUT /api/v1/admin/plugins/settings` — Retrieve or live-update DB-persisted plugin framework settings (`enabled`, `resolve_timeout_secs`, `allow_private_proxy`) (admin).
 - `GET /api/v1/admin/plugins` — List registered external and managed Git plugins with status, `install_kind`, `repo_url`, `installed_tag`, permissions, capabilities, and health (admin).
@@ -515,7 +522,7 @@ All protected user/admin endpoints require an `Authorization: Bearer <token>` he
 - `DELETE /api/v1/subtitles/:subtitle_id` — Delete subtitle track and purge cache.
 
 ### Real-Time Events & Telemetry
-- `GET /api/v1/events` — Public Server-Sent Events (SSE) stream (`library:updated`, `layout:changed`, `session:synced`, `subtitle:downloaded`, `plugin:error`, `playlist:updated`, `system:telemetry`).
+- `GET /api/v1/events` — Public Server-Sent Events (SSE) stream (`library:updated`, `layout:changed`, `session:synced`, `subtitle:downloaded`, `plugin:error`, `playlist:updated`, `favorite:updated`, `system:telemetry`).
 - `GET /api/v1/system/telemetry` — Admin-only instantaneous metrics snapshot (`active_sessions_count`, `rss_memory_bytes`, `db_size_bytes`, `wal_size_bytes`, `timestamp`).
 
 ---

@@ -52,6 +52,9 @@ function formatWidgetBindingSummary(binding?: WidgetQueryBinding): string | null
   if (macro === 'custom_query') {
     return `Custom Filter Query${ruleSuffix}`;
   }
+  if (macro === 'favorites') {
+    return `My Favorites${ruleSuffix}`;
+  }
   if (ruleCount > 0) {
     return `${ruleCount} filter ${ruleCount === 1 ? 'rule' : 'rules'}`;
   }

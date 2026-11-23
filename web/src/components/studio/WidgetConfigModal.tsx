@@ -28,11 +28,17 @@ type MacroTypeOption =
   | 'recently_added'
   | 'top_rated'
   | 'continue_watching'
+  | 'favorites'
   | 'custom_query'
   | 'library_items'
   | 'genre_shelf'
   | 'spotlight_item'
   | 'playlist_items';
+
+const FAVORITES_SORT_OPTIONS = [
+  { value: 'favorited_at:desc', label: 'Favorited (Newest)' },
+  { value: 'favorited_at:asc', label: 'Favorited (Oldest)' },
+];
 
 const SORT_OPTIONS = [
   { value: '', label: 'Default' },
@@ -118,6 +124,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             macro === 'recently_added' ||
             macro === 'top_rated' ||
             macro === 'continue_watching' ||
+            macro === 'favorites' ||
             macro === 'custom_query' ||
             macro === 'library_items' ||
             macro === 'genre_shelf' ||
@@ -331,6 +338,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       case 'continue_watching':
         resolvedMacro = 'continue_watching';
         break;
+      case 'favorites':
+        resolvedMacro = 'favorites';
+        break;
       case 'top_rated':
         resolvedMacro = 'top_rated';
         break;
@@ -405,10 +415,16 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       hasFilters = true;
     }
 
+    const effectiveSort =
+      macroType !== 'favorites' &&
+      sort.trim().toLowerCase().startsWith('favorited_at')
+        ? ''
+        : sort.trim();
+
     return {
       macro_type: resolvedMacro,
       limit: Math.max(1, Number(limit) || 20),
-      ...(sort.trim() ? { sort: sort.trim() } : {}),
+      ...(effectiveSort ? { sort: effectiveSort } : {}),
       ...(hasFilters ? { filters: filterConfig } : {}),
     };
   };
@@ -471,7 +487,11 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
     onClose();
   };
 
-  const isCustomSort = sort && !SORT_OPTIONS.some((opt) => opt.value === sort);
+  const activeSortOptions =
+    macroType === 'favorites'
+      ? [SORT_OPTIONS[0], ...FAVORITES_SORT_OPTIONS, ...SORT_OPTIONS.slice(1)]
+      : SORT_OPTIONS;
+  const isCustomSort = sort && !activeSortOptions.some((opt) => opt.value === sort);
 
   return (
     <div
@@ -568,6 +588,12 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               onChange={(e) => {
                 const nextMacro = e.target.value as MacroTypeOption;
                 setMacroType(nextMacro);
+                if (
+                  nextMacro !== 'favorites' &&
+                  sort.trim().toLowerCase().startsWith('favorited_at')
+                ) {
+                  setSort('');
+                }
                 if (nextMacro === 'custom_query') {
                   setIsFiltersOpen(true);
                 }
@@ -577,6 +603,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               <option value="recently_added">Recently Added</option>
               <option value="top_rated">Top Rated</option>
               <option value="continue_watching">Continue Watching</option>
+              <option value="favorites">My Favorites</option>
               <option value="custom_query">Custom Filter Query</option>
               <option value="library_items">Library Items</option>
               <option value="playlist_items">Playlist Items</option>
@@ -722,7 +749,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                 onChange={(e) => setSort(e.target.value)}
                 className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
               >
-                {SORT_OPTIONS.map((opt) => (
+                {activeSortOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>

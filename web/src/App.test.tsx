@@ -759,5 +759,75 @@ describe('App Shell', () => {
       expect(screen.getByText('Classic Egyptian cinema masterpiece.')).toBeInTheDocument();
     });
   });
+
+  it('shows Favorites tab in top navigation, opens FavoritesScreen, launches queue playback, and returns to Favorites on close', async () => {
+    api.setUser({ id: 'u-std', username: 'viewer', role: 'standard' });
+    api.setToken('test-jwt');
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue([]);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({ id: 'home', title: 'Home', widgets: [] });
+    vi.spyOn(api, 'getFavorites').mockResolvedValue({
+      items: [
+        {
+          favorited_at: 1700000100,
+          duration_seconds: 5400,
+          card: {
+            id: 601,
+            title: 'Portrait of a Lady on Fire',
+            media_type: 'movie',
+            is_favorite: true,
+          },
+        },
+      ],
+      total_count: 1,
+      locked_item_count: 0,
+    });
+    vi.spyOn(api, 'createPlaybackSession').mockResolvedValue({
+      session_id: 'sess-601',
+      media_item_id: 601,
+      duration_seconds: 5400,
+      resume_position_seconds: 0,
+    });
+    vi.spyOn(api, 'closePlaybackSession').mockResolvedValue();
+    vi.spyOn(api, 'getPlaybackState').mockResolvedValue({
+      user_id: 'u-std',
+      media_item_id: 601,
+      playback_position_seconds: 0,
+      watch_state: 'unwatched',
+      last_watched_at: 0,
+      play_count: 0,
+    });
+    vi.spyOn(api, 'getSubtitles').mockResolvedValue([]);
+    vi.spyOn(api, 'getItemDetails').mockResolvedValue({
+      card: { id: 601, title: 'Portrait of a Lady on Fire', media_type: 'movie', is_favorite: true },
+      genres: ['Drama'],
+      stream_url: '/api/v1/stream/601',
+    });
+
+    render(<App />);
+
+    const favoritesTab = screen.getByRole('button', { name: /^Favorites$/i });
+    expect(favoritesTab).toBeInTheDocument();
+    fireEvent.click(favoritesTab);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /My Favorites/i })).toBeInTheDocument();
+      expect(screen.getByText('Portrait of a Lady on Fire')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Play All/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Cinema Player/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Back to Favorites/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Favorites/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /My Favorites/i })).toBeInTheDocument();
+      expect(screen.getByText('Portrait of a Lady on Fire')).toBeInTheDocument();
+    });
+  });
 });
 

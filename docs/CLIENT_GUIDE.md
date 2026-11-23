@@ -15,7 +15,8 @@ Welcome to the **Kadr Client Developer Guide**. This document is the definitive 
 7. [Subtitles, Storyboard Trickplay & Media Assets](#7-subtitles-storyboard-trickplay--media-assets)
    - [7.1b Audio Track Discovery (`GET /api/v1/items/{item_id}/audio-tracks`)](#71b-audio-track-discovery-get-apiv1itemsitem_idaudio-tracks)
 8. [Libraries, Hierarchical Folder Browsing & Real-Time Events (SSE)](#8-libraries-hierarchical-folder-browsing--real-time-events-sse)
-9. [Playlists & Client Queue Playback](#9-playlists--client-queue-playback)
+9. [Playlists, Per-User Favorites & Client Queue Playback](#9-playlists-per-user-favorites--client-queue-playback)
+   - [9.5 Per-User Favorites / Watchlist (`/api/v1/favorites`)](#95-per-user-favorites--watchlist-apiv1favorites)
 10. [Client Architecture Recipes & Best Practices](#10-client-architecture-recipes--best-practices)
 11. [Error Handling & HTTP Status Matrix](#11-error-handling--http-status-matrix)
 
@@ -427,6 +428,7 @@ Every `WidgetNode` carries a `binding` (`WidgetQueryBinding`) whose `macro_type`
 | `macro_type` JSON Representation | Description |
 | :--- | :--- |
 | `"continue_watching"` | Active user's in-progress items ordered by most recently watched. |
+| `"favorites"` | Active user's favorited items (`user_favorites`) across accessible libraries, ordered by `favorited_at DESC` by default (placed right below `"Continue Watching"` on the factory-default `Home` layout and auto-hidden when empty). |
 | `"recently_added"` | Recently ingested catalog items ordered by `added_at DESC`. |
 | `"top_rated"` | Highest-rated catalog items ordered by rating. |
 | `{"library_items": {"library_id": "<uuid>"}}` | Items scoped to a specific library UUID. |
@@ -490,6 +492,7 @@ interface CardViewModel {
   badge?: string;                 // Visual badge pill: "RESUME" | "NEW" | "4K"
   season?: number;                // Season number (for episodes)
   episode?: number;               // Episode number (for episodes)
+  is_favorite?: boolean;          // true when favorited by the active user; omitted when false
 }
 ```
 
@@ -593,10 +596,10 @@ Every `WidgetQueryBinding` accepts an optional `filters` (`WidgetFilterConfig`) 
 }
 ```
 
-- **Supported `sort` Keys** (`:` or `_` separator, default `added_at:desc`):
-  `title:asc`, `title:desc`, `release_year:asc` (`year:asc`), `release_year:desc` (`year:desc`), `added_at:asc`, `added_at:desc`, `rating:asc`, `rating:desc`, `duration_seconds:asc` (`duration:asc`), `duration_seconds:desc` (`duration:desc`), `last_watched_at:asc`, `last_watched_at:desc`.
-- **Default Episode Filtering**: When `rule_tree` does not explicitly reference `"field": "item_type"`, `custom_query` automatically excludes child `"episode"` rows (`m.item_type != 'episode'`) so movie/show shelves remain top-level catalog cards unless episodes are intentionally targeted.
-- **Per-User Playback Isolation**: Rules referencing `watch_state`, `play_count`, or `last_watched_at` (as well as `last_watched_at` sorting) automatically join and evaluate against the **requesting viewer's** `PlaybackState`.
+- **Supported `sort` Keys** (`:` or `_` separator, default `added_at:desc`; or `favorited_at:desc` / `favorited_at:asc` on `"macro_type": "favorites"`):
+  `title:asc`, `title:desc`, `release_year:asc` (`year:asc`), `release_year:desc` (`year:desc`), `added_at:asc`, `added_at:desc`, `rating:asc`, `rating:desc`, `duration_seconds:asc` (`duration:asc`), `duration_seconds:desc` (`duration:desc`), `last_watched_at:asc`, `last_watched_at:desc`, plus `favorited_at:desc` and `favorited_at:asc` (for `"favorites"` widgets).
+- **Default Episode Filtering**: When `rule_tree` does not explicitly reference `"field": "item_type"`, `custom_query` automatically excludes child `"episode"` rows (`m.item_type != 'episode'`) so movie/show shelves remain top-level catalog cards unless episodes are intentionally targeted (`"favorites"` widgets never exclude episodes so explicitly favorited episodes always appear).
+- **Per-User Playback & Favorite Isolation**: Rules referencing `watch_state`, `is_favorite`, `play_count`, or `last_watched_at` (as well as `last_watched_at` sorting) automatically evaluate against the **requesting viewer's** `PlaybackState` and `user_favorites` rows.
 
 #### `FilterNode` Recursive Schema
 
@@ -621,6 +624,7 @@ Every `WidgetQueryBinding` accepts an optional `filters` (`WidgetFilterConfig`) 
 | `rating` | Float (`FloatComparison`, finite `0.0..=10.0`) | `{"op": "gte" \| "lte", "value": 8.0}`<br>`{"op": "between", "min": 7.5, "max": 9.5}` |
 | `added_at`, `last_watched_at` | Epoch Timestamp (`TimeComparison`) | `{"op": "within_last_days", "days": 30}` (`1..=36500`)<br>`{"op": "older_than_days", "days": 90}` (`1..=36500`)<br>`{"op": "after_epoch", "timestamp": 1700000000}`<br>`{"op": "before_epoch", "timestamp": 1750000000}`<br>`{"op": "between_epochs", "min": 1700000000, "max": 1750000000}` |
 | `watch_state` | Viewer State (`WatchStateMatch`) | `{"op": "state_in", "values": ["unwatched", "in_progress", "completed"]}`<br>`{"op": "progress_between", "min": 0.1, "max": 0.9}` (`0.0..=1.0`) |
+| `is_favorite` | Viewer State (`BoolOp`) | `{"op": "eq", "value": true}` or `{"op": "eq", "value": false}` (`"op"` defaults to `"eq"` if omitted) |
 
 #### Structural Validation Guardrails (`PUT /api/v1/screens/{screen_id}` & `/widgets/preview`)
 
@@ -891,7 +895,8 @@ Results are ordered by weighted BM25 relevance (`title` 10.0, `original_title` 8
       "season": null,
       "episode": null,
       "genres": ["Action", "Adventure", "Sci-Fi"],
-      "director": "Denis Villeneuve"
+      "director": "Denis Villeneuve",
+      "is_favorite": true
     }
   ]
 }
@@ -1925,6 +1930,9 @@ data: {"type":"layout:changed","payload":{"screen_id":"home","timestamp":1728399
 event: playlist:updated
 data: {"type":"playlist:updated","payload":{"playlist_id":"6f9d8c12-3a4b-4e5f-8c9d-0e1f2a3b4c5d","user_id":"u-123","action":"items_changed","timestamp":1762942100}}
 
+event: favorite:updated
+data: {"type":"favorite:updated","payload":{"user_id":"u-123","item_id":101,"is_favorite":true,"timestamp":1762942150}}
+
 event: plugin:error
 data: {"type":"plugin:error","payload":{"plugin_id":"iptv","message":"Plugin unavailable: health check returned 503 Service Unavailable","timestamp":1762942200}}
 ```
@@ -1938,6 +1946,7 @@ data: {"type":"plugin:error","payload":{"plugin_id":"iptv","message":"Plugin una
 | `subtitle:downloaded` | `{"item_id": number, "subtitle_id": number, "language": string, "timestamp": number}` | Refresh in-player subtitle track selection menu. |
 | `layout:changed` | `{"screen_id": string, "timestamp": number}` | Invalidate cached screen AST layout and re-render widgets. |
 | `playlist:updated` | `{"playlist_id": string, "user_id": string, "action": string, "timestamp": number}` | Refresh playlist lists, active playlist detail views, or `playlist_items` AST rails matching `playlist_id`. |
+| `favorite:updated` | `{"user_id": string, "item_id": number, "is_favorite": boolean, "timestamp": number}` | When `user_id` matches the active profile, update `card.is_favorite` across mounted cards and refresh `Home` / `Favorites` views (carries IDs only so private library titles never leak over SSE). |
 | `plugin:error` | `{"plugin_id": string, "message": string, "timestamp": number}` | Surface an admin toast or mark items/libraries from `plugin_id` as temporarily degraded when an enabled plugin transitions to `unhealthy`. |
 | `system:telemetry` | `{"active_sessions_count": number, "rss_memory_bytes": number, ...}` | Admin dashboard live resource meter update. |
 
@@ -1975,7 +1984,7 @@ data: {"type":"plugin:error","payload":{"plugin_id":"iptv","message":"Plugin una
 
 ---
 
-## 9. Playlists & Client Queue Playback
+## 9. Playlists, Per-User Favorites & Client Queue Playback
 
 Kadr supports manual ordered playlists with multi-user server sharing, 1-step Create & Add, batch TV Show / Season / sandboxed Folder expansion, fail-closed PIN-locked library isolation, and client-orchestrated multi-item queue playback.
 
@@ -2608,6 +2617,113 @@ final class KadrQueuePlayerController {
 
 ---
 
+### 9.5 Per-User Favorites / Watchlist (`/api/v1/favorites`)
+
+In addition to ordered playlists (which support manual ordering and `is_public` server-wide sharing), Kadr provides a **strictly per-profile isolated Favorites / Watchlist system** (`user_favorites`, `PRIMARY KEY (user_id, media_item_id)` with `ON DELETE CASCADE` on both `users` and `media_items`).
+
+#### Key Design Properties
+1. **Strict Per-Profile Isolation**: Every profile on the server maintains an independent watchlist; favoriting or unfavoriting an item never affects any other household user.
+2. **Any Catalog Item Type**: Any `MediaItem` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`) can be favorited directly — bookmarking a TV `Show` stores the series card itself without expanding it into child episodes.
+3. **Zero-Extra-Roundtrip Card Hydration**: `WidgetResolver`, `GET /api/v1/items/{id}`, `GET /api/v1/playlists/{id}`, and `GET /api/v1/search` batch-hydrate `is_favorite: true` onto `CardViewModel` and `SearchResultItem` (omitted when `false`) so heart states render immediately without extra API calls.
+4. **Fail-Closed Private Library Isolation**: Items in PIN-locked private libraries (`is_private = 1` without a valid `X-Kadr-Unlocked` / `X-Library-Unlock-Token` token) are excluded from `GET /api/v1/favorites` (`items` and `total_count`), `QueryMacro::Favorites`, and `FilterCondition::IsFavorite`, counted only as an aggregate integer in `locked_item_count`, and return `403 Forbidden` (`LIBRARY_LOCKED`) if targeted by `PUT` or `DELETE /api/v1/favorites/{item_id}`.
+
+#### Core Favorites Wire Types
+
+```typescript
+interface FavoriteItemView {
+  favorited_at: number;              // Unix epoch seconds when originally favorited
+  duration_seconds: number;          // Item runtime in seconds (>= 0; 0 for shows / live channels)
+  resume_position_seconds?: number;  // Present ONLY when viewer's watch_state == "in_progress" && > 0
+  card: CardViewModel;               // Nested CardViewModel with is_favorite: true & viewer PlaybackState
+}
+
+interface FavoritesListResponse {
+  items: FavoriteItemView[];         // Visible favorited items for the caller's UnlockedLibraries
+  total_count: number;               // Total visible matching favorites (pre-LIMIT/OFFSET)
+  locked_item_count: number;         // Count of matching favorites hidden in locked private libraries
+}
+
+interface FavoriteStatusResponse {
+  item_id: number;
+  is_favorite: boolean;
+}
+```
+
+#### 9.5.1 List User Favorites — `GET /api/v1/favorites`
+
+- **Authentication**: `Authorization: Bearer <jwt_token>` + optional `X-Kadr-Unlocked: <token1>,<token2>` / `X-Library-Unlock-Token: <token>`.
+- **Query Parameters**:
+  | Parameter | Type | Default | Description |
+  | :--- | :--- | :--- | :--- |
+  | `item_type` | `string` | *(all)* | Optional media type filter (`all`, `movie`, `show`, `season`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`, `unknown`). Invalid values return `400 Bad Request`. |
+  | `library_id` | `string` | *(all)* | Optional library UUID scope. |
+  | `sort` | `string` | `"favorited_at:desc"` | Supports `favorited_at:desc`, `favorited_at:asc`, `title:asc\|desc`, `release_year:asc\|desc`, `rating:asc\|desc`, `added_at:asc\|desc`, `duration_seconds:asc\|desc`, and `last_watched_at:asc\|desc`. |
+  | `limit` | `u32` | `60` | Page size, clamped to `1..=200`. |
+  | `offset` | `u32` | `0` | 0-based pagination offset. |
+- **Response (`200 OK` — `FavoritesListResponse`)**:
+  ```json
+  {
+    "items": [
+      {
+        "favorited_at": 1762942150,
+        "duration_seconds": 8880,
+        "resume_position_seconds": 1240,
+        "card": {
+          "id": 10,
+          "title": "Arrival",
+          "subtitle": "2016 • 4K",
+          "poster_url": "/api/v1/artwork/10/poster",
+          "backdrop_url": "/api/v1/artwork/10/backdrop",
+          "media_type": "movie",
+          "playback_progress": 0.1396,
+          "rating": 7.9,
+          "release_year": 2016,
+          "badge": "RESUME",
+          "is_favorite": true
+        }
+      }
+    ],
+    "total_count": 1,
+    "locked_item_count": 2
+  }
+  ```
+
+#### 9.5.2 Add Favorite — `PUT /api/v1/favorites/{item_id}`
+
+- **Authentication**: `Authorization: Bearer <jwt_token>` + optional `X-Kadr-Unlocked` / `X-Library-Unlock-Token`.
+- **Behavior**:
+  - Returns `404 Not Found` (`{"error": "Media item not found"}`) if `item_id` does not exist.
+  - Returns `403 Forbidden` (`{"error": "LIBRARY_LOCKED", "code": "LIBRARY_LOCKED", "library_id": "<id>"}`) if `item_id` belongs to a locked private library.
+  - Inserts `(user_id, item_id, now)` via `INSERT OR IGNORE` (idempotent — re-favoriting preserves the original `favorited_at` timestamp) and broadcasts SSE `favorite:updated`.
+- **Response (`200 OK` — `FavoriteStatusResponse`)**:
+  ```json
+  {
+    "item_id": 10,
+    "is_favorite": true
+  }
+  ```
+
+#### 9.5.3 Remove Favorite — `DELETE /api/v1/favorites/{item_id}`
+
+- **Authentication**: `Authorization: Bearer <jwt_token>` + optional `X-Kadr-Unlocked` / `X-Library-Unlock-Token`.
+- **Behavior**: Applies the same `404 Not Found` and `403 LIBRARY_LOCKED` checks as `PUT`, deletes `(user_id, item_id)` idempotently, and broadcasts SSE `favorite:updated`.
+- **Response (`200 OK` — `FavoriteStatusResponse`)**:
+  ```json
+  {
+    "item_id": 10,
+    "is_favorite": false
+  }
+  ```
+
+#### 9.5.4 Queue Playback from Favorites (`Play All` / `Shuffle`)
+
+Because `FavoriteItemView` carries `favorited_at`, `duration_seconds`, `resume_position_seconds`, and `card`, clients can launch queue playback directly from `GET /api/v1/favorites` using the exact same `PlaylistItemView[]` queue controller from [Section 9.4](#94-native-client-queue-playback-recipes):
+1. Filter `items` to directly playable entries (`card.media_type !== "show" && card.media_type !== "season"`).
+2. Optionally run a Fisher-Yates shuffle on a copy for **Shuffle**.
+3. Map each item to `PlaylistItemView`: `{ position: idx, added_at: item.favorited_at, duration_seconds: item.duration_seconds, resume_position_seconds: item.resume_position_seconds, card: item.card }` and start playback at `index = 0`.
+
+---
+
 ## 10. Client Architecture Recipes & Best Practices
 
 ### 10.1 Smart TV (10-Foot UI) Guidelines
@@ -2790,14 +2906,14 @@ try {
 | `400 Bad Request` | `{"error": "No playable media items to add"}` (or `"Non-playable media item type"`, `"No playable episodes found"`, `"No playable media items in folder"`) | Empty batch add request, attempting to add a non-playable `Season` item directly, or adding an empty show/season/folder. | Disable add actions on empty containers or display inline feedback. |
 | `400 Bad Request` | `{"error": "Invalid folder path"}` | Playlist folder batch add path contains `..`, null byte, absolute path, or escapes configured library root. | Pass library-relative folder paths returned by `/api/v1/libraries/{id}/folders`. |
 | `400 Bad Request` | `{"error": "item_ids must be an exact permutation of visible playlist items"}` | `PUT /api/v1/playlists/{id}/items/order` omits visible items, contains duplicates, or includes unknown/locked IDs. | Refresh `GET /api/v1/playlists/{id}` and submit an exact permutation of visible `card.id`s. |
-| `400 Bad Request` | `{"error": "Invalid item_type '...'"}` | `GET /api/v1/search` called with an unrecognized `item_type` filter. | Pass `all` or a valid `MediaType` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`). |
+| `400 Bad Request` | `{"error": "Invalid item_type '...'"}` | `GET /api/v1/search` or `GET /api/v1/favorites` called with an unrecognized `item_type` filter. | Pass `all` or a valid `MediaType` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`). |
 | `400 Bad Request` | `{"error": "Invalid filter rule tree in widget '...': ..."}` / `FilterValidationError` message | `PUT /api/v1/screens/{screen_id}` or `POST /api/v1/widgets/preview` submitted a `rule_tree` exceeding depth `5` / `32` rules, with an empty group, empty/overlong text or list, negative duration, or `min > max`. | Validate rule tree structure and range bounds in the rule builder UI before saving or previewing. |
 | `400 Bad Request` | `{"error": "Invalid audio_track index"}` | `GET /api/v1/media/{id}/hls/master.m3u8` called with `?audio_track=<n>` not present in `AudioStreamInfo[]`. | Select `audio_index` values returned by `GET /api/v1/items/{id}/audio-tracks`. |
 | `400 Bad Request` | `{"error": "Live items do not support watch state"}` / `{"error": "item_ids must contain 1..=500 items"}` | `PUT /api/v1/playback/states/{id}` called on a `live_channel` item, or `PUT /api/v1/playback/states` called with `0` or `> 500` unique `item_ids`. | Hide Mark Watched on `live_channel` items and chunk batch watch-state updates into slices of `<= 500` unique IDs. |
 | `400 Bad Request` | `{"error": "TMDB_NOT_CONFIGURED", "message": "..."}` / `"INVALID_TITLE"` / `"INVALID_RATING"` / `"BLOCKED_URL"` / `"UNSUPPORTED_IMAGE"` / `"ARTWORK_TOO_LARGE"` | TMDb disabled or missing API key on `/tmdb/*`, empty title or out-of-range rating (`0.0..=10.0`) on `PATCH /api/v1/items/{id}/metadata`, or rejected custom artwork URL. | Prompt admin to configure TMDb under `Administration > Metadata & TMDb` or validate form inputs. |
 | `401 Unauthorized` | `{"error": "Missing authorization token"}` / `{"error": "Invalid or expired token"}` / Invalid PIN | Missing, invalid, or expired JWT (`Authorization: Bearer` / `?token=`), or incorrect profile PIN. | Prompt user for profile PIN or re-login. |
 | `403 Forbidden` | `{"error": "Forbidden"}` | Non-owner, non-admin caller attempting to update, add/remove/reorder items, or delete another user's public playlist. | Hide edit/reorder/delete controls whenever `summary.is_editable == false`. |
-| `403 Forbidden` | `{"error": "LIBRARY_LOCKED"}` | Request accesses `/stream/{id}`, `/hls/*`, `/storyboard*`, `/frame`, `/items/{id}`, `/items/{id}/audio-tracks`, `/playback/states*`, `/libraries/{id}/folders`, or adds/removes a locked private-library item in a playlist without a valid unlock token. | Present 4-digit Library PIN dialog, call `POST /api/v1/libraries/{id}/unlock`, attach `X-Kadr-Unlocked` / `X-Library-Unlock-Token` (or `?unlocked=`), and retry. |
+| `403 Forbidden` | `{"error": "LIBRARY_LOCKED"}` | Request accesses `/stream/{id}`, `/hls/*`, `/storyboard*`, `/frame`, `/items/{id}`, `/items/{id}/audio-tracks`, `/playback/states*`, `/favorites/{id}`, `/libraries/{id}/folders`, or adds/removes a locked private-library item in a playlist without a valid unlock token. | Present 4-digit Library PIN dialog, call `POST /api/v1/libraries/{id}/unlock`, attach `X-Kadr-Unlocked` / `X-Library-Unlock-Token` (or `?unlocked=`), and retry. |
 | `404 Not Found` | `{"error": "Playlist not found"}` | Playlist UUID does not exist, or playlist is private (`is_public == false`) and owned by another user. | Remove stale playlist reference and navigate back to Playlists overview. |
 | `404 Not Found` | `{"error": "Media item not found"}` / `{"error": "Item not found in playlist"}` / `{"error": "Media file missing from disk"}` | Referenced `media_item_id`, `library_id`, folder, subtitle, HLS session, or underlying media file does not exist. | Display a friendly error state; refresh playlist or catalog view. |
 | `404 Not Found` | `{"error": "Media item has no video stream"}` / `{"error": "Storyboard sheet index out of range"}` / `{"error": "Storyboard sheet not found"}` / `{"error": "Frame not found"}` | Storyboard or `/frame` requested for a plugin item, `LiveChannel`, audio/container item, `duration_seconds <= 0`, `.novideo` file, or out-of-range sheet index. | Disable visual scrub thumbnails for the active session and show timestamp pill only. |

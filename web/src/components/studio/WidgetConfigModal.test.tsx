@@ -757,4 +757,54 @@ describe('WidgetConfigModal Component', () => {
       });
     }
   });
+
+  it('supports My Favorites macro with Favorited (Newest/Oldest) sort options and resets favorited_at sort when switching macros', () => {
+    const handleSave = vi.fn();
+    render(
+      <WidgetConfigModal
+        isOpen={true}
+        libraries={mockLibraries}
+        onSave={handleSave}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Initially, Favorited (Newest) is NOT available on non-favorites macro
+    expect(screen.queryByRole('option', { name: 'Favorited (Newest)' })).not.toBeInTheDocument();
+
+    const macroSelect = screen.getByLabelText(/Query Macro/i) as HTMLSelectElement;
+    expect(screen.getByRole('option', { name: 'My Favorites' })).toBeInTheDocument();
+    fireEvent.change(macroSelect, { target: { value: 'favorites' } });
+    expect(macroSelect.value).toBe('favorites');
+
+    const sortSelect = screen.getByLabelText(/^Sort$/i) as HTMLSelectElement;
+    expect(screen.getByRole('option', { name: 'Favorited (Newest)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Favorited (Oldest)' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Title/i), { target: { value: 'My Watchlist' } });
+    fireEvent.change(sortSelect, { target: { value: 'favorited_at:desc' } });
+    expect(sortSelect.value).toBe('favorited_at:desc');
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+    expect(handleSave).toHaveBeenCalledTimes(1);
+    const savedFavorites = handleSave.mock.calls[0][0] as WidgetNode;
+    expect(savedFavorites.type).toBe('carousel');
+    if (savedFavorites.type === 'carousel') {
+      expect(savedFavorites.title).toBe('My Watchlist');
+      expect(savedFavorites.binding.macro_type).toBe('favorites');
+      expect(savedFavorites.binding.sort).toBe('favorited_at:desc');
+    }
+
+    // Switching away from 'favorites' resets favorited_at sort so invalid sort is never persisted
+    fireEvent.change(macroSelect, { target: { value: 'custom_query' } });
+    expect(sortSelect.value).toBe('');
+    expect(screen.queryByRole('option', { name: 'Favorited (Newest)' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+    const savedCustom = handleSave.mock.calls[1][0] as WidgetNode;
+    if ('binding' in savedCustom) {
+      expect(savedCustom.binding.macro_type).toBe('custom_query');
+      expect(savedCustom.binding.sort).toBeUndefined();
+    }
+  });
 });
