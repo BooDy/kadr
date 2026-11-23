@@ -10,7 +10,7 @@ use kadr_core::models::{
     WatchState,
 };
 use kadr_server::layout::default_home_layout;
-use kadr_server::resolver::{to_card_view_model, WidgetResolver};
+use kadr_server::resolver::{to_card_view_model, to_card_view_model_with_favorite, WidgetResolver};
 use kadr_storage::pool::{create_in_memory_pool, create_pool, initialize_database};
 use kadr_storage::repos::{
     LibraryRepository, MediaItemRepository, PlaybackRepository, UserRepository,
@@ -75,6 +75,14 @@ fn test_card_normalization_movie_and_episode() {
     assert_eq!(card_4k.release_year, Some(2014));
     assert_eq!(card_4k.badge.as_deref(), Some("4K"));
     assert_eq!(card_4k.playback_progress, None);
+    assert!(!card_4k.is_favorite);
+    let card_4k_json = serde_json::to_value(&card_4k).unwrap();
+    assert!(card_4k_json.get("is_favorite").is_none());
+
+    let card_4k_fav = to_card_view_model_with_favorite(&movie_4k, None, true);
+    assert!(card_4k_fav.is_favorite);
+    let card_4k_fav_json = serde_json::to_value(&card_4k_fav).unwrap();
+    assert_eq!(card_4k_fav_json["is_favorite"], true);
 
     // 2. Movie with InProgress playback -> badge must be RESUME, progress calculated
     let playback = PlaybackState {
@@ -428,7 +436,7 @@ async fn test_concurrent_home_screen_resolution() {
     let burst_futures = (0..4).map(|_| resolver.resolve_screen(default_home_layout(), "user-1"));
     let burst_results = futures::future::join_all(burst_futures).await;
     for burst_screen in &burst_results {
-        assert_eq!(burst_screen.widgets.len(), 6);
+        assert_eq!(burst_screen.widgets.len(), 7);
     }
 
     // Measure warmed concurrent resolution across the pooled WAL reader connections.
@@ -448,7 +456,7 @@ async fn test_concurrent_home_screen_resolution() {
 
     assert_eq!(resolved.id, ScreenId::Home);
     assert_eq!(resolved.title, "Home");
-    assert_eq!(resolved.widgets.len(), 6);
+    assert_eq!(resolved.widgets.len(), 7);
 
     // 1. Verify HeroBanner spotlight
     let hero = resolved.widgets.iter().find(|w| w.id() == "home_spotlight");

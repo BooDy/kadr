@@ -328,6 +328,13 @@ pub fn default_home_layout() -> ScreenLayout {
                 next_cursor: None,
             },
             WidgetNode::Carousel {
+                id: "my_favorites".to_string(),
+                title: "My Favorites".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::Favorites),
+                items: None,
+                next_cursor: None,
+            },
+            WidgetNode::Carousel {
                 id: "recently_added".to_string(),
                 title: "Recently Added".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),

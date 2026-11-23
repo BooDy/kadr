@@ -12,7 +12,9 @@ use kadr_core::events::SystemEvent;
 use kadr_core::models::{Library, MediaItem, MediaType};
 use kadr_ingest::watcher::{scan_directory_recursive, IngestMessage, IngestPipeline};
 use kadr_storage::error::StorageError;
-use kadr_storage::repos::{LibraryRepository, MediaItemRepository, PlaybackRepository};
+use kadr_storage::repos::{
+    FavoritesRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_util::io::ReaderStream;
@@ -26,7 +28,7 @@ use crate::auth::rate_limiter::{RateLimitStatus, RateLimiter};
 use crate::config::AppConfig;
 use crate::events::EventBus;
 use crate::layout::{default_library_layout, LayoutRegistry};
-use crate::resolver::to_card_view_model;
+use crate::resolver::{to_card_view_model, to_card_view_model_with_favorite};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FolderEntry {
@@ -1056,11 +1058,25 @@ pub async fn browse_library_folders(
         std::collections::HashMap::new()
     };
 
+    let favorited_ids = if let Some(ref user) = auth_user {
+        if !item_ids.is_empty() {
+            FavoritesRepository::new(media_repo.pool().clone())
+                .get_favorited_ids(&user.id, &item_ids)
+                .await
+                .unwrap_or_default()
+        } else {
+            std::collections::HashSet::new()
+        }
+    } else {
+        std::collections::HashSet::new()
+    };
+
     let mut items = Vec::new();
     for (video_path, item_opt) in media_items {
         if let Some(item) = item_opt {
             let playback = item.id.and_then(|id| playback_map.get(&id));
-            items.push(to_card_view_model(&item, playback));
+            let is_fav = item.id.is_some_and(|id| favorited_ids.contains(&id));
+            items.push(to_card_view_model_with_favorite(&item, playback, is_fav));
         } else {
             let file_name = video_path
                 .file_name()

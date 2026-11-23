@@ -18,7 +18,8 @@ use kadr_core::playlists::{
 };
 use kadr_storage::error::StorageError;
 use kadr_storage::repos::{
-    LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
+    FavoritesRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
+    PlaylistRepository,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -27,7 +28,7 @@ use tracing::error;
 use crate::api::unlock_token::UnlockedLibraries;
 use crate::auth::jwt::AuthUser;
 use crate::events::EventBus;
-use crate::resolver::to_card_view_model;
+use crate::resolver::to_card_view_model_with_favorite;
 
 type ApiErr = (StatusCode, Json<Value>);
 
@@ -193,6 +194,15 @@ async fn hydrate_playlist_detail(
             .unwrap_or_default()
     };
 
+    let favorited_ids = if visible_ids.is_empty() {
+        HashSet::new()
+    } else {
+        FavoritesRepository::new(playlist_repo.pool().clone())
+            .get_favorited_ids(&auth_user.id, &visible_ids)
+            .await
+            .unwrap_or_default()
+    };
+
     let items = visible_pairs
         .into_iter()
         .enumerate()
@@ -205,7 +215,8 @@ async fn hydrate_playlist_detail(
                     None
                 }
             });
-            let card = to_card_view_model(&item, state);
+            let is_fav = item.id.is_some_and(|id| favorited_ids.contains(&id));
+            let card = to_card_view_model_with_favorite(&item, state, is_fav);
             PlaylistItemView {
                 position,
                 added_at,

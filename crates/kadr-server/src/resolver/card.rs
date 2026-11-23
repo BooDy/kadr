@@ -5,6 +5,15 @@ use kadr_core::models::{MediaItem, MediaType, PlaybackState, WatchState};
 
 /// Normalizes a `MediaItem` and optional `PlaybackState` into a client-ready `CardViewModel`.
 pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) -> CardViewModel {
+    to_card_view_model_with_favorite(item, playback, false)
+}
+
+/// Normalizes a `MediaItem`, optional `PlaybackState`, and favorite status into a `CardViewModel`.
+pub fn to_card_view_model_with_favorite(
+    item: &MediaItem,
+    playback: Option<&PlaybackState>,
+    is_favorite: bool,
+) -> CardViewModel {
     let id = item.id.unwrap_or(0);
     let title = item.title.clone();
 
@@ -132,6 +141,7 @@ pub fn to_card_view_model(item: &MediaItem, playback: Option<&PlaybackState>) ->
         badge,
         season: item.metadata.season,
         episode: item.metadata.episode,
+        is_favorite,
     }
 }
 

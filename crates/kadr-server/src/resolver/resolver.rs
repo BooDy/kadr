@@ -6,10 +6,11 @@ use kadr_core::ast::{
 use kadr_core::models::{MediaItem, MediaType, PlaybackState, WatchState};
 use kadr_storage::error::Result;
 use kadr_storage::repos::{
-    LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
+    FavoritesRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
+    PlaylistRepository,
 };
 
-use super::card::to_card_view_model;
+use super::card::to_card_view_model_with_favorite;
 use crate::layout::LayoutRegistry;
 
 /// Concurrent async resolver for Declarative Widget AST layouts and queries.
@@ -19,6 +20,7 @@ pub struct WidgetResolver {
     playback_repo: PlaybackRepository,
     lib_repo: LibraryRepository,
     playlist_repo: PlaylistRepository,
+    favorites_repo: FavoritesRepository,
 }
 
 impl WidgetResolver {
@@ -26,11 +28,13 @@ impl WidgetResolver {
     pub fn new(media_repo: MediaItemRepository, playback_repo: PlaybackRepository) -> Self {
         let lib_repo = LibraryRepository::new(media_repo.pool().clone());
         let playlist_repo = PlaylistRepository::new(media_repo.pool().clone());
+        let favorites_repo = FavoritesRepository::new(media_repo.pool().clone());
         Self {
             media_repo,
             playback_repo,
             lib_repo,
             playlist_repo,
+            favorites_repo,
         }
     }
 
@@ -174,7 +178,10 @@ impl WidgetResolver {
             Some(lib_id)
         } else if let QueryMacro::LibraryItems { ref library_id } = binding.macro_type {
             Some(library_id.as_str())
-        } else if matches!(binding.macro_type, QueryMacro::PlaylistItems { .. }) {
+        } else if matches!(
+            binding.macro_type,
+            QueryMacro::PlaylistItems { .. } | QueryMacro::Favorites
+        ) {
             None
         } else {
             default_library_id
@@ -290,7 +297,19 @@ impl WidgetResolver {
                     None
                 };
                 let playback_ref = playback_override.or(fetched_playback.as_ref());
-                if !tree.matches(item, playback_ref, now) {
+                let is_fav = if tree.needs_favorite_state() {
+                    if let Some(id) = item.id {
+                        self.favorites_repo
+                            .is_favorite(user_id, id)
+                            .await
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !tree.matches_with_context(item, playback_ref, is_fav, now) {
                     return false;
                 }
             }
@@ -522,16 +541,27 @@ impl WidgetResolver {
         };
 
         if let Some(item) = candidate {
-            let playback = if let Some(item_id) = item.id {
-                self.playback_repo
+            let (playback, is_fav) = if let Some(item_id) = item.id {
+                let pb = self
+                    .playback_repo
                     .get_state(user_id, item_id)
                     .await
                     .ok()
-                    .flatten()
+                    .flatten();
+                let fav = self
+                    .favorites_repo
+                    .is_favorite(user_id, item_id)
+                    .await
+                    .unwrap_or(false);
+                (pb, fav)
             } else {
-                None
+                (None, false)
             };
-            Some(to_card_view_model(&item, playback.as_ref()))
+            Some(to_card_view_model_with_favorite(
+                &item,
+                playback.as_ref(),
+                is_fav,
+            ))
         } else {
             None
         }
@@ -590,6 +620,11 @@ impl WidgetResolver {
                     .get_by_ids(&item_ids)
                     .await
                     .unwrap_or_default();
+                let favorited_ids = self
+                    .favorites_repo
+                    .get_favorited_ids(user_id, &item_ids)
+                    .await
+                    .unwrap_or_default();
 
                 let mut cards = Vec::with_capacity(page_states.len());
                 for state in &page_states {
@@ -605,7 +640,8 @@ impl WidgetResolver {
                             )
                             .await
                         {
-                            cards.push(to_card_view_model(item, Some(state)));
+                            let is_fav = favorited_ids.contains(&state.media_item_id);
+                            cards.push(to_card_view_model_with_favorite(item, Some(state), is_fav));
                         }
                     }
                 }
@@ -751,12 +787,18 @@ impl WidgetResolver {
                 };
 
                 if let Some(item) = candidate {
-                    let playback = if let Some(id) = item.id {
-                        self.playback_repo.get_state(user_id, id).await?
+                    let (playback, is_fav) = if let Some(id) = item.id {
+                        let pb = self.playback_repo.get_state(user_id, id).await?;
+                        let fav = self
+                            .favorites_repo
+                            .is_favorite(user_id, id)
+                            .await
+                            .unwrap_or(false);
+                        (pb, fav)
                     } else {
-                        None
+                        (None, false)
                     };
-                    let card = to_card_view_model(&item, playback.as_ref());
+                    let card = to_card_view_model_with_favorite(&item, playback.as_ref(), is_fav);
                     Ok((vec![card], None, None))
                 } else {
                     Ok((Vec::new(), None, None))
@@ -776,7 +818,13 @@ impl WidgetResolver {
                         .await
                     {
                         let playback = self.playback_repo.get_state(user_id, *item_id).await?;
-                        let card = to_card_view_model(&item, playback.as_ref());
+                        let is_fav = self
+                            .favorites_repo
+                            .is_favorite(user_id, *item_id)
+                            .await
+                            .unwrap_or(false);
+                        let card =
+                            to_card_view_model_with_favorite(&item, playback.as_ref(), is_fav);
                         Ok((vec![card], None, None))
                     } else {
                         Ok((Vec::new(), None, None))
@@ -860,10 +908,35 @@ impl WidgetResolver {
 
                 Ok((cards, next_cursor, Some(total)))
             }
+            QueryMacro::Favorites => {
+                let (fav_pairs, total, _locked) = self
+                    .favorites_repo
+                    .list_favorites(
+                        user_id,
+                        effective_library_id,
+                        None,
+                        binding.limit,
+                        offset,
+                        binding.sort.as_deref(),
+                        unlocked_ids,
+                        binding.filters.as_ref(),
+                    )
+                    .await?;
+                let items: Vec<MediaItem> = fav_pairs.into_iter().map(|(_, item)| item).collect();
+                let count = items.len() as u32;
+                let has_more = (offset as u64 + count as u64) < total;
+                let cards = self.hydrate_items_to_cards(items, user_id).await;
+                let next_cursor = if has_more {
+                    Some((offset + count).to_string())
+                } else {
+                    None
+                };
+                Ok((cards, next_cursor, Some(total)))
+            }
         }
     }
 
-    /// Hydrates a slice of `MediaItem`s by batch-fetching playback states.
+    /// Hydrates a slice of `MediaItem`s by batch-fetching playback and favorite states.
     async fn hydrate_items_to_cards(
         &self,
         items: Vec<kadr_core::models::MediaItem>,
@@ -875,10 +948,19 @@ impl WidgetResolver {
             .get_states_for_items(user_id, &item_ids)
             .await
             .unwrap_or_default();
+        let favorited_ids = self
+            .favorites_repo
+            .get_favorited_ids(user_id, &item_ids)
+            .await
+            .unwrap_or_default();
 
         items
             .iter()
-            .map(|item| to_card_view_model(item, item.id.and_then(|id| states.get(&id))))
+            .map(|item| {
+                let playback = item.id.and_then(|id| states.get(&id));
+                let is_fav = item.id.is_some_and(|id| favorited_ids.contains(&id));
+                to_card_view_model_with_favorite(item, playback, is_fav)
+            })
             .collect()
     }
 
@@ -909,7 +991,12 @@ impl WidgetResolver {
         }
 
         let playback = self.playback_repo.get_state(user_id, item_id).await?;
-        let card = to_card_view_model(&item, playback.as_ref());
+        let is_fav = self
+            .favorites_repo
+            .is_favorite(user_id, item_id)
+            .await
+            .unwrap_or(false);
+        let card = to_card_view_model_with_favorite(&item, playback.as_ref(), is_fav);
 
         let overview = item.metadata.overview.clone();
         let genres = item.metadata.genres.clone();

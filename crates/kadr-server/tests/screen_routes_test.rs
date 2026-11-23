@@ -693,7 +693,7 @@ async fn test_save_and_reset_screen_layout() {
         .unwrap();
     let reset: ScreenLayout = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(reset.title, "Home");
-    assert_eq!(reset.widgets.len(), 6);
+    assert_eq!(reset.widgets.len(), 7);
 
     // 6. Admin POST /api/v1/screens creates custom screen
     let create_payload = json!({

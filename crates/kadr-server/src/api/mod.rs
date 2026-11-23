@@ -4,6 +4,7 @@ pub mod auth_routes;
 pub mod config_routes;
 pub mod discovery_routes;
 pub mod events_routes;
+pub mod favorite_routes;
 pub mod hls_routes;
 pub mod item_routes;
 pub mod library_routes;
@@ -36,8 +37,8 @@ use axum::{
     Extension, Router,
 };
 use kadr_storage::repos::{
-    LibraryRepository, MediaItemRepository, PlaybackRepository, PlaylistRepository,
-    SearchRepository, SubtitleRepository, UserRepository,
+    FavoritesRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
+    PlaylistRepository, SearchRepository, SubtitleRepository, UserRepository,
 };
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -102,6 +103,7 @@ pub fn create_router_with_ingest(
         event_bus.clone(),
     );
     let plugin_tokens = crate::plugins::auth::PluginTokenService::new(jwt_svc.secret());
+    let favorites_repo = FavoritesRepository::new(media_repo.pool().clone());
     let playlist_repo = PlaylistRepository::new(media_repo.pool().clone());
     let search_repo = SearchRepository::new(media_repo.pool().clone());
     let metadata_service = Arc::new(crate::metadata::MetadataService::new(
@@ -114,6 +116,7 @@ pub fn create_router_with_ingest(
         .merge(hls_routes::hls_routes())
         .merge(storyboard_routes::storyboard_routes())
         .merge(crate::plugins::plugin_routes())
+        .merge(favorite_routes::favorite_routes())
         .merge(playlist_routes::playlist_routes())
         .merge(search_routes::search_routes())
         .merge(metadata_routes::metadata_routes())
@@ -271,6 +274,7 @@ pub fn create_router_with_ingest(
         .layer(Extension(playback_repo))
         .layer(Extension(media_repo))
         .layer(Extension(lib_repo))
+        .layer(Extension(favorites_repo))
         .layer(Extension(playlist_repo))
         .layer(Extension(search_repo))
         .layer(Extension(UnlockTokenService::new(

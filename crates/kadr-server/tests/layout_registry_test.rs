@@ -22,7 +22,7 @@ fn test_home_screen_layout_and_hierarchy() {
 
     assert_eq!(home.id, ScreenId::Home);
     assert_eq!(home.title, "Home");
-    assert_eq!(home.widgets.len(), 6);
+    assert_eq!(home.widgets.len(), 7);
 
     // Widget 0: HeroBanner spotlight
     match &home.widgets[0] {
@@ -55,8 +55,26 @@ fn test_home_screen_layout_and_hierarchy() {
         other => panic!("Expected Carousel continue_watching, got {other:?}"),
     }
 
-    // Widget 2: Carousel recently_added
+    // Widget 2: Carousel my_favorites
     match &home.widgets[2] {
+        WidgetNode::Carousel {
+            id,
+            title,
+            binding,
+            items,
+            next_cursor,
+        } => {
+            assert_eq!(id, "my_favorites");
+            assert_eq!(title, "My Favorites");
+            assert_eq!(binding.macro_type, QueryMacro::Favorites);
+            assert!(items.is_none());
+            assert!(next_cursor.is_none());
+        }
+        other => panic!("Expected Carousel my_favorites, got {other:?}"),
+    }
+
+    // Widget 3: Carousel recently_added
+    match &home.widgets[3] {
         WidgetNode::Carousel {
             id,
             title,
@@ -73,8 +91,8 @@ fn test_home_screen_layout_and_hierarchy() {
         other => panic!("Expected Carousel recently_added, got {other:?}"),
     }
 
-    // Widget 3: Carousel top_rated
-    match &home.widgets[3] {
+    // Widget 4: Carousel top_rated
+    match &home.widgets[4] {
         WidgetNode::Carousel {
             id,
             title,
@@ -91,8 +109,8 @@ fn test_home_screen_layout_and_hierarchy() {
         other => panic!("Expected Carousel top_rated, got {other:?}"),
     }
 
-    // Widget 4: Carousel genre_action
-    match &home.widgets[4] {
+    // Widget 5: Carousel genre_action
+    match &home.widgets[5] {
         WidgetNode::Carousel {
             id,
             title,
@@ -114,8 +132,8 @@ fn test_home_screen_layout_and_hierarchy() {
         other => panic!("Expected Carousel genre_action, got {other:?}"),
     }
 
-    // Widget 5: Carousel genre_scifi
-    match &home.widgets[5] {
+    // Widget 6: Carousel genre_scifi
+    match &home.widgets[6] {
         WidgetNode::Carousel {
             id,
             title,
