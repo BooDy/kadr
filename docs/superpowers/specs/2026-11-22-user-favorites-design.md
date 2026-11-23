@@ -171,7 +171,7 @@ Register `favorite_routes()` in `crates/kadr-server/src/api/mod.rs`:
 1. **`GET /api/v1/favorites`**
    - **Auth:** `AuthUser` + `UnlockedLibraries`.
    - **Query params:** `item_type?: MediaType`, `library_id?: String`, `sort?: String` (default `favorited_at:desc`), `limit?: u32` (`1..=200`, default `60`), `offset?: u32` (default `0`).
-   - **Response (`200 OK`):** `FavoritesListResponse { items: Vec<FavoriteItemView>, total_count, locked_item_count }`, where each `FavoriteItemView` hydrates `card` (with `is_favorite: true` and `playback_progress`) plus `duration_seconds` and `resume_position_seconds` for direct queue playback!
+   - **Response (`200 OK`):** `FavoritesListResponse { items: Vec<FavoriteItemView>, total_count, locked_item_count }`, where each `FavoriteItemView` hydrates `card` (with `is_favorite: true` and `playback_progress`), `duration_seconds`, and `resume_position_seconds` (`Some(pos)` **only** when `watch_state == WatchState::InProgress && pos > 0`, matching `PlaylistItemView` and commit `a83716b` so completed items start at `0s`) for direct queue playback!
 2. **`PUT /api/v1/favorites/{item_id}`**
    - **Auth:** `AuthUser` + `UnlockedLibraries`.
    - **Checks:** Look up `media_repo.get_by_id(item_id)` -> `404 Not Found` if absent; look up `lib_repo.get_by_id(&item.library_id)` -> if `lib.is_private && !unlocked.contains(&lib.id)`, return `403 Forbidden` `{ "error": "Library is locked", "code": "LIBRARY_LOCKED", "library_id": lib.id }`.
@@ -192,15 +192,15 @@ Register `favorite_routes()` in `crates/kadr-server/src/api/mod.rs`:
 
 ### 4.2 `<FavoriteButton />` & Browse Surfaces
 1. **`web/src/components/favorites/FavoriteButton.tsx`:**
-   - Supports two visual variants:
-     - `variant="icon"` (compact circular button for top-right of poster cards in `CarouselWidget` and `GridWidget`): when `isFavorite` is `true`, always visible with filled crimson/accent heart (`fill-cta text-cta`); when `false`, visible on card hover or keyboard focus (`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100`). Calls `e.stopPropagation()` and `e.preventDefault()` on click/keydown so toggling a card's heart never opens `ItemDetailsModal`!
-     - `variant="pill"` (labeled action button for `ItemDetailsModal.tsx` and `SpotlightWidget.tsx` alongside `Play` and `+ Playlist`): displays `"Favorited"` (filled heart) vs `"Favorite"` (outline heart).
+   - Supports two visual variants (with disambiguated `aria-label={isFavorite ? \`Remove ${title} from favorites\` : \`Add ${title} to favorites\`}`, `aria-pressed={isFavorite}`, and `aria-hidden="true"` on the decorative `Heart` SVG):
+     - `variant="icon"` (compact `min-w-7 min-h-7` circular button for the top-right action cluster of poster cards in `CarouselWidget`, `GridWidget`, and `FavoritesScreen` alongside `<WatchStateButton variant="icon" />` inside `absolute top-2 right-2 z-20 flex items-center gap-1.5`): when `isFavorite` is `true`, always visible with filled crimson/accent heart (`fill-cta text-cta`); when `false`, visible on card hover or keyboard focus (`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100`). Calls `e.stopPropagation()` on click and `Enter`/`Space` keydown so toggling a card's heart never opens `ItemDetailsModal`!
+     - `variant="pill"` (labeled action button for `ItemDetailsModal.tsx` and `SpotlightWidget.tsx` alongside `Play`, `WatchStateButton`, and `+ Playlist`): displays `"Favorited"` (filled heart) vs `"Favorite"` (outline heart).
    - Guards `typeof api.addFavorite === 'function'` / `removeFavorite` defensively, updates optimistically, rolls back on network error, and emits `emitFavoriteChanged(itemId, next)`.
 2. **Wire `<FavoriteButton />` into:**
-   - `CarouselWidget.tsx` (`MediaCard`) —note: convert outer `<div role="button">` wrapper's nested button interaction cleanly or ensure `onClick`/`onKeyDown` ignores events originating from `<FavoriteButton />` (`e.stopPropagation()`).
-   - `GridWidget.tsx` (poster cards).
+   - `CarouselWidget.tsx` (`MediaCard` — coexisting in the top-right flex cluster with `<WatchStateButton />` for playable items and rendered standalone on `show` / `live_channel` cards).
+   - `GridWidget.tsx` (`GridCard` — same top-right flex cluster).
    - `SpotlightWidget.tsx` (hero action bar).
-   - `ItemDetailsModal.tsx` (primary action bar + episode row heart action if desired, or main modal action bar).
+   - `ItemDetailsModal.tsx` (primary action bar + `EpisodeCard` action row next to `WatchStateButton`, `+ Playlist`, and `Play`).
 
 ### 4.3 Dedicated `FavoritesScreen.tsx` & Top Navigation (`web/src/App.tsx`)
 - Add `'favorites'` to `NavView` in `web/src/App.tsx` with a `Heart` icon button (`Favorites`) in the top navigation bar right next to `Playlists`.
