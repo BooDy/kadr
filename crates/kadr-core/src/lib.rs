@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod error;
 pub mod events;
+pub mod favorites;
 pub mod filter_ast;
 pub mod models;
 pub mod playlists;
@@ -13,6 +14,7 @@ pub mod video_formats;
 pub use ast::*;
 pub use error::CoreError;
 pub use events::*;
+pub use favorites::*;
 pub use filter_ast::*;
 pub use models::*;
 pub use playlists::*;

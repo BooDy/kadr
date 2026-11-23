@@ -20,6 +20,7 @@ fn test_card_view_model_serialization_roundtrip() {
         badge: Some("4K".to_string()),
         season: None,
         episode: None,
+        is_favorite: false,
     };
 
     let serialized = serde_json::to_string(&card).expect("serialization failed");
@@ -44,6 +45,7 @@ fn test_card_view_model_with_nones() {
         badge: None,
         season: None,
         episode: None,
+        is_favorite: false,
     };
 
     let serialized = serde_json::to_string(&card).expect("serialization failed");
@@ -187,6 +189,7 @@ fn test_widget_node_hero_banner() {
         badge: Some("FEATURED".to_string()),
         season: None,
         episode: None,
+        is_favorite: false,
     };
 
     let hydrated = WidgetNode::HeroBanner {
@@ -238,6 +241,7 @@ fn test_widget_node_carousel() {
         badge: Some("RESUME".to_string()),
         season: None,
         episode: None,
+        is_favorite: false,
     };
     let hydrated = WidgetNode::Carousel {
         id: "continue_watching".to_string(),
@@ -298,6 +302,7 @@ fn test_widget_node_item_details() {
             badge: None,
             season: None,
             episode: None,
+            is_favorite: false,
         },
         overview: Some("Classic Egyptian film directed by Youssef Chahine.".to_string()),
         genres: vec!["Drama".to_string(), "Thriller".to_string()],
@@ -353,6 +358,7 @@ fn test_item_details_payload_with_library_and_folder_path() {
             badge: None,
             season: None,
             episode: None,
+            is_favorite: false,
         },
         overview: Some("Mind-bending thriller".to_string()),
         genres: vec!["Sci-Fi".to_string()],
@@ -613,6 +619,7 @@ fn test_card_view_model_season_episode_serde() {
         badge: None,
         season: Some(4),
         episode: Some(1),
+        is_favorite: false,
     };
     let json_str = serde_json::to_string(&card).unwrap();
     assert!(json_str.contains("\"season\":4"));

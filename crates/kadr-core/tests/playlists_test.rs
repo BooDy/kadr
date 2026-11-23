@@ -66,6 +66,7 @@ fn playlist_summary_and_detail_serialize_exact_wire_fields() {
                 badge: Some("RESUME".to_string()),
                 season: None,
                 episode: None,
+                is_favorite: false,
             },
         }],
     };

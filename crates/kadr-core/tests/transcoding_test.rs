@@ -386,7 +386,10 @@ fn test_evaluate_transcode_audio_only_and_attached_cover_art() {
 
     // 4. Unprobed live IPTV / plugin stream (both video & audio None, target h264) -> keeps VideoAction::Transcode
     let d_unprobed_live = evaluate_transcode(&unprobed, &base_params, None);
-    assert!(matches!(d_unprobed_live.video, VideoAction::Transcode { .. }));
+    assert!(matches!(
+        d_unprobed_live.video,
+        VideoAction::Transcode { .. }
+    ));
 }
 
 #[test]

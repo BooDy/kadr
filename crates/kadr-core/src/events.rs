@@ -50,6 +50,13 @@ pub enum SystemEvent {
         action: String,
         timestamp: i64,
     },
+    #[serde(rename = "favorite:updated")]
+    FavoriteUpdated {
+        user_id: String,
+        item_id: i64,
+        is_favorite: bool,
+        timestamp: i64,
+    },
 }
 
 impl SystemEvent {
@@ -62,6 +69,7 @@ impl SystemEvent {
             Self::SystemTelemetry(_) => "system:telemetry",
             Self::PluginError { .. } => "plugin:error",
             Self::PlaylistUpdated { .. } => "playlist:updated",
+            Self::FavoriteUpdated { .. } => "favorite:updated",
         }
     }
 }

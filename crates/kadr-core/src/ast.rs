@@ -131,6 +131,8 @@ pub struct CardViewModel {
     pub season: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub episode: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_favorite: bool,
 }
 
 /// Predefined query macro types for dynamic data resolution.
@@ -140,6 +142,7 @@ pub enum QueryMacro {
     ContinueWatching,
     RecentlyAdded,
     TopRated,
+    Favorites,
     LibraryItems { library_id: String },
     GenreShelf { genre: String },
     SpotlightItem { item_id: Option<i64> },

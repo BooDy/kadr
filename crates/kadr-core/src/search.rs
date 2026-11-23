@@ -71,6 +71,8 @@ pub struct SearchResultItem {
     pub episode: Option<u32>,
     pub genres: Vec<String>,
     pub director: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_favorite: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

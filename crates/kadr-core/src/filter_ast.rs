@@ -60,6 +60,13 @@ pub enum SetOp {
     In,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoolOp {
+    #[default]
+    Eq,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum TextMatch {
@@ -219,6 +226,12 @@ pub enum FilterCondition {
     WatchState {
         #[serde(flatten)]
         matcher: WatchStateMatch,
+    },
+
+    IsFavorite {
+        #[serde(default)]
+        op: BoolOp,
+        value: bool,
     },
 }
 
@@ -397,6 +410,8 @@ impl FilterCondition {
                     }
                 }
             },
+
+            FilterCondition::IsFavorite { .. } => Ok(()),
         }
     }
 }
@@ -528,10 +543,29 @@ impl FilterNode {
         }
     }
 
+    pub fn needs_favorite_state(&self) -> bool {
+        match self {
+            FilterNode::Group { children, .. } => children.iter().any(|c| c.needs_favorite_state()),
+            FilterNode::Rule { condition, .. } => {
+                matches!(condition, FilterCondition::IsFavorite { .. })
+            }
+        }
+    }
+
     pub fn matches(
         &self,
         item: &MediaItem,
         playback: Option<&PlaybackState>,
+        now_epoch: i64,
+    ) -> bool {
+        self.matches_with_context(item, playback, false, now_epoch)
+    }
+
+    pub fn matches_with_context(
+        &self,
+        item: &MediaItem,
+        playback: Option<&PlaybackState>,
+        is_favorite: bool,
         now_epoch: i64,
     ) -> bool {
         match self {
@@ -543,10 +577,10 @@ impl FilterNode {
                 let base = match op {
                     LogicalOp::And => children
                         .iter()
-                        .all(|c| c.matches(item, playback, now_epoch)),
+                        .all(|c| c.matches_with_context(item, playback, is_favorite, now_epoch)),
                     LogicalOp::Or => children
                         .iter()
-                        .any(|c| c.matches(item, playback, now_epoch)),
+                        .any(|c| c.matches_with_context(item, playback, is_favorite, now_epoch)),
                 };
                 if *negated {
                     !base
@@ -555,7 +589,7 @@ impl FilterNode {
                 }
             }
             FilterNode::Rule { negated, condition } => {
-                let base = eval_condition(condition, item, playback, now_epoch);
+                let base = eval_condition(condition, item, playback, is_favorite, now_epoch);
                 if *negated {
                     !base
                 } else {
@@ -570,6 +604,7 @@ fn eval_condition(
     condition: &FilterCondition,
     item: &MediaItem,
     playback: Option<&PlaybackState>,
+    is_favorite: bool,
     now_epoch: i64,
 ) -> bool {
     match condition {
@@ -660,5 +695,7 @@ fn eval_condition(
                 ratio >= *min && ratio <= *max
             }
         },
+
+        FilterCondition::IsFavorite { value, .. } => is_favorite == *value,
     }
 }

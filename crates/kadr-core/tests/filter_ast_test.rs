@@ -476,3 +476,248 @@ fn test_library_id_trim_parity_and_time_cmp_saturation() {
     };
     assert!(!extreme_older.matches(&item, None, i64::MIN + 10));
 }
+
+fn sample_movie() -> MediaItem {
+    sample_egyptian_classic()
+}
+
+#[test]
+fn favorites_ast_and_wire_types_serde_and_eval() {
+    use kadr_core::{
+        BoolOp, CardViewModel, FavoriteStatusResponse, FilterCondition, FilterNode, LogicalOp,
+        QueryMacro, SystemEvent,
+    };
+
+    // QueryMacro::Favorites
+    let macro_json = serde_json::to_string(&QueryMacro::Favorites).unwrap();
+    assert_eq!(macro_json, "\"favorites\"");
+    let parsed_macro: QueryMacro = serde_json::from_str(&macro_json).unwrap();
+    assert_eq!(parsed_macro, QueryMacro::Favorites);
+
+    // CardViewModel omits is_favorite when false, includes when true
+    let default_card = CardViewModel {
+        id: 1,
+        title: "Film".to_string(),
+        media_type: "movie".to_string(),
+        ..Default::default()
+    };
+    let card_false_json = serde_json::to_string(&default_card).unwrap();
+    assert!(!card_false_json.contains("is_favorite"));
+
+    let fav_card = CardViewModel {
+        is_favorite: true,
+        ..default_card
+    };
+    let card_true_json = serde_json::to_string(&fav_card).unwrap();
+    assert!(card_true_json.contains("\"is_favorite\":true"));
+
+    // FilterCondition::IsFavorite accepts both explicit op="eq" and omitted op
+    let with_op: FilterCondition =
+        serde_json::from_str(r#"{"field":"is_favorite","op":"eq","value":true}"#).unwrap();
+    let without_op: FilterCondition =
+        serde_json::from_str(r#"{"field":"is_favorite","value":true}"#).unwrap();
+    assert_eq!(
+        with_op,
+        FilterCondition::IsFavorite {
+            op: BoolOp::Eq,
+            value: true
+        }
+    );
+    assert_eq!(with_op, without_op);
+
+    let node = FilterNode::Group {
+        op: LogicalOp::And,
+        negated: false,
+        children: vec![FilterNode::Rule {
+            negated: false,
+            condition: with_op,
+        }],
+    };
+    node.validate().unwrap();
+    assert!(node.needs_favorite_state());
+
+    let item = sample_movie();
+    assert!(!node.matches(&item, None, 1_700_000_000));
+    assert!(node.matches_with_context(&item, None, true, 1_700_000_000));
+    assert!(!node.matches_with_context(&item, None, false, 1_700_000_000));
+
+    // SystemEvent::FavoriteUpdated
+    let evt = SystemEvent::FavoriteUpdated {
+        user_id: "u1".to_string(),
+        item_id: 42,
+        is_favorite: true,
+        timestamp: 12345,
+    };
+    assert_eq!(evt.event_type(), "favorite:updated");
+    let status = FavoriteStatusResponse {
+        item_id: 42,
+        is_favorite: true,
+    };
+    assert!(status.is_favorite);
+}
+
+#[test]
+fn favorites_negation_nested_groups_and_wire_models_edge_cases() {
+    use kadr_core::favorites::{FavoriteItemView, FavoriteStatusResponse, FavoritesListResponse};
+    use kadr_core::{
+        BoolOp, CardViewModel, FilterCondition, FilterNode, LogicalOp, MediaType, SearchResultItem,
+        SystemEvent, TextMatch,
+    };
+
+    let item = sample_movie();
+    let now = 1_700_000_000;
+
+    // Non-favorite tree does not report needs_favorite_state
+    let plain_rule = FilterNode::Rule {
+        negated: false,
+        condition: FilterCondition::Country {
+            matcher: TextMatch::Eq {
+                value: "Egypt".to_string(),
+            },
+        },
+    };
+    assert!(!plain_rule.needs_favorite_state());
+
+    // Negated Rule on IsFavorite { value: true }: matches when is_favorite == false
+    let negated_fav_rule = FilterNode::Rule {
+        negated: true,
+        condition: FilterCondition::IsFavorite {
+            op: BoolOp::Eq,
+            value: true,
+        },
+    };
+    negated_fav_rule.validate().unwrap();
+    assert!(negated_fav_rule.needs_favorite_state());
+    assert!(!negated_fav_rule.needs_playback_state());
+    assert!(negated_fav_rule.matches(&item, None, now));
+    assert!(negated_fav_rule.matches_with_context(&item, None, false, now));
+    assert!(!negated_fav_rule.matches_with_context(&item, None, true, now));
+
+    // IsFavorite { value: false } + negated Group threading is_favorite down nested children
+    let nested_negated_group = FilterNode::Group {
+        op: LogicalOp::Or,
+        negated: true,
+        children: vec![
+            FilterNode::Rule {
+                negated: false,
+                condition: FilterCondition::Country {
+                    matcher: TextMatch::Eq {
+                        value: "France".to_string(),
+                    },
+                },
+            },
+            FilterNode::Group {
+                op: LogicalOp::And,
+                negated: false,
+                children: vec![FilterNode::Rule {
+                    negated: false,
+                    condition: FilterCondition::IsFavorite {
+                        op: BoolOp::Eq,
+                        value: false,
+                    },
+                }],
+            },
+        ],
+    };
+    nested_negated_group.validate().unwrap();
+    assert!(nested_negated_group.needs_favorite_state());
+    // When is_favorite=false: inner IsFavorite(false) is true -> Or is true -> negated Group is false
+    assert!(!nested_negated_group.matches(&item, None, now));
+    assert!(!nested_negated_group.matches_with_context(&item, None, false, now));
+    // When is_favorite=true: Country==France is false, IsFavorite(false) is false -> Or is false -> negated Group is true
+    assert!(nested_negated_group.matches_with_context(&item, None, true, now));
+
+    // SearchResultItem omits is_favorite when false, includes when true, defaults to false on deserialize
+    let search_item = SearchResultItem {
+        id: 7,
+        library_id: "lib-movies".to_string(),
+        library_name: "Movies".to_string(),
+        item_type: MediaType::Movie,
+        title: "Cairo Station".to_string(),
+        original_title: None,
+        release_year: Some(1958),
+        overview: None,
+        poster_url: "/api/v1/artwork/7/poster".to_string(),
+        backdrop_url: None,
+        badge: None,
+        rating: Some(8.1),
+        duration_seconds: 4620,
+        playback_progress: None,
+        series_title: None,
+        season: None,
+        episode: None,
+        genres: vec!["Drama".to_string()],
+        director: Some("Youssef Chahine".to_string()),
+        is_favorite: false,
+    };
+    let search_false_json = serde_json::to_string(&search_item).unwrap();
+    assert!(!search_false_json.contains("is_favorite"));
+    let parsed_search_false: SearchResultItem = serde_json::from_str(&search_false_json).unwrap();
+    assert!(!parsed_search_false.is_favorite);
+
+    let search_true = SearchResultItem {
+        is_favorite: true,
+        ..search_item
+    };
+    let search_true_json = serde_json::to_string(&search_true).unwrap();
+    assert!(search_true_json.contains("\"is_favorite\":true"));
+    let parsed_search_true: SearchResultItem = serde_json::from_str(&search_true_json).unwrap();
+    assert!(parsed_search_true.is_favorite);
+
+    // FavoriteItemView, FavoritesListResponse, FavoriteStatusResponse serde
+    let list_default = FavoritesListResponse::default();
+    assert_eq!(list_default.total_count, 0);
+    assert_eq!(list_default.locked_item_count, 0);
+    assert!(list_default.items.is_empty());
+
+    let fav_view = FavoriteItemView {
+        favorited_at: 1_700_000_123,
+        duration_seconds: 4620,
+        resume_position_seconds: None,
+        card: CardViewModel {
+            id: 1,
+            title: "Cairo Station".to_string(),
+            media_type: "movie".to_string(),
+            is_favorite: true,
+            ..Default::default()
+        },
+    };
+    let view_json = serde_json::to_string(&fav_view).unwrap();
+    assert!(!view_json.contains("resume_position_seconds"));
+    let list_resp = FavoritesListResponse {
+        items: vec![FavoriteItemView {
+            resume_position_seconds: Some(300),
+            ..fav_view
+        }],
+        total_count: 1,
+        locked_item_count: 2,
+    };
+    let list_json = serde_json::to_string(&list_resp).unwrap();
+    assert!(list_json.contains("\"resume_position_seconds\":300"));
+    let list_roundtrip: FavoritesListResponse = serde_json::from_str(&list_json).unwrap();
+    assert_eq!(list_roundtrip, list_resp);
+
+    let status_resp = FavoriteStatusResponse {
+        item_id: 1,
+        is_favorite: false,
+    };
+    let status_json = serde_json::to_string(&status_resp).unwrap();
+    let status_roundtrip: FavoriteStatusResponse = serde_json::from_str(&status_json).unwrap();
+    assert_eq!(status_roundtrip, status_resp);
+
+    // SystemEvent::FavoriteUpdated tagged JSON wire format roundtrip
+    let evt = SystemEvent::FavoriteUpdated {
+        user_id: "u1".to_string(),
+        item_id: 42,
+        is_favorite: false,
+        timestamp: 99_999,
+    };
+    let evt_val = serde_json::to_value(&evt).unwrap();
+    assert_eq!(evt_val["type"], "favorite:updated");
+    assert_eq!(evt_val["payload"]["user_id"], "u1");
+    assert_eq!(evt_val["payload"]["item_id"], 42);
+    assert_eq!(evt_val["payload"]["is_favorite"], false);
+    assert_eq!(evt_val["payload"]["timestamp"], 99_999);
+    let evt_roundtrip: SystemEvent = serde_json::from_value(evt_val).unwrap();
+    assert_eq!(evt_roundtrip, evt);
+}
