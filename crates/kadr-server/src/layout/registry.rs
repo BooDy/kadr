@@ -103,8 +103,9 @@ impl LayoutRegistry {
         // 6. Match by widget binding pointing to library_id
         for screen in inner.screens.values() {
             for widget in &screen.widgets {
-                if let WidgetNode::Grid { binding, .. } | WidgetNode::Carousel { binding, .. } =
-                    widget
+                if let WidgetNode::Grid { binding, .. }
+                | WidgetNode::Carousel { binding, .. }
+                | WidgetNode::DenseList { binding, .. } = widget
                 {
                     if let QueryMacro::LibraryItems {
                         library_id: lib_ref,
@@ -318,12 +319,14 @@ pub fn default_home_layout() -> ScreenLayout {
             WidgetNode::HeroBanner {
                 id: "home_spotlight".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::SpotlightItem { item_id: None }),
+                time_window: None,
                 data: None,
             },
             WidgetNode::Carousel {
                 id: "continue_watching".to_string(),
                 title: "Continue Watching".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::ContinueWatching),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -331,6 +334,7 @@ pub fn default_home_layout() -> ScreenLayout {
                 id: "my_favorites".to_string(),
                 title: "My Favorites".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::Favorites),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -338,6 +342,7 @@ pub fn default_home_layout() -> ScreenLayout {
                 id: "recently_added".to_string(),
                 title: "Recently Added".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -345,6 +350,7 @@ pub fn default_home_layout() -> ScreenLayout {
                 id: "top_rated".to_string(),
                 title: "Top Rated".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::TopRated),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -354,6 +360,7 @@ pub fn default_home_layout() -> ScreenLayout {
                 binding: WidgetQueryBinding::new(QueryMacro::GenreShelf {
                     genre: "Action".to_string(),
                 }),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -363,6 +370,7 @@ pub fn default_home_layout() -> ScreenLayout {
                 binding: WidgetQueryBinding::new(QueryMacro::GenreShelf {
                     genre: "Sci-Fi".to_string(),
                 }),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -382,6 +390,7 @@ pub fn default_movies_layout() -> ScreenLayout {
                 .with_limit(30)
                 .with_sort("title:asc".to_string()),
             columns: 6,
+            time_window: None,
             items: None,
             next_cursor: None,
             total_count: None,
@@ -401,6 +410,7 @@ pub fn default_shows_layout() -> ScreenLayout {
                 .with_limit(30)
                 .with_sort("title:asc".to_string()),
             columns: 6,
+            time_window: None,
             items: None,
             next_cursor: None,
             total_count: None,
@@ -423,6 +433,7 @@ pub fn default_library_layout(library_id: &str, library_name: &str) -> ScreenLay
             .with_limit(30)
             .with_sort("title:asc".to_string()),
             columns: 6,
+            time_window: None,
             items: None,
             next_cursor: None,
             total_count: None,

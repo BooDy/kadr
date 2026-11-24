@@ -26,12 +26,18 @@ fn test_home_screen_layout_and_hierarchy() {
 
     // Widget 0: HeroBanner spotlight
     match &home.widgets[0] {
-        WidgetNode::HeroBanner { id, binding, data } => {
+        WidgetNode::HeroBanner {
+            id,
+            binding,
+            time_window,
+            data,
+        } => {
             assert_eq!(id, "home_spotlight");
             assert_eq!(
                 binding.macro_type,
                 QueryMacro::SpotlightItem { item_id: None }
             );
+            assert!(time_window.is_none());
             assert!(data.is_none());
         }
         other => panic!("Expected HeroBanner, got {other:?}"),
@@ -43,12 +49,14 @@ fn test_home_screen_layout_and_hierarchy() {
             id,
             title,
             binding,
+            time_window,
             items,
             next_cursor,
         } => {
             assert_eq!(id, "continue_watching");
             assert_eq!(title, "Continue Watching");
             assert_eq!(binding.macro_type, QueryMacro::ContinueWatching);
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
         }
@@ -61,12 +69,14 @@ fn test_home_screen_layout_and_hierarchy() {
             id,
             title,
             binding,
+            time_window,
             items,
             next_cursor,
         } => {
             assert_eq!(id, "my_favorites");
             assert_eq!(title, "My Favorites");
             assert_eq!(binding.macro_type, QueryMacro::Favorites);
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
         }
@@ -79,12 +89,14 @@ fn test_home_screen_layout_and_hierarchy() {
             id,
             title,
             binding,
+            time_window,
             items,
             next_cursor,
         } => {
             assert_eq!(id, "recently_added");
             assert_eq!(title, "Recently Added");
             assert_eq!(binding.macro_type, QueryMacro::RecentlyAdded);
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
         }
@@ -97,12 +109,14 @@ fn test_home_screen_layout_and_hierarchy() {
             id,
             title,
             binding,
+            time_window,
             items,
             next_cursor,
         } => {
             assert_eq!(id, "top_rated");
             assert_eq!(title, "Top Rated");
             assert_eq!(binding.macro_type, QueryMacro::TopRated);
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
         }
@@ -115,6 +129,7 @@ fn test_home_screen_layout_and_hierarchy() {
             id,
             title,
             binding,
+            time_window,
             items,
             next_cursor,
         } => {
@@ -126,6 +141,7 @@ fn test_home_screen_layout_and_hierarchy() {
                     genre: "Action".to_string()
                 }
             );
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
         }
@@ -138,6 +154,7 @@ fn test_home_screen_layout_and_hierarchy() {
             id,
             title,
             binding,
+            time_window,
             items,
             next_cursor,
         } => {
@@ -149,6 +166,7 @@ fn test_home_screen_layout_and_hierarchy() {
                     genre: "Sci-Fi".to_string()
                 }
             );
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
         }
@@ -173,6 +191,7 @@ fn test_movies_screen_layout() {
             title,
             binding,
             columns,
+            time_window,
             items,
             next_cursor,
             total_count,
@@ -183,6 +202,7 @@ fn test_movies_screen_layout() {
             assert_eq!(binding.macro_type, QueryMacro::RecentlyAdded);
             assert_eq!(binding.limit, 30);
             assert_eq!(binding.sort.as_deref(), Some("title:asc"));
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
             assert!(total_count.is_none());
@@ -208,6 +228,7 @@ fn test_shows_screen_layout() {
             title,
             binding,
             columns,
+            time_window,
             items,
             next_cursor,
             total_count,
@@ -218,6 +239,7 @@ fn test_shows_screen_layout() {
             assert_eq!(binding.macro_type, QueryMacro::RecentlyAdded);
             assert_eq!(binding.limit, 30);
             assert_eq!(binding.sort.as_deref(), Some("title:asc"));
+            assert!(time_window.is_none());
             assert!(items.is_none());
             assert!(next_cursor.is_none());
             assert!(total_count.is_none());
@@ -238,6 +260,7 @@ fn test_register_screen_override_and_custom() {
             id: "custom_shelf".to_string(),
             title: "Custom Shelf".to_string(),
             binding: WidgetQueryBinding::new(QueryMacro::TopRated),
+            time_window: None,
             items: None,
             next_cursor: None,
         }],
@@ -302,6 +325,7 @@ fn test_load_overrides_from_dir() {
                 genre: "Animation".to_string(),
             })
             .with_limit(15),
+            time_window: None,
             items: None,
             next_cursor: None,
         }],

@@ -295,6 +295,8 @@ async fn test_sse_events_multiple_consecutive_events() {
     // Publish event 1: LayoutChanged
     ctx.event_bus.publish(SystemEvent::LayoutChanged {
         screen_id: "home-screen".to_string(),
+        user_id: None,
+        target_device: None,
         timestamp: 1_700_000_100,
     });
 

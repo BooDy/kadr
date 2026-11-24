@@ -34,6 +34,8 @@ fn test_publish_zero_subscribers() {
 
     let event = SystemEvent::LayoutChanged {
         screen_id: "home".to_string(),
+        user_id: None,
+        target_device: None,
         timestamp: 1_700_000_000,
     };
 
@@ -73,6 +75,8 @@ async fn test_bounded_lag_handling() {
     for i in 0..5 {
         let event = SystemEvent::LayoutChanged {
             screen_id: format!("screen-{}", i),
+            user_id: None,
+            target_device: None,
             timestamp: i,
         };
         bus.publish(event);
@@ -93,6 +97,8 @@ async fn test_bounded_lag_handling() {
         event3,
         SystemEvent::LayoutChanged {
             screen_id: "screen-3".to_string(),
+            user_id: None,
+            target_device: None,
             timestamp: 3,
         }
     );
@@ -102,6 +108,8 @@ async fn test_bounded_lag_handling() {
         event4,
         SystemEvent::LayoutChanged {
             screen_id: "screen-4".to_string(),
+            user_id: None,
+            target_device: None,
             timestamp: 4,
         }
     );

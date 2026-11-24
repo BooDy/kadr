@@ -47,8 +47,12 @@ fn test_system_event_library_updated_serde() {
 
 #[test]
 fn test_system_event_layout_changed_serde() {
+    use kadr_core::ast::TargetDevice;
+
     let event = SystemEvent::LayoutChanged {
         screen_id: "home".to_string(),
+        user_id: None,
+        target_device: None,
         timestamp: 1700000020,
     };
 
@@ -58,9 +62,42 @@ fn test_system_event_layout_changed_serde() {
     assert_eq!(val["type"], "layout:changed");
     assert_eq!(val["payload"]["screen_id"], "home");
     assert_eq!(val["payload"]["timestamp"], 1700000020);
+    assert!(
+        val["payload"].get("user_id").is_none(),
+        "None user_id should be omitted for legacy wire compatibility"
+    );
+    assert!(
+        val["payload"].get("target_device").is_none(),
+        "None target_device should be omitted for legacy wire compatibility"
+    );
 
     let roundtrip: SystemEvent = serde_json::from_value(val).expect("from_value");
     assert_eq!(event, roundtrip);
+
+    // Legacy raw JSON without user_id/target_device deserializes cleanly
+    let legacy_raw = json!({
+        "type": "layout:changed",
+        "payload": {
+            "screen_id": "home",
+            "timestamp": 1700000020
+        }
+    });
+    let from_legacy: SystemEvent = serde_json::from_value(legacy_raw).expect("from legacy json");
+    assert_eq!(from_legacy, event);
+
+    // Scoped LayoutChanged includes user_id + target_device
+    let scoped_event = SystemEvent::LayoutChanged {
+        screen_id: "movies".to_string(),
+        user_id: Some("u-1".to_string()),
+        target_device: Some(TargetDevice::Tv),
+        timestamp: 1700000025,
+    };
+    let scoped_val = serde_json::to_value(&scoped_event).expect("to_value");
+    assert_eq!(scoped_val["payload"]["screen_id"], "movies");
+    assert_eq!(scoped_val["payload"]["user_id"], "u-1");
+    assert_eq!(scoped_val["payload"]["target_device"], "tv");
+    let scoped_roundtrip: SystemEvent = serde_json::from_value(scoped_val).expect("from_value");
+    assert_eq!(scoped_event, scoped_roundtrip);
 }
 
 #[test]

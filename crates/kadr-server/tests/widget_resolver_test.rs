@@ -75,9 +75,11 @@ fn test_card_normalization_movie_and_episode() {
     assert_eq!(card_4k.release_year, Some(2014));
     assert_eq!(card_4k.badge.as_deref(), Some("4K"));
     assert_eq!(card_4k.playback_progress, None);
+    assert_eq!(card_4k.duration_seconds, Some(10140));
     assert!(!card_4k.is_favorite);
     let card_4k_json = serde_json::to_value(&card_4k).unwrap();
     assert!(card_4k_json.get("is_favorite").is_none());
+    assert_eq!(card_4k_json["duration_seconds"], 10140);
 
     let card_4k_fav = to_card_view_model_with_favorite(&movie_4k, None, true);
     assert!(card_4k_fav.is_favorite);
@@ -174,6 +176,9 @@ fn test_card_normalization_movie_and_episode() {
     };
     let card_ep2 = to_card_view_model(&episode_no_series, None);
     assert_eq!(card_ep2.subtitle.as_deref(), Some("S01E02"));
+    assert_eq!(card_ep2.duration_seconds, None);
+    let card_ep2_json = serde_json::to_value(&card_ep2).unwrap();
+    assert!(card_ep2_json.get("duration_seconds").is_none());
 }
 
 async fn setup_test_environment() -> (
@@ -822,8 +827,10 @@ async fn test_hero_banner_spotlight_respects_filters() {
         widgets: vec![WidgetNode::HeroBanner {
             id: "hero".to_string(),
             binding: binding_filtered_genre,
+            time_window: None,
             data: None,
         }],
+        resolved_scope: None,
     };
 
     let resolved = resolver.resolve_screen(layout_filtered, "user-1").await;
@@ -851,8 +858,10 @@ async fn test_hero_banner_spotlight_respects_filters() {
         widgets: vec![WidgetNode::HeroBanner {
             id: "hero_explicit".to_string(),
             binding: binding_explicit_filtered,
+            time_window: None,
             data: None,
         }],
+        resolved_scope: None,
     };
 
     let resolved_explicit = resolver.resolve_screen(layout_explicit, "user-1").await;
@@ -997,6 +1006,7 @@ async fn test_widget_resolves_scoped_to_library_screen_by_default() {
                 id: "movies_recent".to_string(),
                 title: "Recently Added".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -1004,6 +1014,7 @@ async fn test_widget_resolves_scoped_to_library_screen_by_default() {
                 id: "movies_continue".to_string(),
                 title: "Continue Watching".to_string(),
                 binding: WidgetQueryBinding::new(QueryMacro::ContinueWatching),
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -1019,6 +1030,7 @@ async fn test_widget_resolves_scoped_to_library_screen_by_default() {
                         ..Default::default()
                     }),
                 },
+                time_window: None,
                 items: None,
                 next_cursor: None,
             },
@@ -1068,5 +1080,64 @@ async fn test_widget_resolves_scoped_to_library_screen_by_default() {
             );
         }
         _ => panic!("Expected carousel"),
+    }
+}
+
+#[tokio::test]
+async fn test_dense_list_widget_hydration_and_scope_preservation() {
+    use kadr_core::ast::{ResolvedLayoutScope, TargetDevice, TimeWindow};
+
+    let (resolver, _, _, _, _, _) = setup_test_environment().await;
+    let mut screen = ScreenLayout::new(
+        ScreenId::Home,
+        "Home",
+        vec![WidgetNode::DenseList {
+            id: "dense_top".to_string(),
+            title: "Compact Top Picks".to_string(),
+            binding: WidgetQueryBinding::new(QueryMacro::LibraryItems {
+                library_id: "movies".to_string(),
+            })
+            .with_limit(2),
+            time_window: Some(TimeWindow {
+                start: "20:00".to_string(),
+                end: "02:00".to_string(),
+            }),
+            items: None,
+            next_cursor: None,
+            total_count: None,
+        }],
+    );
+    screen.resolved_scope = Some(ResolvedLayoutScope {
+        user_id: Some("user-1".to_string()),
+        target_device: TargetDevice::Tv,
+        is_exact_override: true,
+    });
+
+    let resolved = resolver.resolve_screen(screen, "user-1").await;
+    assert_eq!(
+        resolved.resolved_scope.as_ref().map(|s| s.target_device),
+        Some(TargetDevice::Tv)
+    );
+    match &resolved.widgets[0] {
+        WidgetNode::DenseList {
+            id,
+            title,
+            time_window,
+            items,
+            total_count,
+            ..
+        } => {
+            assert_eq!(id, "dense_top");
+            assert_eq!(title, "Compact Top Picks");
+            assert_eq!(
+                time_window.as_ref().map(|tw| tw.start.as_str()),
+                Some("20:00")
+            );
+            let cards = items.as_ref().expect("DenseList items hydrated");
+            assert!(!cards.is_empty());
+            assert!(cards.iter().any(|c| c.duration_seconds.is_some()));
+            assert!(total_count.is_some());
+        }
+        other => panic!("Expected DenseList, got {other:?}"),
     }
 }

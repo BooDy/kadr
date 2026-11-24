@@ -295,6 +295,9 @@ async fn test_screen_and_widget_routes_isolate_private_items_unless_unlocked() {
             }
             WidgetNode::Grid {
                 items: Some(items), ..
+            }
+            | WidgetNode::DenseList {
+                items: Some(items), ..
             } => {
                 for card in items {
                     assert_ne!(card.id, private_item_id);
@@ -335,6 +338,9 @@ async fn test_screen_and_widget_routes_isolate_private_items_unless_unlocked() {
                 found_in_unlocked = true;
             }
             WidgetNode::Grid {
+                items: Some(items), ..
+            }
+            | WidgetNode::DenseList {
                 items: Some(items), ..
             } if items.iter().any(|c| c.id == private_item_id) => {
                 found_in_unlocked = true;

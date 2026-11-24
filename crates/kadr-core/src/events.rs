@@ -19,7 +19,14 @@ pub enum SystemEvent {
         timestamp: i64,
     },
     #[serde(rename = "layout:changed")]
-    LayoutChanged { screen_id: String, timestamp: i64 },
+    LayoutChanged {
+        screen_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_device: Option<crate::ast::TargetDevice>,
+        timestamp: i64,
+    },
     #[serde(rename = "subtitle:downloaded")]
     SubtitleDownloaded {
         item_id: i64,

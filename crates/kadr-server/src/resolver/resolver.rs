@@ -103,7 +103,9 @@ impl WidgetResolver {
         }
 
         for widget in &screen.widgets {
-            if let WidgetNode::Grid { binding, .. } | WidgetNode::Carousel { binding, .. } = widget
+            if let WidgetNode::Grid { binding, .. }
+            | WidgetNode::Carousel { binding, .. }
+            | WidgetNode::DenseList { binding, .. } = widget
             {
                 if let QueryMacro::LibraryItems { ref library_id } = binding.macro_type {
                     if libs.iter().any(|l| &l.id == library_id) {
@@ -360,6 +362,7 @@ impl WidgetResolver {
             id: screen.id,
             title: screen.title,
             widgets,
+            resolved_scope: screen.resolved_scope,
         }
     }
 
@@ -374,6 +377,7 @@ impl WidgetResolver {
             WidgetNode::HeroBanner {
                 id,
                 binding,
+                time_window,
                 data: _,
             } => {
                 let card = self
@@ -382,6 +386,7 @@ impl WidgetResolver {
                 WidgetNode::HeroBanner {
                     id,
                     binding,
+                    time_window,
                     data: card,
                 }
             }
@@ -389,6 +394,7 @@ impl WidgetResolver {
                 id,
                 title,
                 binding,
+                time_window,
                 items: _,
                 next_cursor: _,
             } => {
@@ -410,6 +416,7 @@ impl WidgetResolver {
                     id,
                     title,
                     binding,
+                    time_window,
                     items: Some(cards),
                     next_cursor,
                 }
@@ -419,6 +426,7 @@ impl WidgetResolver {
                 title,
                 binding,
                 columns,
+                time_window,
                 items: _,
                 next_cursor: _,
                 total_count: _,
@@ -442,6 +450,40 @@ impl WidgetResolver {
                     title,
                     binding,
                     columns,
+                    time_window,
+                    items: Some(cards),
+                    next_cursor,
+                    total_count,
+                }
+            }
+            WidgetNode::DenseList {
+                id,
+                title,
+                binding,
+                time_window,
+                items: _,
+                next_cursor: _,
+                total_count: _,
+            } => {
+                let (cards, next_cursor, total_count) = self
+                    .resolve_widget_data_with_library(
+                        &binding,
+                        user_id,
+                        0,
+                        unlocked_ids,
+                        default_library_id,
+                    )
+                    .await
+                    .unwrap_or_else(|err| {
+                        tracing::warn!("Failed to resolve dense_list {id}: {err}");
+                        (Vec::new(), None, None)
+                    });
+
+                WidgetNode::DenseList {
+                    id,
+                    title,
+                    binding,
+                    time_window,
                     items: Some(cards),
                     next_cursor,
                     total_count,

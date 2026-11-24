@@ -142,6 +142,8 @@ pub fn to_card_view_model_with_favorite(
         season: item.metadata.season,
         episode: item.metadata.episode,
         is_favorite,
+        duration_seconds: (item.technical.duration_seconds > 0)
+            .then_some(item.technical.duration_seconds as u64),
     }
 }
 

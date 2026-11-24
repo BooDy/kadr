@@ -107,6 +107,106 @@ impl From<String> for ScreenId {
     }
 }
 
+/// Semantic device tier used for per-device layout scoping and 4-tier fallback resolution.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetDevice {
+    #[default]
+    All,
+    Tv,
+    Web,
+    Mobile,
+}
+
+impl fmt::Display for TargetDevice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TargetDevice::All => write!(f, "all"),
+            TargetDevice::Tv => write!(f, "tv"),
+            TargetDevice::Web => write!(f, "web"),
+            TargetDevice::Mobile => write!(f, "mobile"),
+        }
+    }
+}
+
+impl FromStr for TargetDevice {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "all" => Ok(TargetDevice::All),
+            "tv" => Ok(TargetDevice::Tv),
+            "web" => Ok(TargetDevice::Web),
+            "mobile" => Ok(TargetDevice::Mobile),
+            _ => Err(format!(
+                "Invalid target_device '{s}': expected all, tv, web, or mobile"
+            )),
+        }
+    }
+}
+
+/// Parses a strict 5-byte ASCII 24-hour `"HH:MM"` string into minutes from midnight (`0..=1439`).
+pub fn parse_hhmm_minutes(s: &str) -> Result<u16, String> {
+    let bytes = s.as_bytes();
+    if bytes.len() != 5
+        || bytes[2] != b':'
+        || !bytes[0].is_ascii_digit()
+        || !bytes[1].is_ascii_digit()
+        || !bytes[3].is_ascii_digit()
+        || !bytes[4].is_ascii_digit()
+    {
+        return Err(format!(
+            "Invalid time '{s}': expected 24-hour HH:MM (00:00..23:59)"
+        ));
+    }
+    let hours = u16::from(bytes[0] - b'0') * 10 + u16::from(bytes[1] - b'0');
+    let mins = u16::from(bytes[3] - b'0') * 10 + u16::from(bytes[4] - b'0');
+    if hours > 23 || mins > 59 {
+        return Err(format!(
+            "Invalid time '{s}': expected 24-hour HH:MM (00:00..23:59)"
+        ));
+    }
+    Ok(hours * 60 + mins)
+}
+
+/// Optional 24-hour local-time visibility window for a shelf/widget.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeWindow {
+    /// 24-hour "HH:MM" start time (inclusive), 00:00..=23:59.
+    pub start: String,
+    /// 24-hour "HH:MM" end time (exclusive, except when start == end which is rejected), 00:00..=23:59.
+    pub end: String,
+}
+
+impl TimeWindow {
+    pub fn validate(&self) -> Result<(), String> {
+        let start_mins = parse_hhmm_minutes(&self.start)?;
+        let end_mins = parse_hhmm_minutes(&self.end)?;
+        if start_mins == end_mins {
+            return Err("Time window start and end must differ".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn is_active_at_minutes(&self, current_minutes: u16) -> bool {
+        let (Ok(s), Ok(e)) = (
+            parse_hhmm_minutes(&self.start),
+            parse_hhmm_minutes(&self.end),
+        ) else {
+            return false;
+        };
+        if s == e {
+            return false;
+        }
+        let m = current_minutes % 1440;
+        if s < e {
+            m >= s && m < e
+        } else {
+            m >= s || m < e
+        }
+    }
+}
+
 /// Normalized card view model for UI presentation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CardViewModel {
@@ -133,6 +233,8 @@ pub struct CardViewModel {
     pub episode: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_favorite: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<u64>,
 }
 
 /// Predefined query macro types for dynamic data resolution.
@@ -234,12 +336,16 @@ pub enum WidgetNode {
         id: String,
         binding: WidgetQueryBinding,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        time_window: Option<TimeWindow>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         data: Option<CardViewModel>,
     },
     Carousel {
         id: String,
         title: String,
         binding: WidgetQueryBinding,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        time_window: Option<TimeWindow>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         items: Option<Vec<CardViewModel>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -250,6 +356,21 @@ pub enum WidgetNode {
         title: String,
         binding: WidgetQueryBinding,
         columns: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        time_window: Option<TimeWindow>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        items: Option<Vec<CardViewModel>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        next_cursor: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total_count: Option<u64>,
+    },
+    DenseList {
+        id: String,
+        title: String,
+        binding: WidgetQueryBinding,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        time_window: Option<TimeWindow>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         items: Option<Vec<CardViewModel>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -272,6 +393,7 @@ impl WidgetNode {
             WidgetNode::HeroBanner { id, .. } => id,
             WidgetNode::Carousel { id, .. } => id,
             WidgetNode::Grid { id, .. } => id,
+            WidgetNode::DenseList { id, .. } => id,
             WidgetNode::ItemDetails { id, .. } => id,
         }
     }
@@ -282,6 +404,18 @@ impl WidgetNode {
             WidgetNode::HeroBanner { binding, .. } => Some(binding),
             WidgetNode::Carousel { binding, .. } => Some(binding),
             WidgetNode::Grid { binding, .. } => Some(binding),
+            WidgetNode::DenseList { binding, .. } => Some(binding),
+            WidgetNode::ItemDetails { .. } => None,
+        }
+    }
+
+    /// Returns a reference to the optional local-time visibility window if configured.
+    pub fn time_window(&self) -> Option<&TimeWindow> {
+        match self {
+            WidgetNode::HeroBanner { time_window, .. }
+            | WidgetNode::Carousel { time_window, .. }
+            | WidgetNode::Grid { time_window, .. }
+            | WidgetNode::DenseList { time_window, .. } => time_window.as_ref(),
             WidgetNode::ItemDetails { .. } => None,
         }
     }
@@ -292,7 +426,42 @@ impl WidgetNode {
             WidgetNode::HeroBanner { data, .. } => data.is_some(),
             WidgetNode::Carousel { items, .. } => items.is_some(),
             WidgetNode::Grid { items, .. } => items.is_some(),
+            WidgetNode::DenseList { items, .. } => items.is_some(),
             WidgetNode::ItemDetails { details, .. } => details.is_some(),
+        }
+    }
+
+    /// Clears hydrated data and pagination cursors prior to persisting the widget AST.
+    pub fn strip_hydrated_data(&mut self) {
+        match self {
+            WidgetNode::HeroBanner { data, .. } => {
+                *data = None;
+            }
+            WidgetNode::Carousel {
+                items, next_cursor, ..
+            } => {
+                *items = None;
+                *next_cursor = None;
+            }
+            WidgetNode::Grid {
+                items,
+                next_cursor,
+                total_count,
+                ..
+            }
+            | WidgetNode::DenseList {
+                items,
+                next_cursor,
+                total_count,
+                ..
+            } => {
+                *items = None;
+                *next_cursor = None;
+                *total_count = None;
+            }
+            WidgetNode::ItemDetails { details, .. } => {
+                *details = None;
+            }
         }
     }
 }
@@ -342,12 +511,27 @@ pub struct ItemDetailsPayload {
     pub folder_path: Option<String>,
 }
 
+/// Runtime metadata describing which `(user_id, target_device)` scope tier matched during resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedLayoutScope {
+    /// Effective owner of the resolved layout (`None` = global, `Some(uid)` = per-user).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// Effective device tier that matched during resolution.
+    pub target_device: TargetDevice,
+    /// True when an explicit override exists at the requested `(scope_user_id, target_device)` slot
+    /// (or when a non-factory override matched during normal browsing).
+    pub is_exact_override: bool,
+}
+
 /// Top-level layout container representing a complete screen.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScreenLayout {
     pub id: ScreenId,
     pub title: String,
     pub widgets: Vec<WidgetNode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_scope: Option<ResolvedLayoutScope>,
 }
 
 impl ScreenLayout {
@@ -356,6 +540,15 @@ impl ScreenLayout {
             id,
             title: title.into(),
             widgets,
+            resolved_scope: None,
+        }
+    }
+
+    /// Clears runtime-only scope metadata and hydrated widget data prior to persisting.
+    pub fn strip_runtime_fields(&mut self) {
+        self.resolved_scope = None;
+        for widget in &mut self.widgets {
+            widget.strip_hydrated_data();
         }
     }
 }

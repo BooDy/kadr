@@ -21,6 +21,7 @@ fn test_card_view_model_serialization_roundtrip() {
         season: None,
         episode: None,
         is_favorite: false,
+        duration_seconds: None,
     };
 
     let serialized = serde_json::to_string(&card).expect("serialization failed");
@@ -46,6 +47,7 @@ fn test_card_view_model_with_nones() {
         season: None,
         episode: None,
         is_favorite: false,
+        duration_seconds: None,
     };
 
     let serialized = serde_json::to_string(&card).expect("serialization failed");
@@ -163,6 +165,7 @@ fn test_widget_node_hero_banner() {
     let unhydrated = WidgetNode::HeroBanner {
         id: "hero".to_string(),
         binding: binding.clone(),
+        time_window: None,
         data: None,
     };
     let unhydrated_json = serde_json::to_string(&unhydrated).unwrap();
@@ -190,11 +193,13 @@ fn test_widget_node_hero_banner() {
         season: None,
         episode: None,
         is_favorite: false,
+        duration_seconds: None,
     };
 
     let hydrated = WidgetNode::HeroBanner {
         id: "hero".to_string(),
         binding,
+        time_window: None,
         data: Some(card),
     };
     let hydrated_json = serde_json::to_string(&hydrated).unwrap();
@@ -217,6 +222,7 @@ fn test_widget_node_carousel() {
         id: "continue_watching".to_string(),
         title: "Continue Watching".to_string(),
         binding: binding.clone(),
+        time_window: None,
         items: None,
         next_cursor: None,
     };
@@ -242,11 +248,13 @@ fn test_widget_node_carousel() {
         season: None,
         episode: None,
         is_favorite: false,
+        duration_seconds: None,
     };
     let hydrated = WidgetNode::Carousel {
         id: "continue_watching".to_string(),
         title: "Continue Watching".to_string(),
         binding,
+        time_window: None,
         items: Some(vec![item]),
         next_cursor: Some("cursor_10".to_string()),
     };
@@ -273,6 +281,7 @@ fn test_widget_node_grid() {
         title: "All Movies".to_string(),
         binding,
         columns: 6,
+        time_window: None,
         items: Some(vec![]),
         next_cursor: Some("next_page".to_string()),
         total_count: Some(150),
@@ -303,6 +312,7 @@ fn test_widget_node_item_details() {
             season: None,
             episode: None,
             is_favorite: false,
+            duration_seconds: None,
         },
         overview: Some("Classic Egyptian film directed by Youssef Chahine.".to_string()),
         genres: vec!["Drama".to_string(), "Thriller".to_string()],
@@ -359,6 +369,7 @@ fn test_item_details_payload_with_library_and_folder_path() {
             season: None,
             episode: None,
             is_favorite: false,
+            duration_seconds: None,
         },
         overview: Some("Mind-bending thriller".to_string()),
         genres: vec!["Sci-Fi".to_string()],
@@ -404,6 +415,7 @@ fn test_screen_layout_serialization_roundtrip() {
             sort: None,
             filters: None,
         },
+        time_window: None,
         data: None,
     };
 
@@ -416,6 +428,7 @@ fn test_screen_layout_serialization_roundtrip() {
             sort: None,
             filters: None,
         },
+        time_window: None,
         items: None,
         next_cursor: None,
     };
@@ -429,6 +442,7 @@ fn test_screen_layout_serialization_roundtrip() {
             sort: None,
             filters: None,
         },
+        time_window: None,
         items: None,
         next_cursor: None,
     };
@@ -437,6 +451,7 @@ fn test_screen_layout_serialization_roundtrip() {
         id: ScreenId::Home,
         title: "Home".to_string(),
         widgets: vec![hero, continue_watching, recently_added],
+        resolved_scope: None,
     };
 
     let serialized = serde_json::to_string(&layout).expect("serialization failed");
@@ -572,6 +587,7 @@ fn test_widget_nodes_roundtrip_with_filters() {
         id: "continue_watching".to_string(),
         title: "Continue Watching".to_string(),
         binding: carousel_binding,
+        time_window: None,
         items: None,
         next_cursor: None,
     };
@@ -592,6 +608,7 @@ fn test_widget_nodes_roundtrip_with_filters() {
         title: "Movies".to_string(),
         binding: grid_binding,
         columns: 4,
+        time_window: None,
         items: None,
         next_cursor: None,
         total_count: None,
@@ -620,6 +637,7 @@ fn test_card_view_model_season_episode_serde() {
         season: Some(4),
         episode: Some(1),
         is_favorite: false,
+        duration_seconds: None,
     };
     let json_str = serde_json::to_string(&card).unwrap();
     assert!(json_str.contains("\"season\":4"));
@@ -628,4 +646,220 @@ fn test_card_view_model_season_episode_serde() {
     let deserialized: CardViewModel = serde_json::from_str(&json_str).unwrap();
     assert_eq!(deserialized.season, Some(4));
     assert_eq!(deserialized.episode, Some(1));
+}
+
+#[test]
+fn test_target_device_serde_and_from_str() {
+    use kadr_core::ast::TargetDevice;
+
+    assert_eq!(TargetDevice::default(), TargetDevice::All);
+    for (raw, expected, canonical) in [
+        ("all", TargetDevice::All, "all"),
+        ("ALL", TargetDevice::All, "all"),
+        ("TV", TargetDevice::Tv, "tv"),
+        ("web", TargetDevice::Web, "web"),
+        ("Mobile", TargetDevice::Mobile, "mobile"),
+    ] {
+        let parsed: TargetDevice = raw.parse().expect("valid target device");
+        assert_eq!(parsed, expected);
+        assert_eq!(parsed.to_string(), canonical);
+        let json = serde_json::to_string(&parsed).unwrap();
+        assert_eq!(json, format!("\"{canonical}\""));
+        let back: TargetDevice = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, expected);
+    }
+    assert!("fridge".parse::<TargetDevice>().is_err());
+}
+
+#[test]
+fn test_time_window_validation_and_same_day_overnight_evaluation() {
+    use kadr_core::ast::{parse_hhmm_minutes, TimeWindow};
+
+    assert_eq!(parse_hhmm_minutes("00:00").unwrap(), 0);
+    assert_eq!(parse_hhmm_minutes("23:59").unwrap(), 1439);
+    for bad in [
+        "", "9:00", "24:00", "12:60", "ab:cd", "1200", "12:00:00", "+1:00", "-1:00",
+    ] {
+        assert!(parse_hhmm_minutes(bad).is_err(), "expected {bad} to fail");
+    }
+
+    let same_day = TimeWindow {
+        start: "08:00".to_string(),
+        end: "12:00".to_string(),
+    };
+    same_day.validate().unwrap();
+    assert!(!same_day.is_active_at_minutes(7 * 60 + 59));
+    assert!(same_day.is_active_at_minutes(8 * 60));
+    assert!(same_day.is_active_at_minutes(11 * 60 + 59));
+    assert!(!same_day.is_active_at_minutes(12 * 60));
+    assert!(same_day.is_active_at_minutes(1440 + 9 * 60));
+
+    let overnight = TimeWindow {
+        start: "23:00".to_string(),
+        end: "04:00".to_string(),
+    };
+    overnight.validate().unwrap();
+    assert!(!overnight.is_active_at_minutes(22 * 60 + 59));
+    assert!(overnight.is_active_at_minutes(23 * 60));
+    assert!(overnight.is_active_at_minutes(0));
+    assert!(overnight.is_active_at_minutes(3 * 60 + 59));
+    assert!(!overnight.is_active_at_minutes(4 * 60));
+
+    let equal_bounds = TimeWindow {
+        start: "10:00".to_string(),
+        end: "10:00".to_string(),
+    };
+    let err = equal_bounds.validate().unwrap_err();
+    assert_eq!(err, "Time window start and end must differ");
+
+    let malformed = TimeWindow {
+        start: "25:00".to_string(),
+        end: "04:00".to_string(),
+    };
+    assert!(malformed.validate().is_err());
+    assert!(!malformed.is_active_at_minutes(0));
+}
+
+#[test]
+fn test_widget_node_dense_list_duration_and_resolved_scope_roundtrip() {
+    use kadr_core::ast::{
+        CardViewModel, QueryMacro, ResolvedLayoutScope, ScreenId, ScreenLayout, TargetDevice,
+        TimeWindow, WidgetNode, WidgetQueryBinding,
+    };
+
+    let card = CardViewModel {
+        id: 42,
+        title: "Cairo Station".to_string(),
+        media_type: "movie".to_string(),
+        duration_seconds: Some(4620),
+        ..Default::default()
+    };
+    let card_no_dur = CardViewModel {
+        id: 43,
+        title: "Short".to_string(),
+        media_type: "movie".to_string(),
+        ..Default::default()
+    };
+    assert!(!serde_json::to_string(&card_no_dur)
+        .unwrap()
+        .contains("duration_seconds"));
+
+    let dense = WidgetNode::DenseList {
+        id: "late_night_shorts".to_string(),
+        title: "Late Night Shorts".to_string(),
+        binding: WidgetQueryBinding::new(QueryMacro::TopRated).with_limit(10),
+        time_window: Some(TimeWindow {
+            start: "23:00".to_string(),
+            end: "04:00".to_string(),
+        }),
+        items: Some(vec![card]),
+        next_cursor: Some("/api/v1/widgets/late_night_shorts/data?offset=10".to_string()),
+        total_count: Some(25),
+    };
+    assert_eq!(dense.id(), "late_night_shorts");
+    assert_eq!(dense.binding().unwrap().macro_type, QueryMacro::TopRated);
+    assert!(dense.is_hydrated());
+    assert_eq!(dense.time_window().unwrap().start, "23:00");
+
+    let mut screen = ScreenLayout::new(ScreenId::Home, "Home", vec![dense]);
+    assert!(screen.resolved_scope.is_none());
+    screen.resolved_scope = Some(ResolvedLayoutScope {
+        user_id: Some("u-1".to_string()),
+        target_device: TargetDevice::Tv,
+        is_exact_override: true,
+    });
+
+    let json = serde_json::to_string(&screen).unwrap();
+    assert!(json.contains("\"type\":\"dense_list\""));
+    assert!(json.contains("\"duration_seconds\":4620"));
+    assert!(json.contains("\"resolved_scope\""));
+
+    let mut parsed: ScreenLayout = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, screen);
+
+    parsed.strip_runtime_fields();
+    assert!(parsed.resolved_scope.is_none());
+    assert!(!parsed.widgets[0].is_hydrated());
+    assert_eq!(parsed.widgets[0].time_window().unwrap().end, "04:00");
+}
+
+#[test]
+fn test_strip_hydrated_data_and_time_window_across_all_widget_variants() {
+    use kadr_core::ast::{
+        CardViewModel, ItemDetailsPayload, QueryMacro, ScreenId, ScreenLayout, TimeWindow,
+        WidgetNode, WidgetQueryBinding,
+    };
+
+    let tw = TimeWindow {
+        start: "09:00".to_string(),
+        end: "17:00".to_string(),
+    };
+    let card = CardViewModel {
+        id: 1,
+        title: "Sample".to_string(),
+        media_type: "movie".to_string(),
+        duration_seconds: Some(120),
+        ..Default::default()
+    };
+
+    let mut screen = ScreenLayout::new(
+        ScreenId::Home,
+        "Home",
+        vec![
+            WidgetNode::HeroBanner {
+                id: "h1".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::SpotlightItem { item_id: None }),
+                time_window: Some(tw.clone()),
+                data: Some(card.clone()),
+            },
+            WidgetNode::Carousel {
+                id: "c1".to_string(),
+                title: "Carousel".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+                time_window: Some(tw.clone()),
+                items: Some(vec![card.clone()]),
+                next_cursor: Some("10".to_string()),
+            },
+            WidgetNode::Grid {
+                id: "g1".to_string(),
+                title: "Grid".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::RecentlyAdded),
+                columns: 4,
+                time_window: Some(tw.clone()),
+                items: Some(vec![card.clone()]),
+                next_cursor: Some("20".to_string()),
+                total_count: Some(50),
+            },
+            WidgetNode::DenseList {
+                id: "d1".to_string(),
+                title: "Dense".to_string(),
+                binding: WidgetQueryBinding::new(QueryMacro::TopRated),
+                time_window: Some(tw.clone()),
+                items: Some(vec![card.clone()]),
+                next_cursor: Some("10".to_string()),
+                total_count: Some(15),
+            },
+            WidgetNode::ItemDetails {
+                id: "i1".to_string(),
+                item_id: 1,
+                details: Some(ItemDetailsPayload {
+                    card,
+                    stream_url: "/api/v1/stream/1".to_string(),
+                    ..Default::default()
+                }),
+            },
+        ],
+    );
+
+    assert!(screen.widgets.iter().all(WidgetNode::is_hydrated));
+    assert_eq!(screen.widgets[0].time_window(), Some(&tw));
+    assert_eq!(screen.widgets[1].time_window(), Some(&tw));
+    assert_eq!(screen.widgets[2].time_window(), Some(&tw));
+    assert_eq!(screen.widgets[3].time_window(), Some(&tw));
+    assert_eq!(screen.widgets[4].time_window(), None);
+
+    screen.strip_runtime_fields();
+    assert!(screen.widgets.iter().all(|w| !w.is_hydrated()));
+    assert_eq!(screen.widgets[0].time_window(), Some(&tw));
+    assert_eq!(screen.widgets[3].time_window(), Some(&tw));
 }

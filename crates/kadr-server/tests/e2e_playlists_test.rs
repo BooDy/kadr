@@ -1009,6 +1009,7 @@ async fn private_library_isolation_reorder_and_widget_ast_resolution() {
                 playlist_id: pl_id.clone(),
             })
             .with_limit(1),
+            time_window: None,
             items: None,
             next_cursor: None,
         }],

@@ -104,6 +104,7 @@ async fn test_rename_library_with_named_or_disk_screen() {
                 kadr_core::ast::QueryMacro::RecentlyAdded,
             ),
             columns: 4,
+            time_window: None,
             items: None,
             next_cursor: None,
             total_count: None,

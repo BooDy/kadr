@@ -67,6 +67,7 @@ fn playlist_summary_and_detail_serialize_exact_wire_fields() {
                 season: None,
                 episode: None,
                 is_favorite: false,
+                duration_seconds: None,
             },
         }],
     };

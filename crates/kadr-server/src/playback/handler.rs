@@ -277,6 +277,8 @@ fn publish_home_layout_changed(event_bus: Option<&Extension<Arc<EventBus>>>, tim
     if let Some(Extension(bus)) = event_bus {
         bus.publish(SystemEvent::LayoutChanged {
             screen_id: "home".to_string(),
+            user_id: None,
+            target_device: None,
             timestamp,
         });
     }
