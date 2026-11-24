@@ -7,8 +7,9 @@ pub use error::{Result, StorageError};
 pub use migrations::run_migrations;
 pub use pool::{create_in_memory_pool, create_pool, initialize_database};
 pub use repos::{
-    FavoritesRepo, FavoritesRepository, LibraryRepo, LibraryRepository, MediaItemRepo,
-    MediaItemRepository, PlaybackRepository, PlaylistRepository, PluginRepository, SearchRepo,
-    SearchRepository, SettingsRepository, SubtitleRepository, UserRepository, WidgetQueries,
+    FavoritesRepo, FavoritesRepository, LayoutOverrideRepo, LayoutOverrideRepository, LibraryRepo,
+    LibraryRepository, MediaItemRepo, MediaItemRepository, PlaybackRepository, PlaylistRepository,
+    PluginRepository, SearchRepo, SearchRepository, SettingsRepository, StoredLayoutOverride,
+    SubtitleRepository, UserRepository, WidgetQueries,
 };
 pub type StoragePool = deadpool_sqlite::Pool;

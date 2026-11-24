@@ -1,5 +1,6 @@
 pub mod favorites_repo;
 pub mod filter_compiler;
+pub mod layout_override_repo;
 pub mod library_repo;
 pub mod media_item_repo;
 pub mod playback_repo;
@@ -13,6 +14,9 @@ pub mod widget_queries;
 
 pub use favorites_repo::{FavoritesRepo, FavoritesRepository};
 pub use filter_compiler::{compile_filter_node, compile_filter_node_for_user, CompiledFilter};
+pub use layout_override_repo::{
+    LayoutOverrideRepo, LayoutOverrideRepository, StoredLayoutOverride,
+};
 pub use library_repo::{LibraryRepo, LibraryRepository};
 pub use media_item_repo::{MediaItemRepo, MediaItemRepository};
 pub use playback_repo::PlaybackRepository;
