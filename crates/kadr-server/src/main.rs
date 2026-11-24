@@ -21,7 +21,8 @@ use kadr_server::subtitles::{OpenSubtitlesClient, SubtitleDeliveryService};
 use kadr_server::telemetry::TelemetryCollector;
 use kadr_storage::pool::{create_pool, initialize_database};
 use kadr_storage::repos::{
-    LibraryRepository, MediaItemRepository, PlaybackRepository, SubtitleRepository, UserRepository,
+    LayoutOverrideRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
+    SubtitleRepository, UserRepository,
 };
 
 #[derive(Parser, Debug)]
@@ -354,6 +355,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if screens_dir.exists() {
         if let Err(e) = layout_registry.load_overrides_from_dir(&screens_dir) {
             warn!(error = %e, "Failed to load layout overrides from disk");
+        }
+    }
+
+    let layout_override_repo = LayoutOverrideRepository::new(pool.clone());
+    match layout_override_repo.list_all().await {
+        Ok(entries) => {
+            let count = entries.len();
+            layout_registry.load_scoped_overrides(entries);
+            if count > 0 {
+                info!(count, "Loaded scoped layout overrides from storage");
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to load scoped layout overrides from storage");
         }
     }
 

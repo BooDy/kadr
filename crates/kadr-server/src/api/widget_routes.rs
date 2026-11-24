@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Extension, Path, Query},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use kadr_core::ast::{CardViewModel, ScreenId, WidgetQueryBinding};
 use kadr_core::filter_ast::CatalogFacets;
 use serde::{Deserialize, Serialize};
 
+use crate::api::screen_routes::{parse_requested_target_device, resolve_canonical_screen_id};
 use crate::api::unlock_token::UnlockedLibraries;
-use crate::auth::jwt::{AuthUser, RequireAdmin};
-use crate::layout::{default_library_layout, LayoutRegistry};
+use crate::auth::jwt::AuthUser;
+use crate::layout::LayoutRegistry;
 use crate::resolver::WidgetResolver;
 use kadr_storage::repos::{LibraryRepository, MediaItemRepository};
 
@@ -28,6 +29,7 @@ pub struct WidgetDataQuery {
     #[serde(default = "default_widget_limit")]
     pub limit: u32,
     pub sort: Option<String>,
+    pub target_device: Option<String>,
 }
 
 /// Paginated response payload for widget data queries.
@@ -42,64 +44,63 @@ pub struct WidgetDataResponse {
 }
 
 /// Handler for `GET /api/v1/widgets/{widget_id}/data`.
-/// Searches the widget binding in the layout registry and resolves paginated card items.
+/// Searches the widget binding in the scoped layout registry and resolves paginated card items.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_widget_data(
     auth_user: AuthUser,
     unlocked: UnlockedLibraries,
+    headers: HeaderMap,
     Path(widget_id): Path<String>,
     Query(query): Query<WidgetDataQuery>,
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,
     Extension(lib_repo): Extension<LibraryRepository>,
 ) -> Result<Json<WidgetDataResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let (target_device, explicit_device) =
+        parse_requested_target_device(query.target_device.as_deref(), &headers)?;
+
     let (widget, target_screen_id) = if let Some(ref screen_id_str) = query.screen_id {
-        let sid: ScreenId = screen_id_str.parse().unwrap();
-        let screen = match registry.get_screen(&sid) {
-            Some(s) => {
-                if let ScreenId::Custom(ref id_str) = sid {
-                    if let Ok(Some(lib)) = lib_repo.get_by_id(id_str).await {
-                        if let Some(canonical) =
-                            registry.find_screen_for_library(&lib.id, &lib.name)
-                        {
-                            canonical
-                        } else {
-                            s
-                        }
-                    } else {
-                        s
-                    }
-                } else {
-                    s
-                }
-            }
-            None => {
-                if let Ok(Some(lib)) = lib_repo.get_by_id(screen_id_str).await {
-                    if let Some(canonical) = registry.find_screen_for_library(&lib.id, &lib.name) {
-                        canonical
-                    } else {
-                        let def = default_library_layout(&lib.id, &lib.name);
-                        registry.register_screen(def.clone());
-                        def
-                    }
-                } else {
-                    return Err((
-                        StatusCode::NOT_FOUND,
-                        Json(serde_json::json!({ "error": "Widget not found" })),
-                    ));
-                }
-            }
-        };
+        let canonical_id = resolve_canonical_screen_id(screen_id_str, &registry, &lib_repo)
+            .await
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": "Widget not found" })),
+                )
+            })?;
+        let screen = registry
+            .resolve_scoped_screen(&canonical_id, Some(&auth_user.id), target_device)
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": "Widget not found" })),
+                )
+            })?;
         let w = screen.widgets.into_iter().find(|w| w.id() == widget_id);
-        (w, Some(sid))
+        let requested_sid: ScreenId = screen_id_str.parse().unwrap();
+        (w, Some(requested_sid))
     } else {
         let mut found = None;
         let mut found_sid = None;
         for (sid, _) in registry.list_screens() {
-            if let Some(screen) = registry.get_screen(&sid) {
+            if let Some(screen) =
+                registry.resolve_scoped_screen(&sid, Some(&auth_user.id), target_device)
+            {
                 if let Some(w) = screen.widgets.into_iter().find(|w| w.id() == widget_id) {
                     found = Some(w);
                     found_sid = Some(sid);
                     break;
+                }
+            }
+        }
+        if found.is_none() {
+            for (sid, _) in registry.list_screens() {
+                if let Some(screen) = registry.get_screen(&sid) {
+                    if let Some(w) = screen.widgets.into_iter().find(|w| w.id() == widget_id) {
+                        found = Some(w);
+                        found_sid = Some(sid);
+                        break;
+                    }
                 }
             }
         }
@@ -162,6 +163,9 @@ pub async fn get_widget_data(
         }
         if let Some(ref sort) = query.sort {
             url.push_str(&format!("&sort={sort}"));
+        }
+        if explicit_device {
+            url.push_str(&format!("&target_device={target_device}"));
         }
         url
     });
@@ -226,7 +230,7 @@ pub struct WidgetPreviewResponse {
 /// Handler for `POST /api/v1/widgets/preview`.
 /// Evaluates a widget query binding (including custom_query filter ASTs) without persisting layout state.
 pub async fn preview_widget(
-    RequireAdmin(auth_user): RequireAdmin,
+    auth_user: AuthUser,
     unlocked: UnlockedLibraries,
     Extension(registry): Extension<LayoutRegistry>,
     Extension(resolver): Extension<Arc<WidgetResolver>>,

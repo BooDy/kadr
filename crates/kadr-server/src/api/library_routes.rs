@@ -13,7 +13,8 @@ use kadr_core::models::{Library, MediaItem, MediaType};
 use kadr_ingest::watcher::{scan_directory_recursive, IngestMessage, IngestPipeline};
 use kadr_storage::error::StorageError;
 use kadr_storage::repos::{
-    FavoritesRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
+    FavoritesRepository, LayoutOverrideRepository, LibraryRepository, MediaItemRepository,
+    PlaybackRepository,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -405,7 +406,10 @@ pub async fn update_library(
                 // Built-in screens remain with their built-in ID, but title and widget titles update
                 screen.title = trimmed_name.to_string();
                 for widget in &mut screen.widgets {
-                    if let WidgetNode::Grid { title, .. } = widget {
+                    if let WidgetNode::Grid { title, .. }
+                    | WidgetNode::Carousel { title, .. }
+                    | WidgetNode::DenseList { title, .. } = widget
+                    {
                         if title.starts_with("All ") || title == &format!("All {old_name}") {
                             *title = format!("All {trimmed_name}");
                         }
@@ -437,13 +441,25 @@ pub async fn update_library(
                 screen.id = canonical_id;
                 screen.title = trimmed_name.to_string();
                 for widget in &mut screen.widgets {
-                    if let WidgetNode::Grid { title, binding, .. } = widget {
-                        if title.starts_with("All ") || title == &format!("All {old_name}") {
-                            *title = format!("All {trimmed_name}");
+                    match widget {
+                        WidgetNode::Grid { title, binding, .. }
+                        | WidgetNode::Carousel { title, binding, .. }
+                        | WidgetNode::DenseList { title, binding, .. } => {
+                            if title.starts_with("All ") || title == &format!("All {old_name}") {
+                                *title = format!("All {trimmed_name}");
+                            }
+                            if let QueryMacro::LibraryItems { library_id } = &mut binding.macro_type
+                            {
+                                *library_id = id.clone();
+                            }
                         }
-                        if let QueryMacro::LibraryItems { library_id } = &mut binding.macro_type {
-                            *library_id = id.clone();
+                        WidgetNode::HeroBanner { binding, .. } => {
+                            if let QueryMacro::LibraryItems { library_id } = &mut binding.macro_type
+                            {
+                                *library_id = id.clone();
+                            }
                         }
+                        WidgetNode::ItemDetails { .. } => {}
                     }
                 }
                 let _ = layout_registry.save_screen(screen, &screens_dir);
@@ -493,6 +509,7 @@ pub async fn delete_library(
     Extension(event_bus): Extension<Arc<EventBus>>,
     Extension(layout_registry): Extension<Arc<LayoutRegistry>>,
     Extension(config): Extension<Arc<tokio::sync::RwLock<AppConfig>>>,
+    layout_override_repo: Option<Extension<LayoutOverrideRepository>>,
 ) -> Result<StatusCode, StatusCode> {
     let old_lib = lib_repo.get_by_id(&id).await.unwrap_or(None);
     match lib_repo.delete(&id).await {
@@ -500,10 +517,22 @@ pub async fn delete_library(
             let screens_dir = config.read().await.server.data_dir.join("screens");
             let canonical_id: ScreenId = id.parse().unwrap();
             let _ = layout_registry.delete_custom_screen(&canonical_id, &screens_dir);
+            layout_registry.remove_all_overrides_for_screen(&canonical_id);
+            if let Some(Extension(ref override_repo)) = layout_override_repo {
+                let _ = override_repo
+                    .delete_all_for_screen(&canonical_id.to_string())
+                    .await;
+            }
             if let Some(lib) = old_lib {
                 let name_id: ScreenId = lib.name.parse().unwrap();
-                if name_id != canonical_id {
+                if name_id != canonical_id && matches!(name_id, ScreenId::Custom(_)) {
                     let _ = layout_registry.delete_custom_screen(&name_id, &screens_dir);
+                    layout_registry.remove_all_overrides_for_screen(&name_id);
+                    if let Some(Extension(ref override_repo)) = layout_override_repo {
+                        let _ = override_repo
+                            .delete_all_for_screen(&name_id.to_string())
+                            .await;
+                    }
                 }
                 let name_file = screens_dir.join(format!("{}.json", lib.name));
                 if name_file.exists() {

@@ -1,15 +1,29 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
-use kadr_core::ast::{QueryMacro, ScreenId, ScreenLayout, WidgetNode, WidgetQueryBinding};
+use kadr_core::ast::{
+    QueryMacro, ResolvedLayoutScope, ScreenId, ScreenLayout, TargetDevice, WidgetNode,
+    WidgetQueryBinding,
+};
+use kadr_storage::repos::StoredLayoutOverride;
 
 pub type LayoutError = String;
+
+/// Composite key identifying a per-user and/or per-device layout override slot.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LayoutScopeKey {
+    pub screen_id: ScreenId,
+    pub user_id: Option<String>,
+    pub target_device: TargetDevice,
+}
 
 #[derive(Debug, Clone, Default)]
 struct LayoutRegistryInner {
     order: Vec<ScreenId>,
     screens: HashMap<ScreenId, ScreenLayout>,
+    scoped_overrides: HashMap<LayoutScopeKey, ScreenLayout>,
+    disk_overridden: HashSet<ScreenId>,
 }
 
 /// In-memory layout registry holding built-in and user-customized screen layouts.
@@ -138,7 +152,8 @@ impl LayoutRegistry {
     }
 
     /// Registers or overrides a screen layout.
-    pub fn register_screen(&self, screen: ScreenLayout) {
+    pub fn register_screen(&self, mut screen: ScreenLayout) {
+        screen.strip_runtime_fields();
         let mut inner = self.inner.write().expect("layout registry lock poisoned");
         if !inner.screens.contains_key(&screen.id) {
             inner.order.push(screen.id.clone());
@@ -146,14 +161,162 @@ impl LayoutRegistry {
         inner.screens.insert(screen.id.clone(), screen);
     }
 
+    /// Loads persisted SQLite scoped overrides into the in-memory registry.
+    pub fn load_scoped_overrides(&self, entries: Vec<StoredLayoutOverride>) {
+        let mut inner = self.inner.write().expect("layout registry lock poisoned");
+        for mut entry in entries {
+            let screen_id: ScreenId = entry.screen_id.parse().unwrap();
+            entry.layout.id = screen_id.clone();
+            entry.layout.strip_runtime_fields();
+            inner.scoped_overrides.insert(
+                LayoutScopeKey {
+                    screen_id,
+                    user_id: entry.user_id,
+                    target_device: entry.target_device,
+                },
+                entry.layout,
+            );
+        }
+    }
+
+    /// Sets or updates a scoped layout override in memory.
+    pub fn set_scoped_override(
+        &self,
+        screen_id: ScreenId,
+        user_id: Option<String>,
+        target_device: TargetDevice,
+        mut screen: ScreenLayout,
+    ) {
+        screen.id = screen_id.clone();
+        screen.strip_runtime_fields();
+        let mut inner = self.inner.write().expect("layout registry lock poisoned");
+        inner.scoped_overrides.insert(
+            LayoutScopeKey {
+                screen_id,
+                user_id,
+                target_device,
+            },
+            screen,
+        );
+    }
+
+    /// Removes a single scoped layout override from memory, returning `true` if present.
+    pub fn remove_scoped_override(
+        &self,
+        screen_id: &ScreenId,
+        user_id: Option<&str>,
+        target_device: TargetDevice,
+    ) -> bool {
+        let mut inner = self.inner.write().expect("layout registry lock poisoned");
+        inner
+            .scoped_overrides
+            .remove(&LayoutScopeKey {
+                screen_id: screen_id.clone(),
+                user_id: user_id.map(str::to_string),
+                target_device,
+            })
+            .is_some()
+    }
+
+    /// Removes all scoped layout overrides associated with `screen_id`.
+    pub fn remove_all_overrides_for_screen(&self, screen_id: &ScreenId) {
+        let mut inner = self.inner.write().expect("layout registry lock poisoned");
+        inner
+            .scoped_overrides
+            .retain(|k, _| &k.screen_id != screen_id);
+    }
+
+    /// Resolves a canonical screen layout using the 4-tier fallback chain:
+    /// 1. `(Some(user_id), requested_device)` (when `requested_device != All`)
+    /// 2. `(Some(user_id), TargetDevice::All)`
+    /// 3. `(None, requested_device)` (when `requested_device != All`)
+    /// 4. `(None, TargetDevice::All)` baseline
+    pub fn resolve_scoped_screen(
+        &self,
+        canonical_id: &ScreenId,
+        requested_user_id: Option<&str>,
+        requested_device: TargetDevice,
+    ) -> Option<ScreenLayout> {
+        let inner = self.inner.read().expect("layout registry lock poisoned");
+
+        if let Some(uid) = requested_user_id {
+            if requested_device != TargetDevice::All {
+                let key = LayoutScopeKey {
+                    screen_id: canonical_id.clone(),
+                    user_id: Some(uid.to_string()),
+                    target_device: requested_device,
+                };
+                if let Some(screen) = inner.scoped_overrides.get(&key) {
+                    let mut out = screen.clone();
+                    out.resolved_scope = Some(ResolvedLayoutScope {
+                        user_id: Some(uid.to_string()),
+                        target_device: requested_device,
+                        is_exact_override: true,
+                    });
+                    return Some(out);
+                }
+            }
+
+            let key_all = LayoutScopeKey {
+                screen_id: canonical_id.clone(),
+                user_id: Some(uid.to_string()),
+                target_device: TargetDevice::All,
+            };
+            if let Some(screen) = inner.scoped_overrides.get(&key_all) {
+                let mut out = screen.clone();
+                out.resolved_scope = Some(ResolvedLayoutScope {
+                    user_id: Some(uid.to_string()),
+                    target_device: TargetDevice::All,
+                    is_exact_override: requested_device == TargetDevice::All,
+                });
+                return Some(out);
+            }
+        }
+
+        if requested_device != TargetDevice::All {
+            let key_global_dev = LayoutScopeKey {
+                screen_id: canonical_id.clone(),
+                user_id: None,
+                target_device: requested_device,
+            };
+            if let Some(screen) = inner.scoped_overrides.get(&key_global_dev) {
+                let mut out = screen.clone();
+                out.resolved_scope = Some(ResolvedLayoutScope {
+                    user_id: None,
+                    target_device: requested_device,
+                    is_exact_override: requested_user_id.is_none(),
+                });
+                return Some(out);
+            }
+        }
+
+        let mut out = inner.screens.get(canonical_id)?.clone();
+        let is_exact_override = requested_user_id.is_none()
+            && requested_device == TargetDevice::All
+            && inner.disk_overridden.contains(canonical_id);
+        out.resolved_scope = Some(ResolvedLayoutScope {
+            user_id: None,
+            target_device: TargetDevice::All,
+            is_exact_override,
+        });
+        Some(out)
+    }
+
     /// Saves a screen layout to disk as JSON and updates in-memory registry.
-    pub fn save_screen(&self, screen: ScreenLayout, dir: &Path) -> Result<(), std::io::Error> {
+    pub fn save_screen(&self, mut screen: ScreenLayout, dir: &Path) -> Result<(), std::io::Error> {
+        screen.strip_runtime_fields();
         std::fs::create_dir_all(dir)?;
         let file_path = dir.join(format!("{}.json", screen.id));
         let serialized = serde_json::to_string_pretty(&screen)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(&file_path, serialized)?;
+        let screen_id = screen.id.clone();
         self.register_screen(screen);
+        self.inner
+            .write()
+            .expect("layout registry lock poisoned")
+            .disk_overridden
+            .insert(screen_id);
         Ok(())
     }
 
@@ -171,26 +334,53 @@ impl LayoutRegistry {
                 }
             }
         }
-        match id {
-            ScreenId::Home => {
-                let default = default_home_layout();
-                self.register_screen(default.clone());
-                Ok(default)
+        let default = match id {
+            ScreenId::Home => default_home_layout(),
+            ScreenId::Movies => default_movies_layout(),
+            ScreenId::Shows => default_shows_layout(),
+            ScreenId::Custom(name) => {
+                return Err(format!(
+                    "Custom screen '{name}' cannot be reset, use delete"
+                ));
             }
-            ScreenId::Movies => {
-                let default = default_movies_layout();
-                self.register_screen(default.clone());
-                Ok(default)
+        };
+        self.register_screen(default.clone());
+        self.inner
+            .write()
+            .expect("layout registry lock poisoned")
+            .disk_overridden
+            .remove(id);
+        Ok(default)
+    }
+
+    /// Resets a library-backed custom screen to its factory default layout and removes any disk override.
+    pub fn reset_library_screen(
+        &self,
+        library_id: &str,
+        library_name: &str,
+        dir: &Path,
+    ) -> Result<ScreenLayout, LayoutError> {
+        let default = default_library_layout(library_id, library_name);
+        let id = default.id.clone();
+        let file_path = dir.join(format!("{id}.json"));
+        if file_path.exists() {
+            if let Err(e) = std::fs::remove_file(&file_path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::error!("Failed to remove layout file {}: {e}", file_path.display());
+                    return Err(format!(
+                        "Failed to remove layout file {}: {e}",
+                        file_path.display()
+                    ));
+                }
             }
-            ScreenId::Shows => {
-                let default = default_shows_layout();
-                self.register_screen(default.clone());
-                Ok(default)
-            }
-            ScreenId::Custom(name) => Err(format!(
-                "Custom screen '{name}' cannot be reset, use delete"
-            )),
         }
+        self.register_screen(default.clone());
+        self.inner
+            .write()
+            .expect("layout registry lock poisoned")
+            .disk_overridden
+            .remove(&id);
+        Ok(default)
     }
 
     /// Deletes a custom screen from disk and removes it from the in-memory registry.
@@ -222,6 +412,8 @@ impl LayoutRegistry {
                 let mut inner = self.inner.write().expect("layout registry lock poisoned");
                 inner.screens.remove(id);
                 inner.order.retain(|s| s != id);
+                inner.disk_overridden.remove(id);
+                inner.scoped_overrides.retain(|k, _| &k.screen_id != id);
                 Ok(())
             }
         }
@@ -262,7 +454,13 @@ impl LayoutRegistry {
                                 layout.id,
                                 path.display()
                             );
+                            let sid = layout.id.clone();
                             self.register_screen(layout);
+                            self.inner
+                                .write()
+                                .expect("layout registry lock poisoned")
+                                .disk_overridden
+                                .insert(sid);
                         }
                         Err(err) => {
                             tracing::warn!(
@@ -286,7 +484,13 @@ impl LayoutRegistry {
                                 layout.id,
                                 path.display()
                             );
+                            let sid = layout.id.clone();
                             self.register_screen(layout);
+                            self.inner
+                                .write()
+                                .expect("layout registry lock poisoned")
+                                .disk_overridden
+                                .insert(sid);
                         }
                         Err(err) => {
                             tracing::warn!(

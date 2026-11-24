@@ -473,8 +473,20 @@ async fn widget_preview_evaluates_nested_ast_enforces_rbac_and_validates_rules()
         "limit": 10
     });
 
-    // 1. Non-admin user receives 403 Forbidden
+    // 1a. Unauthenticated caller receives 401 Unauthorized
     let (status, _) = send_json(
+        &env.app,
+        "POST",
+        "/api/v1/widgets/preview",
+        None,
+        None,
+        Some(valid_preview_payload.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // 1b. Standard user succeeds (200 OK) for personal Layout Studio live preview
+    let (status, user_preview_body) = send_json(
         &env.app,
         "POST",
         "/api/v1/widgets/preview",
@@ -483,7 +495,8 @@ async fn widget_preview_evaluates_nested_ast_enforces_rbac_and_validates_rules()
         Some(valid_preview_payload.clone()),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(user_preview_body["total_count"], 2);
 
     // 2. Empty group children returns 400 Bad Request
     let empty_group_payload = json!({

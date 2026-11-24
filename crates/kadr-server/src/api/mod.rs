@@ -37,8 +37,8 @@ use axum::{
     Extension, Router,
 };
 use kadr_storage::repos::{
-    FavoritesRepository, LibraryRepository, MediaItemRepository, PlaybackRepository,
-    PlaylistRepository, SearchRepository, SubtitleRepository, UserRepository,
+    FavoritesRepository, LayoutOverrideRepository, LibraryRepository, MediaItemRepository,
+    PlaybackRepository, PlaylistRepository, SearchRepository, SubtitleRepository, UserRepository,
 };
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -104,6 +104,7 @@ pub fn create_router_with_ingest(
     );
     let plugin_tokens = crate::plugins::auth::PluginTokenService::new(jwt_svc.secret());
     let favorites_repo = FavoritesRepository::new(media_repo.pool().clone());
+    let layout_override_repo = LayoutOverrideRepository::new(media_repo.pool().clone());
     let playlist_repo = PlaylistRepository::new(media_repo.pool().clone());
     let search_repo = SearchRepository::new(media_repo.pool().clone());
     let metadata_service = Arc::new(crate::metadata::MetadataService::new(
@@ -275,6 +276,7 @@ pub fn create_router_with_ingest(
         .layer(Extension(media_repo))
         .layer(Extension(lib_repo))
         .layer(Extension(favorites_repo))
+        .layer(Extension(layout_override_repo))
         .layer(Extension(playlist_repo))
         .layer(Extension(search_repo))
         .layer(Extension(UnlockTokenService::new(

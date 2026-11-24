@@ -1113,7 +1113,17 @@ async fn test_dense_list_widget_hydration_and_scope_preservation() {
         is_exact_override: true,
     });
 
-    let resolved = resolver.resolve_screen(screen, "user-1").await;
+    let inactive = resolver
+        .resolve_screen_with_library_at(screen.clone(), "user-1", &[], None, 14 * 60)
+        .await;
+    assert!(
+        inactive.widgets.is_empty(),
+        "Inactive time_window shelf must be omitted at 14:00"
+    );
+
+    let resolved = resolver
+        .resolve_screen_with_library_at(screen, "user-1", &[], None, 21 * 60)
+        .await;
     assert_eq!(
         resolved.resolved_scope.as_ref().map(|s| s.target_device),
         Some(TargetDevice::Tv)

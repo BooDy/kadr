@@ -3,4 +3,4 @@ pub mod card;
 pub mod resolver;
 
 pub use card::{to_card_view_model, to_card_view_model_with_favorite};
-pub use resolver::WidgetResolver;
+pub use resolver::{server_local_minutes, WidgetResolver};

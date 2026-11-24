@@ -13,6 +13,28 @@ use kadr_storage::repos::{
 use super::card::to_card_view_model_with_favorite;
 use crate::layout::LayoutRegistry;
 
+/// Returns the server's current local wall-clock time as minutes since midnight (`0..1440`).
+pub fn server_local_minutes() -> u16 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    #[cfg(unix)]
+    {
+        #[allow(deprecated)]
+        let time_val = secs as libc::time_t;
+        let mut tm: libc::tm = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+        let ptr = unsafe { libc::localtime_r(&time_val, &mut tm) };
+        if !ptr.is_null() {
+            let mins = (tm.tm_hour.rem_euclid(24) as u16) * 60 + (tm.tm_min.rem_euclid(60) as u16);
+            return mins % 1440;
+        }
+    }
+
+    ((secs.rem_euclid(86_400) / 60) as u16) % 1440
+}
+
 /// Concurrent async resolver for Declarative Widget AST layouts and queries.
 #[derive(Clone)]
 pub struct WidgetResolver {
@@ -344,7 +366,7 @@ impl WidgetResolver {
     }
 
     /// Resolves an entire screen layout concurrently with unlocked private libraries
-    /// and an explicit default library scope.
+    /// and an explicit default library scope at the server's current local time.
     pub async fn resolve_screen_with_library(
         &self,
         screen: ScreenLayout,
@@ -352,9 +374,34 @@ impl WidgetResolver {
         unlocked_ids: &[String],
         default_library_id: Option<&str>,
     ) -> ScreenLayout {
+        self.resolve_screen_with_library_at(
+            screen,
+            user_id,
+            unlocked_ids,
+            default_library_id,
+            server_local_minutes(),
+        )
+        .await
+    }
+
+    /// Resolves an entire screen layout concurrently with unlocked private libraries,
+    /// an explicit default library scope, and active local clock minutes (`0..1440`).
+    pub async fn resolve_screen_with_library_at(
+        &self,
+        screen: ScreenLayout,
+        user_id: &str,
+        unlocked_ids: &[String],
+        default_library_id: Option<&str>,
+        active_minutes: u16,
+    ) -> ScreenLayout {
         let futures = screen
             .widgets
             .into_iter()
+            .filter(|widget| {
+                widget
+                    .time_window()
+                    .is_none_or(|tw| tw.is_active_at_minutes(active_minutes))
+            })
             .map(|widget| self.resolve_widget(widget, user_id, unlocked_ids, default_library_id));
         let widgets = join_all(futures).await;
 
