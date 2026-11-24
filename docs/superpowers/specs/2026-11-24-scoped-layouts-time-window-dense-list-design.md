@@ -1,7 +1,7 @@
 # Scoped Layouts, `time_window` Shelves & `dense_list` Widget Design (`v0.4` Part 3)
 
 **Date:** 2026-11-24  
-**Status:** Draft (Pending User Spec Review)
+**Status:** Approved
 
 ---
 
