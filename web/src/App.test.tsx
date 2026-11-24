@@ -44,10 +44,10 @@ describe('App Shell', () => {
       expect(screen.getByRole('button', { name: /Anime Hub/i })).toBeDefined();
     });
 
-    // Verify legacy hardcoded tabs are absent from navigation
+    // Verify legacy hardcoded tabs are absent from navigation while Personal Studio is available
     expect(screen.queryByRole('button', { name: /^movies$/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^shows$/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^studio$/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /^studio$/i })).toBeDefined();
     expect(screen.queryByRole('button', { name: /^telemetry$/i })).toBeNull();
   });
 
@@ -139,10 +139,10 @@ describe('App Shell', () => {
     fireEvent.click(screen.getByRole('button', { name: /home/i }));
     await waitFor(() => expect(screen.getByText('Continue Watching')).toBeDefined());
 
-    // Confirm Movies, Shows, Studio, and Telemetry buttons do not exist in top nav
+    // Confirm Movies, Shows, and Telemetry buttons do not exist in top nav while Studio is present
     expect(screen.queryByRole('button', { name: /^movies$/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^shows$/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^studio$/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /^studio$/i })).toBeDefined();
     expect(screen.queryByRole('button', { name: /^telemetry$/i })).toBeNull();
   });
 
@@ -827,6 +827,58 @@ describe('App Shell', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /My Favorites/i })).toBeInTheDocument();
       expect(screen.getByText('Portrait of a Lady on Fire')).toBeInTheDocument();
+    });
+  });
+
+  it('shows top-bar Studio button for Standard user without Admin tab, opens personal LayoutStudio, and returns Back to Studio from player', async () => {
+    api.setUser({ id: 'u-std-studio', username: 'layla', role: 'standard' });
+    api.setToken('test-jwt');
+
+    vi.spyOn(api, 'getLibraries').mockResolvedValue([]);
+    vi.spyOn(api, 'getScreens').mockResolvedValue([{ id: 'home', title: 'Home' }]);
+    vi.spyOn(api, 'getScreen').mockResolvedValue({
+      id: 'home',
+      title: 'Home',
+      resolved_scope: {
+        user_id: 'u-std-studio',
+        target_device: 'all',
+        is_exact_override: true,
+      },
+      widgets: [
+        {
+          type: 'hero_banner',
+          id: 'personal_hero',
+          binding: { macro_type: 'spotlight_item', limit: 1 },
+          data: { id: 707, title: 'Caramel', media_type: 'movie' },
+        },
+      ],
+    });
+
+    render(<App />);
+
+    // Standard user does NOT see Admin tab, but DOES see Studio button
+    expect(screen.queryByRole('button', { name: /^Admin$/i })).toBeNull();
+    const studioBtn = screen.getByRole('button', { name: /^Studio$/i });
+    expect(studioBtn).not.toHaveAttribute('aria-current', 'page');
+
+    fireEvent.click(studioBtn);
+    expect(studioBtn).toHaveAttribute('aria-current', 'page');
+
+    await waitFor(() => {
+      expect(screen.getByText('Personal Layout · layla')).toBeInTheDocument();
+      expect(screen.getByText('Caramel')).toBeInTheDocument();
+    });
+
+    // Launch playback from personal LayoutStudio and verify Back to Studio return label
+    fireEvent.click(screen.getByRole('button', { name: /Play Now/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Cinema Player/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Back to Studio/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Studio/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Personal Layout · layla')).toBeInTheDocument();
     });
   });
 });

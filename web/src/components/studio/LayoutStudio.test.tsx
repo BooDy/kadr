@@ -946,4 +946,171 @@ describe('LayoutStudio Component', () => {
     const treeItem = screen.getByTestId('widget-tree-item');
     expect(within(treeItem).getByText('My Favorites')).toBeDefined();
   });
+
+  it('locks Standard user to Personal Layout scope, hides New Screen, saves device-scoped override, and resets override via deleteScreen', async () => {
+    const standardUser = { id: 'u-nour', username: 'nour', role: 'standard' as const };
+    const getScreenSpy = vi
+      .spyOn(api, 'getScreen')
+      .mockImplementation(async (screenId, _unhydrated, options) => {
+        if (options?.targetDevice === 'tv') {
+          return {
+            ...mockHomeLayout,
+            id: screenId,
+            resolved_scope: {
+              user_id: standardUser.id,
+              target_device: 'tv',
+              is_exact_override: true,
+            },
+          };
+        }
+        return {
+          ...mockHomeLayout,
+          id: screenId,
+          resolved_scope: {
+            target_device: 'all',
+            is_exact_override: false,
+          },
+        };
+      });
+    const saveSpy = vi.spyOn(api, 'saveScreen').mockImplementation(async (_id, nextLayout) => ({
+      ...nextLayout,
+      resolved_scope: {
+        user_id: standardUser.id,
+        target_device: 'tv',
+        is_exact_override: true,
+      },
+    }));
+    const deleteSpy = vi
+      .spyOn(api, 'deleteScreen')
+      .mockResolvedValue({ message: 'Scoped layout override reset' });
+
+    render(<LayoutStudio currentUser={standardUser} defaultScope="personal" />);
+
+    await waitFor(() => {
+      expect(getScreenSpy).toHaveBeenCalledWith('home', true, {
+        scopeUserId: 'u-nour',
+        targetDevice: 'all',
+      });
+    });
+
+    // Locked personal badge shown, Scope Owner <select> and "+ New Screen" hidden
+    expect(screen.getByText('Personal Layout · nour')).toBeDefined();
+    expect(screen.queryByLabelText(/scope owner|layout owner/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /\+ new screen/i })).toBeNull();
+    expect(screen.getByText(/Inherited Default/i)).toBeDefined();
+
+    // Switch Target Device to TV
+    const deviceSelect = screen.getByLabelText(/Target Device/i) as HTMLSelectElement;
+    fireEvent.change(deviceSelect, { target: { value: 'tv' } });
+
+    await waitFor(() => {
+      expect(getScreenSpy).toHaveBeenCalledWith('home', true, {
+        scopeUserId: 'u-nour',
+        targetDevice: 'tv',
+      });
+      expect(screen.getByText(/Custom Override Active/i)).toBeDefined();
+    });
+
+    // Reorder a widget and save personal TV override
+    fireEvent.click(screen.getByRole('button', { name: /move hero_home down/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save layout/i }));
+
+    await waitFor(() => {
+      expect(saveSpy).toHaveBeenCalledWith(
+        'home',
+        expect.objectContaining({ id: 'home' }),
+        { scopeUserId: 'u-nour', targetDevice: 'tv' }
+      );
+    });
+
+    // Reset personal TV override via deleteScreen
+    const resetOverrideBtn = screen.getByRole('button', { name: /reset override/i });
+    fireEvent.click(resetOverrideBtn);
+
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith('home', {
+        scopeUserId: 'u-nour',
+        targetDevice: 'tv',
+      });
+    });
+  });
+
+  it('allows Admin user to switch Scope Owner & Target Device, renders dense_list widgets, and simulates time_window active/inactive states', async () => {
+    const adminUser = { id: 'u-admin', username: 'admin', role: 'admin' as const };
+    vi.spyOn(api, 'getProfiles').mockResolvedValue([
+      adminUser,
+      { id: 'u-kids', username: 'kids', role: 'standard' },
+    ]);
+
+    const scopedNightLayout: ScreenLayout = {
+      id: 'home',
+      title: 'Home',
+      resolved_scope: {
+        user_id: 'u-kids',
+        target_device: 'mobile',
+        is_exact_override: true,
+      },
+      widgets: [
+        {
+          type: 'dense_list',
+          id: 'late_night_dense',
+          title: 'Midnight Express Queue',
+          binding: { macro_type: 'recently_added', limit: 10 },
+          time_window: { start: '23:00', end: '04:00' },
+          items: [
+            {
+              id: 888,
+              title: 'After Hours',
+              media_type: 'movie',
+              release_year: 1985,
+              duration_seconds: 5820,
+            },
+          ],
+        },
+      ],
+    };
+
+    const getScreenSpy = vi.spyOn(api, 'getScreen').mockResolvedValue(scopedNightLayout);
+
+    render(<LayoutStudio currentUser={adminUser} defaultScope="global" />);
+
+    const ownerSelect = (await screen.findByLabelText(/Layout Owner|Scope Owner/i)) as HTMLSelectElement;
+    expect(ownerSelect.value).toBe('global');
+
+    await waitFor(() => {
+      expect(within(ownerSelect).getByRole('option', { name: /Global \(All Users\)/i })).toBeDefined();
+      expect(within(ownerSelect).getByRole('option', { name: /kids/i })).toBeDefined();
+    });
+
+    // Switch scope owner to kids and targetDevice to mobile
+    fireEvent.change(ownerSelect, { target: { value: 'u-kids' } });
+    const deviceSelect = screen.getByLabelText(/Target Device/i) as HTMLSelectElement;
+    fireEvent.change(deviceSelect, { target: { value: 'mobile' } });
+
+    await waitFor(() => {
+      expect(getScreenSpy).toHaveBeenCalledWith('home', true, {
+        scopeUserId: 'u-kids',
+        targetDevice: 'mobile',
+      });
+    });
+
+    // DenseList widget renders in preview with formatted runtime (1h 37m) and time_window badge (23:00–04:00)
+    const preview = screen.getByTestId('viewport-frame');
+    expect(preview.getAttribute('data-viewport')).toBe('mobile');
+    expect(within(preview).getByText('Midnight Express Queue')).toBeDefined();
+    expect(within(preview).getByText('After Hours')).toBeDefined();
+    expect(within(preview).getByText('1h 37m')).toBeDefined();
+    expect(screen.getAllByText('23:00–04:00').length).toBeGreaterThanOrEqual(1);
+
+    // Simulate Time = 14:00 -> marked Inactive at 14:00 (still visible in Studio for editing)
+    const simulateTimeInput = screen.getByLabelText(/Simulate Time/i) as HTMLInputElement;
+    fireEvent.change(simulateTimeInput, { target: { value: '14:00' } });
+
+    expect(screen.getAllByText(/Inactive at 14:00/i).length).toBeGreaterThanOrEqual(1);
+    expect(within(preview).getByText('After Hours')).toBeDefined();
+
+    // Simulate Time = 23:30 -> active, no Inactive badge
+    fireEvent.change(simulateTimeInput, { target: { value: '23:30' } });
+    expect(screen.queryByText(/Inactive at/i)).toBeNull();
+  });
 });

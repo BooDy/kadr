@@ -3,6 +3,7 @@ import {
   Film,
   Heart,
   Home,
+  Layers,
   ListVideo,
   Tv,
   Sparkles,
@@ -25,6 +26,7 @@ import { BrowseScreen } from './components/browse/BrowseScreen';
 import { ItemDetailsModal } from './components/browse/ItemDetailsModal';
 import { CinemaPlayer } from './components/player/CinemaPlayer';
 import { AdminDashboard } from './components/admin/AdminDashboard';
+import { LayoutStudio } from './components/studio/LayoutStudio';
 import { PlaylistsScreen } from './components/playlists/PlaylistsScreen';
 import { FavoritesScreen } from './components/favorites/FavoritesScreen';
 import { GlobalSearchModal } from './components/search/GlobalSearchModal';
@@ -34,6 +36,7 @@ export type NavView =
   | `library-${string}`
   | 'playlists'
   | 'favorites'
+  | 'studio'
   | 'player'
   | 'admin';
 
@@ -316,6 +319,16 @@ export const App: FC = () => {
                     <Heart aria-hidden="true" className="h-4 w-4" />
                     Favorites
                   </button>
+
+                  <button
+                    type="button"
+                    aria-current={currentView === 'studio' ? 'page' : undefined}
+                    onClick={() => handleNavigate('studio')}
+                    className={navItemClass(currentView === 'studio')}
+                  >
+                    <Layers aria-hidden="true" className="h-4 w-4" />
+                    Studio
+                  </button>
                 </>
               )}
 
@@ -473,6 +486,15 @@ export const App: FC = () => {
               />
             )}
 
+            {currentView === 'studio' && (
+              <LayoutStudio
+                key={`studio-${currentUser.id}`}
+                currentUser={currentUser}
+                defaultScope="personal"
+                onPlayItem={handlePlayItem}
+              />
+            )}
+
             {currentView === 'player' && activePlayingItemId !== null && (
               <CinemaPlayer
                 itemId={activePlayingItemId}
@@ -481,6 +503,8 @@ export const App: FC = () => {
                     ? 'Back to Playlist'
                     : previousView === 'favorites'
                     ? 'Back to Favorites'
+                    : previousView === 'studio'
+                    ? 'Back to Studio'
                     : 'Back to Browse'
                 }
                 queue={playerQueue ?? undefined}
@@ -501,7 +525,11 @@ export const App: FC = () => {
             )}
 
             {currentView === 'admin' && currentUser?.role === 'admin' && (
-              <AdminDashboard onPlayItem={handlePlayItem} onLibrariesChange={refreshLibraries} />
+              <AdminDashboard
+                currentUser={currentUser}
+                onPlayItem={handlePlayItem}
+                onLibrariesChange={refreshLibraries}
+              />
             )}
           </>
         )}

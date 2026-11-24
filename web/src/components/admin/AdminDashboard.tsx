@@ -41,6 +41,7 @@ export type AdminTab =
   | 'metadata';
 
 export interface AdminDashboardProps {
+  currentUser?: User | null;
   onClose?: () => void;
   onPlayItem?: (itemId: number) => void;
   onLibrariesChange?: () => void;
@@ -48,6 +49,7 @@ export interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  currentUser,
   onClose,
   onPlayItem,
   onLibrariesChange,
@@ -747,7 +749,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Tab 3: Layout Studio */}
       {activeTab === 'studio' && (
         <div className="mt-8">
-          <LayoutStudio onPlayItem={onPlayItem} />
+          <LayoutStudio
+            currentUser={currentUser}
+            defaultScope="global"
+            onPlayItem={onPlayItem}
+          />
         </div>
       )}
 

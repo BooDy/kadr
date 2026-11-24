@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Sliders, Check, ChevronDown, ChevronRight, Filter, Lock } from 'lucide-react';
+import React, { useState, useEffect, useId } from 'react';
+import { X, Sliders, Check, ChevronDown, ChevronRight, Filter, Lock, Clock } from 'lucide-react';
 import {
   countFilterTreeRules,
   type CatalogFacets,
@@ -73,7 +73,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   onSave,
   onClose,
 }) => {
-  const [widgetType, setWidgetType] = useState<'hero_banner' | 'carousel' | 'grid'>('carousel');
+  const [widgetType, setWidgetType] = useState<
+    'hero_banner' | 'carousel' | 'grid' | 'dense_list'
+  >('carousel');
   const [title, setTitle] = useState<string>('');
   const [columns, setColumns] = useState<number>(4);
   const [macroType, setMacroType] = useState<MacroTypeOption>('recently_added');
@@ -84,6 +86,14 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
   const [itemId, setItemId] = useState<string>('');
   const [limit, setLimit] = useState<number>(20);
   const [sort, setSort] = useState<string>('');
+
+  // Active Time Window state
+  const [timeWindowEnabled, setTimeWindowEnabled] = useState<boolean>(false);
+  const [timeWindowStart, setTimeWindowStart] = useState<string>('23:00');
+  const [timeWindowEnd, setTimeWindowEnd] = useState<string>('04:00');
+  const timeWindowStartId = useId();
+  const timeWindowEndId = useId();
+  const timeWindowErrorId = useId();
 
   // Advanced Filters & Rule Builder State
   const [isFiltersOpen, setIsFiltersOpen] = useState<boolean>(false);
@@ -103,7 +113,12 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
     setRuleValidationError(null);
 
     if (initialWidget) {
-      if (initialWidget.type === 'hero_banner' || initialWidget.type === 'carousel' || initialWidget.type === 'grid') {
+      if (
+        initialWidget.type === 'hero_banner' ||
+        initialWidget.type === 'carousel' ||
+        initialWidget.type === 'grid' ||
+        initialWidget.type === 'dense_list'
+      ) {
         setWidgetType(initialWidget.type);
       } else {
         setWidgetType('carousel');
@@ -111,6 +126,16 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
 
       setTitle('title' in initialWidget ? initialWidget.title : '');
       setColumns('columns' in initialWidget ? initialWidget.columns : 4);
+
+      if ('time_window' in initialWidget && initialWidget.time_window) {
+        setTimeWindowEnabled(true);
+        setTimeWindowStart(initialWidget.time_window.start);
+        setTimeWindowEnd(initialWidget.time_window.end);
+      } else {
+        setTimeWindowEnabled(false);
+        setTimeWindowStart('23:00');
+        setTimeWindowEnd('04:00');
+      }
 
       const binding = 'binding' in initialWidget ? initialWidget.binding : undefined;
       if (binding) {
@@ -213,6 +238,9 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       setItemId('');
       setLimit(20);
       setSort('');
+      setTimeWindowEnabled(false);
+      setTimeWindowStart('23:00');
+      setTimeWindowEnd('04:00');
       setIsFiltersOpen(false);
       setScopeMode('default');
       setSpecificLibraryId('');
@@ -431,10 +459,18 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
 
   const draftBinding = buildBinding();
   const hasRuleValidationError = isFiltersOpen && Boolean(ruleValidationError);
+  const timeWindowError = timeWindowEnabled
+    ? !/^\d{2}:\d{2}$/.test(timeWindowStart) || !/^\d{2}:\d{2}$/.test(timeWindowEnd)
+      ? 'Start time and end time must use 24-hour HH:MM format.'
+      : timeWindowStart === timeWindowEnd
+      ? 'Start time and end time must differ (24-hour shelves do not need a time window).'
+      : null
+    : null;
+  const hasValidationError = hasRuleValidationError || Boolean(timeWindowError);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (hasRuleValidationError) {
+    if (hasValidationError) {
       return;
     }
 
@@ -445,16 +481,24 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
       JSON.stringify(initialWidget.binding) !== JSON.stringify(binding);
 
     const id = initialWidget?.id || `${widgetType}_${Date.now()}`;
+    const timeWindowField = timeWindowEnabled
+      ? { time_window: { start: timeWindowStart, end: timeWindowEnd } }
+      : {};
+    const preservedDisplayType =
+      initialWidget?.type === widgetType && initialWidget?.display_type
+        ? { display_type: initialWidget.display_type }
+        : {};
 
     if (widgetType === 'hero_banner') {
       const heroNode: Extract<WidgetNode, { type: 'hero_banner' }> = {
         type: 'hero_banner',
         id,
         binding,
+        ...timeWindowField,
         ...(!bindingChanged && initialWidget && 'data' in initialWidget && initialWidget.data
           ? { data: initialWidget.data }
           : {}),
-        ...(initialWidget?.display_type ? { display_type: initialWidget.display_type } : {}),
+        ...preservedDisplayType,
       };
       onSave(heroNode);
     } else if (widgetType === 'grid') {
@@ -464,22 +508,37 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
         title: title.trim(),
         columns: Math.max(1, Number(columns) || 4),
         binding,
+        ...timeWindowField,
         ...(!bindingChanged && initialWidget && 'items' in initialWidget && initialWidget.items
           ? { items: initialWidget.items }
           : {}),
-        ...(initialWidget?.display_type ? { display_type: initialWidget.display_type } : {}),
+        ...preservedDisplayType,
       };
       onSave(gridNode);
+    } else if (widgetType === 'dense_list') {
+      const denseListNode: Extract<WidgetNode, { type: 'dense_list' }> = {
+        type: 'dense_list',
+        id,
+        title: title.trim(),
+        binding,
+        ...timeWindowField,
+        ...(!bindingChanged && initialWidget && 'items' in initialWidget && initialWidget.items
+          ? { items: initialWidget.items }
+          : {}),
+        ...preservedDisplayType,
+      };
+      onSave(denseListNode);
     } else {
       const carouselNode: Extract<WidgetNode, { type: 'carousel' }> = {
         type: 'carousel',
         id,
         title: title.trim(),
         binding,
+        ...timeWindowField,
         ...(!bindingChanged && initialWidget && 'items' in initialWidget && initialWidget.items
           ? { items: initialWidget.items }
           : {}),
-        ...(initialWidget?.display_type ? { display_type: initialWidget.display_type } : {}),
+        ...preservedDisplayType,
       };
       onSave(carouselNode);
     }
@@ -530,11 +589,16 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
               id="widget-type"
               aria-label="Widget Type"
               value={widgetType}
-              onChange={(e) => setWidgetType(e.target.value as 'hero_banner' | 'carousel' | 'grid')}
+              onChange={(e) =>
+                setWidgetType(
+                  e.target.value as 'hero_banner' | 'carousel' | 'grid' | 'dense_list'
+                )
+              }
               className="w-full bg-canvas border border-border-subtle rounded-xl px-3.5 py-2.5 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
             >
               <option value="carousel">Carousel Rail</option>
               <option value="grid">Grid Layout</option>
+              <option value="dense_list">Dense List</option>
               <option value="hero_banner">Hero Banner</option>
             </select>
           </div>
@@ -757,6 +821,94 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
                 {isCustomSort && <option value={sort}>{sort}</option>}
               </select>
             </div>
+          </div>
+
+          {/* Active Time Window (Optional) */}
+          <div className="pt-2 border-t border-border-subtle/50 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <button
+                type="button"
+                aria-pressed={timeWindowEnabled}
+                onClick={() => setTimeWindowEnabled((prev) => !prev)}
+                className={`min-w-7 min-h-7 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none ${
+                  timeWindowEnabled
+                    ? 'bg-accent/15 text-accent border-accent/40 font-semibold'
+                    : 'bg-canvas/60 hover:bg-panel-hover text-text-main border-border-subtle'
+                }`}
+              >
+                <Clock className="w-4 h-4 text-accent" aria-hidden="true" />
+                <span>Active Time Window</span>
+              </button>
+
+              {timeWindowEnabled && !timeWindowError && (
+                <span
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                    timeWindowStart > timeWindowEnd
+                      ? 'bg-highlight/15 text-highlight border-highlight/35'
+                      : 'bg-accent/15 text-accent border-accent/30'
+                  }`}
+                >
+                  {timeWindowStart > timeWindowEnd
+                    ? 'Overnight window (crosses midnight)'
+                    : 'Same-day window'}
+                </span>
+              )}
+            </div>
+
+            {timeWindowEnabled && (
+              <div className="space-y-2.5 bg-canvas/40 border border-border-subtle rounded-xl p-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor={timeWindowStartId}
+                      className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+                    >
+                      Start Time
+                    </label>
+                    <input
+                      id={timeWindowStartId}
+                      name="time_window_start"
+                      type="time"
+                      value={timeWindowStart}
+                      aria-invalid={Boolean(timeWindowError) || undefined}
+                      aria-describedby={timeWindowError ? timeWindowErrorId : undefined}
+                      onChange={(e) => setTimeWindowStart(e.target.value)}
+                      className="w-full min-h-7 bg-canvas border border-border-subtle rounded-xl px-3.5 py-2 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor={timeWindowEndId}
+                      className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5"
+                    >
+                      End Time
+                    </label>
+                    <input
+                      id={timeWindowEndId}
+                      name="time_window_end"
+                      type="time"
+                      value={timeWindowEnd}
+                      aria-invalid={Boolean(timeWindowError) || undefined}
+                      aria-describedby={timeWindowError ? timeWindowErrorId : undefined}
+                      onChange={(e) => setTimeWindowEnd(e.target.value)}
+                      className="w-full min-h-7 bg-canvas border border-border-subtle rounded-xl px-3.5 py-2 text-sm text-text-main transition-colors focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {timeWindowError ? (
+                  <p id={timeWindowErrorId} role="alert" className="text-xs text-cta font-medium">
+                    {timeWindowError}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted">
+                    Shelf appears on live screens only between {timeWindowStart} (inclusive) and{' '}
+                    {timeWindowEnd} (exclusive) in the viewer&apos;s local clock.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Advanced Filters Collapsible Section */}
@@ -995,7 +1147,7 @@ export const WidgetConfigModal: React.FC<WidgetConfigModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={hasRuleValidationError}
+              disabled={hasValidationError}
               className="px-5 py-2.5 rounded-xl text-sm font-bold bg-cta hover:bg-cta-hover disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-md flex items-center gap-2 transition-colors cursor-pointer focus-visible:ring-3 focus-visible:ring-highlight focus-visible:outline-none"
             >
               <Check className="w-4 h-4" aria-hidden="true" />

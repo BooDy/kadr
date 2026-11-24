@@ -807,4 +807,141 @@ describe('WidgetConfigModal Component', () => {
       expect(savedCustom.binding.sort).toBeUndefined();
     }
   });
+
+  describe('Dense List & Active Time Window Configuration', () => {
+    it('creates a dense_list widget with an overnight time_window and shows Overnight window badge', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      const typeSelect = screen.getByLabelText(/Widget Type/i) as HTMLSelectElement;
+      expect(screen.getByRole('option', { name: /Dense List/i })).toBeInTheDocument();
+      fireEvent.change(typeSelect, { target: { value: 'dense_list' } });
+      expect(typeSelect.value).toBe('dense_list');
+      expect(screen.queryByLabelText(/Columns/i)).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText(/^Title$/i), {
+        target: { value: 'Late Night Thrillers' },
+      });
+
+      const twToggle = screen.getByRole('button', { name: /Active Time Window/i });
+      expect(twToggle).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(twToggle);
+      expect(twToggle).toHaveAttribute('aria-pressed', 'true');
+
+      const startInput = screen.getByLabelText(/Start Time/i) as HTMLInputElement;
+      const endInput = screen.getByLabelText(/End Time/i) as HTMLInputElement;
+      fireEvent.change(startInput, { target: { value: '23:00' } });
+      fireEvent.change(endInput, { target: { value: '04:00' } });
+
+      expect(screen.getByText(/Overnight window \(crosses midnight\)/i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect(saved.type).toBe('dense_list');
+      if (saved.type === 'dense_list') {
+        expect(saved.title).toBe('Late Night Thrillers');
+        expect(saved.time_window).toEqual({ start: '23:00', end: '04:00' });
+      }
+    });
+
+    it('validates equal start and end times with accessible error state and blocks saving until corrected', () => {
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.change(screen.getByLabelText(/^Title$/i), {
+        target: { value: 'Morning News' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Active Time Window/i }));
+
+      const startInput = screen.getByLabelText(/Start Time/i) as HTMLInputElement;
+      const endInput = screen.getByLabelText(/End Time/i) as HTMLInputElement;
+      fireEvent.change(startInput, { target: { value: '10:00' } });
+      fireEvent.change(endInput, { target: { value: '10:00' } });
+
+      expect(startInput).toHaveAttribute('aria-invalid', 'true');
+      expect(endInput).toHaveAttribute('aria-invalid', 'true');
+      const errorDescId = startInput.getAttribute('aria-describedby');
+      expect(errorDescId).toBeTruthy();
+      expect(document.getElementById(errorDescId!)).toHaveTextContent(/must differ/i);
+
+      const saveBtn = screen.getByRole('button', { name: /Save Widget/i });
+      expect(saveBtn).toBeDisabled();
+      fireEvent.click(saveBtn);
+      expect(handleSave).not.toHaveBeenCalled();
+
+      // Fix end time -> Same-day window badge appears and saving succeeds
+      fireEvent.change(endInput, { target: { value: '12:00' } });
+      expect(startInput).not.toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByText(/Same-day window/i)).toBeInTheDocument();
+      expect(saveBtn).not.toBeDisabled();
+
+      fireEvent.click(saveBtn);
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      if ('time_window' in saved) {
+        expect(saved.time_window).toEqual({ start: '10:00', end: '12:00' });
+      }
+    });
+
+    it('pre-populates existing time_window when editing and allows clearing time_window back to undefined', () => {
+      const initialWidget: WidgetNode = {
+        type: 'dense_list',
+        id: 'night_dense_shelf',
+        title: 'Midnight Cuts',
+        binding: { macro_type: 'recently_added', limit: 15 },
+        time_window: { start: '22:30', end: '03:15' },
+      };
+
+      const handleSave = vi.fn();
+      render(
+        <WidgetConfigModal
+          isOpen={true}
+          initialWidget={initialWidget}
+          libraries={mockLibraries}
+          onSave={handleSave}
+          onClose={vi.fn()}
+        />
+      );
+
+      expect((screen.getByLabelText(/Widget Type/i) as HTMLSelectElement).value).toBe(
+        'dense_list'
+      );
+      const twToggle = screen.getByRole('button', { name: /Active Time Window/i });
+      expect(twToggle).toHaveAttribute('aria-pressed', 'true');
+      expect((screen.getByLabelText(/Start Time/i) as HTMLInputElement).value).toBe('22:30');
+      expect((screen.getByLabelText(/End Time/i) as HTMLInputElement).value).toBe('03:15');
+      expect(screen.getByText(/Overnight window \(crosses midnight\)/i)).toBeInTheDocument();
+
+      // Toggle off to clear time_window
+      fireEvent.click(twToggle);
+      expect(twToggle).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.queryByLabelText(/Start Time/i)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Save Widget/i }));
+      expect(handleSave).toHaveBeenCalledTimes(1);
+      const saved = handleSave.mock.calls[0][0] as WidgetNode;
+      expect(saved.id).toBe('night_dense_shelf');
+      expect(saved.type).toBe('dense_list');
+      if ('time_window' in saved) {
+        expect(saved.time_window).toBeUndefined();
+      }
+    });
+  });
 });

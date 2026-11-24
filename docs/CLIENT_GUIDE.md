@@ -57,6 +57,8 @@ http://<server-ip>:8492/api/v1
 | `Authorization` | String | Standard Bearer authentication: `Bearer <jwt_token>` |
 | `X-Library-Unlock-Token` | String | Signed HMAC-SHA256 token unlocking private libraries |
 | `X-Kadr-Unlocked` | String | Alternative header for unlocked libraries (comma-separated tokens supported) |
+| `X-Kadr-Device` | String | Optional client device tier (`all`, `tv`, `web`, `mobile`) for 4-tier scoped layout fallback when `?target_device=` is omitted |
+| `X-Kadr-Local-Time` | String | Optional viewer local 24-hour wall-clock time (`HH:MM`, `00:00..23:59`) for `time_window` shelf evaluation when `?local_time=` is omitted |
 | `Accept` | String | Usually `application/json` or `text/event-stream` for SSE |
 | `Range` | String | Standard HTTP byte-range header for video streaming: `bytes=0-` or `bytes=1048576-2097151` |
 | `If-None-Match` | String | Optional conditional `ETag` header (`"<etag>"` or `*`) for `304 Not Modified` validation on storyboard sprite sheets and `/frame` thumbnails |
@@ -336,13 +338,69 @@ graph TD
   ]
   ```
 
-### 4.2 Fetching Hydrated Screen Layout
+### 4.2 Fetching, Scoping & Mutating Screen Layouts
+
+#### 4-Tier Per-User & Per-Device Scoped Resolution
+
+Every screen in Kadr supports independent layout overrides keyed by `(user_id, target_device)` where `TargetDevice` is `"all" | "tv" | "web" | "mobile"`. When resolving `GET /api/v1/screens/{screen_id}` (including library UUID aliases mapped to canonical screen IDs), `LayoutRegistry` evaluates four tiers in memory with **zero extra SQLite queries**:
+
+| Priority | Scope Tier `(user_id, target_device)` | Persistence Layer |
+| :--- | :--- | :--- |
+| **1 (Highest)** | `(Some(user_id), device)` *(when `device != "all"`)* | SQLite `layout_overrides` |
+| **2** | `(Some(user_id), "all")` | SQLite `layout_overrides` |
+| **3** | `(None /* Global */, device)` *(when `device != "all"`)* | SQLite `layout_overrides` |
+| **4 (Fallback)** | `(None /* Global */, "all")` | `data/screens/{id}.json` / `config/screens/*.toml` / factory default |
+
+The returned `ScreenLayout` includes `resolved_scope?: ResolvedLayoutScope` describing which tier matched:
+
+```typescript
+type TargetDevice = "all" | "tv" | "web" | "mobile";
+
+interface TimeWindow {
+  start: string; // 24-hour "HH:MM" inclusive (00:00..23:59)
+  end: string;   // 24-hour "HH:MM" exclusive (00:00..23:59; start !== end)
+}
+
+interface ResolvedLayoutScope {
+  user_id?: string;            // Present when resolved from a per-user tier; omitted for Global
+  target_device: TargetDevice; // Device tier that matched ("all" | "tv" | "web" | "mobile")
+  is_exact_override: boolean;  // true when an explicit override exists at the requested slot
+}
+```
+
+#### Fetching a Screen Layout — `GET /api/v1/screens/{screen_id}`
 
 - **Method & Route**: `GET /api/v1/screens/{screen_id}`
 - **Query Parameters**:
-  - `unhydrated=true` *(optional)*: Returns the layout with empty widget items (useful for layout builders/studio). Omit or set to `false` for fully populated production layouts.
-- **Headers**: `Authorization: Bearer <token>`, optional `X-Library-Unlock-Token: <token>`
+  - `unhydrated=true` *(optional)*: Returns all widgets without SQL item hydration or `time_window` filtering (used by Layout Studio). Omit or set `false` for normal client browsing.
+  - `target_device` *(optional: `all` | `tv` | `web` | `mobile`)*: Falls back to `X-Kadr-Device` header, then `"all"`. Invalid values return `400 Bad Request`.
+  - `local_time` *(optional: `HH:MM` in `00:00..23:59`)*: Falls back to `X-Kadr-Local-Time` header, then server local wall-clock time. Invalid formats return `400 Bad Request`.
+  - `scope_user_id` *(optional Studio parameter: `global` | `me` | `<user_id>`)*:
+    - When omitted and `unhydrated=false`: resolves the authenticated caller's personalized 4-tier fallback chain (`Some(auth_user.id)`).
+    - When omitted and `unhydrated=true`: defaults to `global` for `Admin` and `me` for `Standard` users.
+    - Inspecting `global` or another user's `scope_user_id` requires `Admin` (`403 Forbidden` for `Standard` users).
+- **Headers**: `Authorization: Bearer <token>`, optional `X-Kadr-Device`, `X-Kadr-Local-Time`, `X-Library-Unlock-Token` / `X-Kadr-Unlocked`.
 - **Response (`200 OK`)**: Returns a `ScreenLayout` JSON object.
+
+#### Saving & Resetting Scoped Layouts — `PUT` & `DELETE /api/v1/screens/{screen_id}`
+
+- **Routes**:
+  - `PUT /api/v1/screens/{screen_id}?scope_user_id=<global|me|user_id>&target_device=<all|tv|web|mobile>`
+  - `DELETE /api/v1/screens/{screen_id}?scope_user_id=<global|me|user_id>&target_device=<all|tv|web|mobile>`
+- **RBAC Matrix**:
+  | Target Scope | `Standard` Profile | `Admin` Profile |
+  | :--- | :--- | :--- |
+  | `scope_user_id=me` (or own `user_id`) + any `target_device` | **Allowed** (saves/resets personal override) | **Allowed** |
+  | `scope_user_id=global` (or omitted) + any `target_device` | `403 Forbidden` | **Allowed** (`global+all` writes `data/screens/{id}.json` or resets/deletes screen; `global+device` writes `layout_overrides`) |
+  | `scope_user_id=<other_user_id>` + any `target_device` | `403 Forbidden` | **Allowed** (`404 Not Found` if `<other_user_id>` does not exist) |
+
+#### Time-Window Shelf Visibility (`time_window`)
+
+Any `hero_banner`, `carousel`, `grid`, or `dense_list` widget may specify an optional `time_window: { "start": "HH:MM", "end": "HH:MM" }`:
+- **Same-day window (`start < end`, e.g. `08:00`–`12:00`)**: Active when `local_time >= start && local_time < end`.
+- **Overnight wraparound window (`start > end`, e.g. `23:00`–`04:00`)**: Active when `local_time >= start || local_time < end`.
+- **Validation**: Both bounds must be valid 5-character `HH:MM` (`00:00..23:59`) and `start !== end` (`400 Bad Request` otherwise).
+- **Zero-Overhead Filtering**: During hydrated `GET /api/v1/screens/{screen_id}` requests, widgets outside their active `time_window` skip SQL resolution entirely and are omitted from `widgets[]`. When `?unhydrated=true` is passed, all widgets and their `time_window` schedules are returned intact for Layout Studio authoring.
 
 ### 4.3 ScreenLayout Structure & Widget Node Types
 
@@ -350,6 +408,11 @@ graph TD
 {
   "id": "home",
   "title": "Home",
+  "resolved_scope": {
+    "user_id": "b2c3d4e5-0000-0000-0000-000000000002",
+    "target_device": "tv",
+    "is_exact_override": true
+  },
   "widgets": [
     {
       "type": "hero_banner",
@@ -368,6 +431,7 @@ graph TD
         "playback_progress": null,
         "rating": 8.6,
         "release_year": 2024,
+        "duration_seconds": 9960,
         "badge": "4K"
       }
     },
@@ -390,10 +454,24 @@ graph TD
           "playback_progress": 0.65,
           "rating": 8.8,
           "release_year": 2010,
+          "duration_seconds": 8880,
           "badge": "RESUME"
         }
       ],
       "next_cursor": "/api/v1/widgets/widget-continue-watching/data?offset=20&limit=20&screen_id=home"
+    },
+    {
+      "type": "dense_list",
+      "id": "widget-late-night-thrillers",
+      "title": "Late Night Thrillers",
+      "time_window": { "start": "23:00", "end": "04:00" },
+      "binding": {
+        "macro_type": { "genre_shelf": { "genre": "Thriller" } },
+        "limit": 15
+      },
+      "items": [ ... ],
+      "total_count": 28,
+      "next_cursor": "15"
     },
     {
       "type": "grid",
@@ -416,9 +494,10 @@ graph TD
 
 | Node `type` | Description | Hydrated Payload Field | Client Rendering Strategy |
 | :--- | :--- | :--- | :--- |
-| `hero_banner` | Featured spotlight title | `data: CardViewModel` | Full-width backdrop header with big action buttons ("Play", "Details"). |
-| `carousel` | Horizontal scrolling shelf | `items: CardViewModel[]` | Single-row horizontal scrollable shelf with left/right pagination. |
-| `grid` | Multi-column grid catalog | `items: CardViewModel[]`, `columns: number` | 2D responsive grid (e.g. 4 columns on TV, 2 on Mobile, 5 on Desktop). |
+| `hero_banner` | Featured spotlight title (`time_window?`) | `data: CardViewModel` | Full-width backdrop header with big action buttons ("Play", "Details"). |
+| `carousel` | Horizontal scrolling shelf (`time_window?`) | `items: CardViewModel[]`, `next_cursor?` | Single-row horizontal scrollable shelf with left/right pagination. |
+| `grid` | Multi-column grid catalog (`time_window?`) | `items: CardViewModel[]`, `columns: number`, `next_cursor?`, `total_count?` | 2D responsive grid (e.g. 4 columns on TV, 2 on Mobile, 5 on Desktop). |
+| `dense_list` | Compact horizontal row list (`time_window?`) | `items: CardViewModel[]`, `next_cursor?`, `total_count?` | Semantic vertical list of compact rows with 16:9 thumbnail, title/subtitle, progress bar, formatted `duration_seconds`, and quick favorite/watched/play controls. |
 | `item_details` | Embedded single item details | `details: ItemDetailsPayload` | Detail view container with synopsis and episode lists. |
 
 ### 4.5 `QueryMacro` Data Source Bindings
@@ -492,6 +571,7 @@ interface CardViewModel {
   badge?: string;                 // Visual badge pill: "RESUME" | "NEW" | "4K"
   season?: number;                // Season number (for episodes)
   episode?: number;               // Episode number (for episodes)
+  duration_seconds?: number;      // Runtime in seconds (> 0); omitted when 0 / live_channel / show
   is_favorite?: boolean;          // true when favorited by the active user; omitted when false
 }
 ```
@@ -510,7 +590,8 @@ When a user scrolls to the end of a carousel or catalog grid (including `playlis
 - **Query Parameters**:
   - `offset`: Starting 0-based index (e.g. `20`)
   - `limit`: Number of items per batch (default: `20`)
-  - `screen_id`: Optional screen scope (e.g. `home`, `movies`)
+  - `screen_id`: Optional screen scope (e.g. `home`, `movies`, or library UUID)
+  - `target_device`: Optional device tier (`all`, `tv`, `web`, `mobile`; falls back to `X-Kadr-Device`, resolving the caller's scoped layout before global layouts)
   - `sort`: Optional sort parameter
 - **Headers**: `Authorization: Bearer <token>`, optional `X-Library-Unlock-Token: <token>` or `X-Kadr-Unlocked: <token1>,<token2>`
 
@@ -666,10 +747,10 @@ Visual rule builders and filter drawers can populate dropdowns/autocompletes dyn
 
 ### 4.10 Stateless Live Widget Preview (`POST /api/v1/widgets/preview`)
 
-Studio layout editors can preview any `WidgetQueryBinding` (including unsaved `custom_query` rule trees) in real time without mutating stored screen layouts.
+Studio layout editors (both Personal Studio for `Standard` profiles and Admin Studio) can preview any `WidgetQueryBinding` (including unsaved `custom_query` rule trees) in real time without mutating stored screen layouts.
 
 - **Method & Route**: `POST /api/v1/widgets/preview`
-- **Permissions**: `Admin` role (`403 Forbidden` for standard users), plus optional `X-Kadr-Unlocked` / `X-Library-Unlock-Token` header.
+- **Permissions**: Any authenticated profile (`AuthUser`), enforcing fail-closed PIN-locked private library isolation via optional `X-Kadr-Unlocked` / `X-Library-Unlock-Token` headers.
 
 #### Request Body (`WidgetPreviewRequest`)
 
@@ -1944,7 +2025,7 @@ data: {"type":"plugin:error","payload":{"plugin_id":"iptv","message":"Plugin una
 | `library:updated` | `{"library_id": string, "item_count": number, "timestamp": number}` | Refresh library lists and catalog grids (emitted for both disk scans and plugin item upserts/deletes). |
 | `session:synced` | `{"session_id": string, "item_id": number, "user_id": string, "position_seconds": number, "timestamp": number}` | Synchronize Continue Watching carousels across other screens without full page reloads. |
 | `subtitle:downloaded` | `{"item_id": number, "subtitle_id": number, "language": string, "timestamp": number}` | Refresh in-player subtitle track selection menu. |
-| `layout:changed` | `{"screen_id": string, "timestamp": number}` | Invalidate cached screen AST layout and re-render widgets. |
+| `layout:changed` | `{"screen_id": string, "user_id"?: string, "target_device"?: TargetDevice, "timestamp": number}` | Invalidate cached screen AST layout when `user_id` is omitted (global) or matches the active profile, and re-render widgets. |
 | `playlist:updated` | `{"playlist_id": string, "user_id": string, "action": string, "timestamp": number}` | Refresh playlist lists, active playlist detail views, or `playlist_items` AST rails matching `playlist_id`. |
 | `favorite:updated` | `{"user_id": string, "item_id": number, "is_favorite": boolean, "timestamp": number}` | When `user_id` matches the active profile, update `card.is_favorite` across mounted cards and refresh `Home` / `Favorites` views (carries IDs only so private library titles never leak over SSE). |
 | `plugin:error` | `{"plugin_id": string, "message": string, "timestamp": number}` | Surface an admin toast or mark items/libraries from `plugin_id` as temporarily degraded when an enabled plugin transitions to `unhealthy`. |
@@ -2908,11 +2989,12 @@ try {
 | `400 Bad Request` | `{"error": "item_ids must be an exact permutation of visible playlist items"}` | `PUT /api/v1/playlists/{id}/items/order` omits visible items, contains duplicates, or includes unknown/locked IDs. | Refresh `GET /api/v1/playlists/{id}` and submit an exact permutation of visible `card.id`s. |
 | `400 Bad Request` | `{"error": "Invalid item_type '...'"}` | `GET /api/v1/search` or `GET /api/v1/favorites` called with an unrecognized `item_type` filter. | Pass `all` or a valid `MediaType` (`movie`, `show`, `episode`, `anime`, `music`, `home_videos`, `audiobook`, `live_channel`). |
 | `400 Bad Request` | `{"error": "Invalid filter rule tree in widget '...': ..."}` / `FilterValidationError` message | `PUT /api/v1/screens/{screen_id}` or `POST /api/v1/widgets/preview` submitted a `rule_tree` exceeding depth `5` / `32` rules, with an empty group, empty/overlong text or list, negative duration, or `min > max`. | Validate rule tree structure and range bounds in the rule builder UI before saving or previewing. |
+| `400 Bad Request` | `{"error": "Invalid target_device '...'"}` / `{"error": "Invalid local_time '...'"}` / `{"error": "Invalid time_window in widget '...': ..."}` | Unknown `target_device`, malformed `local_time` (`HH:MM`), or `time_window` with invalid `HH:MM` or `start == end`. | Pass `all\|tv\|web\|mobile`, 24-hour `00:00..23:59` timestamps, and distinct `start` / `end` bounds. |
 | `400 Bad Request` | `{"error": "Invalid audio_track index"}` | `GET /api/v1/media/{id}/hls/master.m3u8` called with `?audio_track=<n>` not present in `AudioStreamInfo[]`. | Select `audio_index` values returned by `GET /api/v1/items/{id}/audio-tracks`. |
 | `400 Bad Request` | `{"error": "Live items do not support watch state"}` / `{"error": "item_ids must contain 1..=500 items"}` | `PUT /api/v1/playback/states/{id}` called on a `live_channel` item, or `PUT /api/v1/playback/states` called with `0` or `> 500` unique `item_ids`. | Hide Mark Watched on `live_channel` items and chunk batch watch-state updates into slices of `<= 500` unique IDs. |
 | `400 Bad Request` | `{"error": "TMDB_NOT_CONFIGURED", "message": "..."}` / `"INVALID_TITLE"` / `"INVALID_RATING"` / `"BLOCKED_URL"` / `"UNSUPPORTED_IMAGE"` / `"ARTWORK_TOO_LARGE"` | TMDb disabled or missing API key on `/tmdb/*`, empty title or out-of-range rating (`0.0..=10.0`) on `PATCH /api/v1/items/{id}/metadata`, or rejected custom artwork URL. | Prompt admin to configure TMDb under `Administration > Metadata & TMDb` or validate form inputs. |
 | `401 Unauthorized` | `{"error": "Missing authorization token"}` / `{"error": "Invalid or expired token"}` / Invalid PIN | Missing, invalid, or expired JWT (`Authorization: Bearer` / `?token=`), or incorrect profile PIN. | Prompt user for profile PIN or re-login. |
-| `403 Forbidden` | `{"error": "Forbidden"}` | Non-owner, non-admin caller attempting to update, add/remove/reorder items, or delete another user's public playlist. | Hide edit/reorder/delete controls whenever `summary.is_editable == false`. |
+| `403 Forbidden` | `{"error": "Forbidden"}` | Non-owner, non-admin caller attempting to update, add/remove/reorder items, or delete another user's public playlist; or `Standard` user attempting to read/save/reset `scope_user_id=global` or another user's scoped screen layout. | Hide edit/reorder/delete controls whenever `summary.is_editable == false`, and lock non-admin Layout Studio sessions to `scope_user_id=me`. |
 | `403 Forbidden` | `{"error": "LIBRARY_LOCKED"}` | Request accesses `/stream/{id}`, `/hls/*`, `/storyboard*`, `/frame`, `/items/{id}`, `/items/{id}/audio-tracks`, `/playback/states*`, `/favorites/{id}`, `/libraries/{id}/folders`, or adds/removes a locked private-library item in a playlist without a valid unlock token. | Present 4-digit Library PIN dialog, call `POST /api/v1/libraries/{id}/unlock`, attach `X-Kadr-Unlocked` / `X-Library-Unlock-Token` (or `?unlocked=`), and retry. |
 | `404 Not Found` | `{"error": "Playlist not found"}` | Playlist UUID does not exist, or playlist is private (`is_public == false`) and owned by another user. | Remove stale playlist reference and navigate back to Playlists overview. |
 | `404 Not Found` | `{"error": "Media item not found"}` / `{"error": "Item not found in playlist"}` / `{"error": "Media file missing from disk"}` | Referenced `media_item_id`, `library_id`, folder, subtitle, HLS session, or underlying media file does not exist. | Display a friendly error state; refresh playlist or catalog view. |
@@ -2930,5 +3012,5 @@ try {
 
 ---
 
-*Document Version: 1.4.0 (Kadr 0.3.0-alpha with Managed Git Plugins, Global FTS5 Search, Inline Metadata & TMDb Scraper, Embedded Subtitles, Storyboard Trickplay, Playlists & Universal HLS Fallback)*  
+*Document Version: 1.5.0 (Kadr 0.4.0 with Scoped Per-User/Device Layouts, Time-Window Shelves, DenseList Widgets, Per-User Favorites, Declarative Filter AST, Managed Git Plugins, Global FTS5 Search, Inline Metadata & TMDb Scraper, Storyboard Trickplay, Playlists & Universal HLS Fallback)*  
 *Maintained by the Kadr Core Engineering Team.*
