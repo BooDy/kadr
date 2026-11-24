@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useRef, type FC } from 'react';
 import { Loader2, AlertCircle, RotateCcw, Folder, LayoutGrid } from 'lucide-react';
-import type { ScreenLayout, CardViewModel, WidgetNode } from '../../types';
+import type { ScreenLayout, CardViewModel, WidgetNode, TargetDevice } from '../../types';
 import { api } from '../../api/client';
 import { SpotlightWidget } from './SpotlightWidget';
 import { CarouselWidget } from './CarouselWidget';
 import { GridWidget } from './GridWidget';
+import { DenseListWidget } from './DenseListWidget';
 import { ItemDetailsModal } from './ItemDetailsModal';
 import { FolderBrowser } from './FolderBrowser';
 import { applyWatchStateToCard, onWatchStateChanged } from '../../utils/watchStateEvents';
 import { applyFavoriteToCard, onFavoriteChanged } from '../../utils/favoriteEvents';
+import { detectClientTargetDevice, formatLocalTimeHHMM } from '../../utils/layoutScope';
 
 export interface BrowseScreenProps {
   screenId: string;
@@ -22,9 +24,10 @@ export interface BrowseScreenProps {
 const HydratedSpotlight: FC<{
   widget: Extract<WidgetNode, { type: 'hero_banner' }>;
   screenId?: string;
+  targetDevice?: TargetDevice;
   onPlay: (itemId: number) => void;
   onMoreInfo: (itemId: number) => void;
-}> = ({ widget, screenId, onPlay, onMoreInfo }) => {
+}> = ({ widget, screenId, targetDevice, onPlay, onMoreInfo }) => {
   const [item, setItem] = useState<CardViewModel | undefined>(widget.data);
 
   useEffect(() => {
@@ -35,7 +38,14 @@ const HydratedSpotlight: FC<{
 
     let isMounted = true;
     api
-      .getWidgetData(widget.id, 0, 1, undefined, screenId)
+      .getWidgetData(
+        widget.id,
+        0,
+        1,
+        undefined,
+        screenId,
+        ...(targetDevice ? [targetDevice] : [])
+      )
       .then((items) => {
         if (isMounted && items && items.length > 0) {
           setItem(items[0]);
@@ -46,7 +56,7 @@ const HydratedSpotlight: FC<{
     return () => {
       isMounted = false;
     };
-  }, [widget.id, widget.data, screenId]);
+  }, [widget.id, widget.data, screenId, targetDevice]);
 
   useEffect(() => {
     return onWatchStateChanged(({ itemIds, watched }) => {
@@ -114,7 +124,10 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getScreen(screenId);
+      const data = await api.getScreen(screenId, false, {
+        targetDevice: detectClientTargetDevice(),
+        localTime: formatLocalTimeHHMM(),
+      });
       if (mountedRef.current && seq === refreshSeqRef.current) {
         setLayout(data);
       }
@@ -148,7 +161,10 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
       }
       const seq = ++refreshSeqRef.current;
       api
-        .getScreen('home')
+        .getScreen('home', false, {
+          targetDevice: detectClientTargetDevice(),
+          localTime: formatLocalTimeHHMM(),
+        })
         .then((data) => {
           if (isMounted && seq === refreshSeqRef.current && data) {
             setLayout(data);
@@ -164,6 +180,8 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
       unsubscribeFavorite();
     };
   }, [screenId, fetchScreen]);
+
+  const currentTargetDevice = detectClientTargetDevice();
 
   return (
     <div className="min-h-screen bg-canvas text-text-main space-y-8 pb-12">
@@ -262,6 +280,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
                       key={widget.id}
                       widget={widget as Extract<WidgetNode, { type: 'hero_banner' }>}
                       screenId={screenId}
+                      targetDevice={currentTargetDevice}
                       onPlay={onPlayItem}
                       onMoreInfo={(id) => setSelectedItemId(id)}
                     />
@@ -278,6 +297,7 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
                       key={carouselWidget.id}
                       widgetId={carouselWidget.id}
                       screenId={screenId}
+                      targetDevice={currentTargetDevice}
                       title={carouselWidget.title}
                       items={carouselWidget.items}
                       onSelectItem={(item) => setSelectedItemId(item.id)}
@@ -293,11 +313,33 @@ export const BrowseScreen: FC<BrowseScreenProps> = ({
                       key={gridWidget.id}
                       widgetId={gridWidget.id}
                       screenId={screenId}
+                      targetDevice={currentTargetDevice}
                       title={gridWidget.title}
                       columns={gridWidget.columns}
                       items={gridWidget.items}
                       totalCount={gridWidget.total_count}
                       nextCursor={gridWidget.next_cursor}
+                      onSelectItem={(item) => setSelectedItemId(item.id)}
+                      onPlayItem={onPlayItem}
+                    />
+                  );
+                }
+
+                if (displayType === 'dense_list' || widget.type === 'dense_list') {
+                  const denseWidget = widget as Extract<
+                    WidgetNode,
+                    { type: 'dense_list' }
+                  >;
+                  return (
+                    <DenseListWidget
+                      key={denseWidget.id}
+                      widgetId={denseWidget.id}
+                      screenId={screenId}
+                      targetDevice={currentTargetDevice}
+                      title={denseWidget.title}
+                      items={denseWidget.items}
+                      totalCount={denseWidget.total_count}
+                      nextCursor={denseWidget.next_cursor}
                       onSelectItem={(item) => setSelectedItemId(item.id)}
                       onPlayItem={onPlayItem}
                     />

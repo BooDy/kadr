@@ -28,6 +28,30 @@ export type MediaType =
   | 'unknown';
 
 // Layout & AST Types
+export type TargetDevice = 'all' | 'tv' | 'web' | 'mobile';
+
+export interface TimeWindow {
+  start: string;
+  end: string;
+}
+
+export interface ResolvedLayoutScope {
+  user_id?: string;
+  target_device: TargetDevice;
+  is_exact_override: boolean;
+}
+
+export interface ScreenRequestOptions {
+  targetDevice?: TargetDevice;
+  localTime?: string;
+  scopeUserId?: string;
+}
+
+export interface ScreenScopeOptions {
+  scopeUserId?: string;
+  targetDevice?: TargetDevice;
+}
+
 export interface ScreenSummary {
   id: string;
   title: string;
@@ -92,6 +116,7 @@ export type WidgetNode =
       display_type?: string;
       id: string;
       binding: WidgetQueryBinding;
+      time_window?: TimeWindow;
       data?: CardViewModel;
     }
   | {
@@ -100,6 +125,7 @@ export type WidgetNode =
       id: string;
       title: string;
       binding: WidgetQueryBinding;
+      time_window?: TimeWindow;
       items?: CardViewModel[];
       next_cursor?: string;
     }
@@ -110,6 +136,18 @@ export type WidgetNode =
       title: string;
       binding: WidgetQueryBinding;
       columns: number;
+      time_window?: TimeWindow;
+      items?: CardViewModel[];
+      next_cursor?: string;
+      total_count?: number;
+    }
+  | {
+      type: 'dense_list';
+      display_type?: string;
+      id: string;
+      title: string;
+      binding: WidgetQueryBinding;
+      time_window?: TimeWindow;
       items?: CardViewModel[];
       next_cursor?: string;
       total_count?: number;
@@ -237,6 +275,7 @@ export interface ScreenLayout {
   id: string;
   title: string;
   widgets: WidgetNode[];
+  resolved_scope?: ResolvedLayoutScope;
 }
 
 export interface WidgetDataResponse {
@@ -363,6 +402,8 @@ export type SystemEvent =
       type: 'layout:changed';
       payload: {
         screen_id: string;
+        user_id?: string;
+        target_device?: TargetDevice;
         timestamp: number;
       };
     }

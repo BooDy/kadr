@@ -1230,3 +1230,132 @@ describe('Favorites API & IsFavorite Filter AST', () => {
   });
 });
 
+describe('Scoped Screens, Widget Data & Layout Scope Helpers', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('requests getScreen with target_device, local_time, unhydrated, and scope_user_id while keeping 1-arg calls unchanged', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-scope');
+
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: 'home',
+            title: 'Home',
+            widgets: [],
+            resolved_scope: {
+              target_device: 'web',
+              is_exact_override: false,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await client.getScreen('home');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/screens/home');
+
+    await client.getScreen('home', false, {
+      targetDevice: 'web',
+      localTime: '23:15',
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/v1/screens/home?target_device=web&local_time=23%3A15'
+    );
+
+    await client.getScreen('home', true, {
+      scopeUserId: 'me',
+      targetDevice: 'tv',
+    });
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      '/api/v1/screens/home?unhydrated=true&scope_user_id=me&target_device=tv'
+    );
+  });
+
+  it('appends scope_user_id and target_device on saveScreen, deleteScreen, and getWidgetData', async () => {
+    const client = new ApiClient('');
+    client.setToken('jwt-scope');
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: 'home',
+            title: 'Alice Mobile',
+            widgets: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ message: 'Scoped layout override reset' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            widget_id: 'night_list',
+            items: [{ id: 7, title: 'Arrival', media_type: 'movie', duration_seconds: 6960 }],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await client.saveScreen(
+      'home',
+      { id: 'home', title: 'Alice Mobile', widgets: [] },
+      { scopeUserId: 'me', targetDevice: 'mobile' }
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/v1/screens/home?scope_user_id=me&target_device=mobile'
+    );
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('PUT');
+
+    const delRes = await client.deleteScreen('home', {
+      scopeUserId: 'me',
+      targetDevice: 'mobile',
+    });
+    expect(delRes).toEqual({ message: 'Scoped layout override reset' });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/v1/screens/home?scope_user_id=me&target_device=mobile'
+    );
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('DELETE');
+
+    const items = await client.getWidgetData(
+      'night_list',
+      1,
+      10,
+      'title:asc',
+      'home',
+      'mobile'
+    );
+    expect(items).toHaveLength(1);
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      '/api/v1/widgets/night_list/data?offset=10&limit=10&sort=title%3Aasc&screen_id=home&target_device=mobile'
+    );
+  });
+});
+
+

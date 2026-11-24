@@ -1,6 +1,6 @@
 import { useState, useEffect, type FC } from 'react';
 import { Film, Loader2, Play } from 'lucide-react';
-import type { CardViewModel } from '../../types';
+import type { CardViewModel, TargetDevice } from '../../types';
 import { api } from '../../api/client';
 import { WatchStateButton } from './WatchStateButton';
 import { FavoriteButton } from '../favorites/FavoriteButton';
@@ -20,6 +20,7 @@ export interface GridWidgetProps {
   items?: CardViewModel[];
   widgetId?: string;
   screenId?: string;
+  targetDevice?: TargetDevice;
   totalCount?: number;
   nextCursor?: string;
   onSelectItem: (item: CardViewModel) => void;
@@ -143,6 +144,7 @@ export const GridWidget: FC<GridWidgetProps> = ({
   items: initialItems,
   widgetId,
   screenId,
+  targetDevice,
   totalCount,
   onSelectItem,
 }) => {
@@ -171,7 +173,14 @@ export const GridWidget: FC<GridWidgetProps> = ({
     setLoading(true);
 
     api
-      .getWidgetData(widgetId, 0, 24, undefined, screenId)
+      .getWidgetData(
+        widgetId,
+        0,
+        24,
+        undefined,
+        screenId,
+        ...(targetDevice ? [targetDevice] : [])
+      )
       .then((data) => {
         if (isMounted) {
           const seen = new Set<number>();
@@ -192,7 +201,7 @@ export const GridWidget: FC<GridWidgetProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [initialItems, widgetId, screenId]);
+  }, [initialItems, widgetId, screenId, targetDevice]);
 
   useEffect(() => {
     return onWatchStateChanged(({ itemIds, watched }) => {
@@ -219,7 +228,14 @@ export const GridWidget: FC<GridWidgetProps> = ({
     const nextPage = page + 1;
     setLoading(true);
     try {
-      const moreItems = await api.getWidgetData(widgetId, nextPage, 24, undefined, screenId);
+      const moreItems = await api.getWidgetData(
+        widgetId,
+        nextPage,
+        24,
+        undefined,
+        screenId,
+        ...(targetDevice ? [targetDevice] : [])
+      );
       if (moreItems.length < 24) {
         setHasMore(false);
       }

@@ -38,6 +38,8 @@ import type {
   UpdatePluginResponse,
   ScanResultResponse,
   ScreenLayout,
+  ScreenRequestOptions,
+  ScreenScopeOptions,
   ScreenSummary,
   SearchParams,
   SearchResponse,
@@ -46,6 +48,7 @@ import type {
   StoryboardSheet,
   SubtitleTrack,
   SystemConfig,
+  TargetDevice,
   TelemetrySnapshot,
   TmdbSearchResponse,
   UnlockLibraryResponse,
@@ -404,15 +407,50 @@ export class ApiClient {
     return this.request<ScreenSummary[]>('/api/v1/screens');
   }
 
-  public async getScreen(screenId: string): Promise<ScreenLayout> {
-    return this.request<ScreenLayout>(`/api/v1/screens/${encodeURIComponent(screenId)}`);
+  public async getScreen(
+    screenId: string,
+    unhydrated?: boolean,
+    options?: ScreenRequestOptions
+  ): Promise<ScreenLayout> {
+    const params = new URLSearchParams();
+    if (unhydrated) {
+      params.set('unhydrated', 'true');
+    }
+    if (options?.scopeUserId) {
+      params.set('scope_user_id', options.scopeUserId);
+    }
+    if (options?.targetDevice) {
+      params.set('target_device', options.targetDevice);
+    }
+    if (options?.localTime) {
+      params.set('local_time', options.localTime);
+    }
+    const qs = params.toString();
+    return this.request<ScreenLayout>(
+      `/api/v1/screens/${encodeURIComponent(screenId)}${qs ? `?${qs}` : ''}`
+    );
   }
 
-  public async saveScreen(id: string, layout: ScreenLayout): Promise<ScreenLayout> {
-    return this.request<ScreenLayout>(`/api/v1/screens/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(layout),
-    });
+  public async saveScreen(
+    id: string,
+    layout: ScreenLayout,
+    options?: ScreenScopeOptions
+  ): Promise<ScreenLayout> {
+    const params = new URLSearchParams();
+    if (options?.scopeUserId) {
+      params.set('scope_user_id', options.scopeUserId);
+    }
+    if (options?.targetDevice) {
+      params.set('target_device', options.targetDevice);
+    }
+    const qs = params.toString();
+    return this.request<ScreenLayout>(
+      `/api/v1/screens/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(layout),
+      }
+    );
   }
 
   public async createScreen(payload: CreateScreenPayload): Promise<ScreenLayout> {
@@ -422,25 +460,53 @@ export class ApiClient {
     });
   }
 
-  public async resetScreen(id: string): Promise<ScreenLayout> {
-    return this.request<ScreenLayout>(`/api/v1/screens/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
+  public async resetScreen(
+    id: string,
+    options?: ScreenScopeOptions
+  ): Promise<ScreenLayout> {
+    const params = new URLSearchParams();
+    if (options?.scopeUserId) {
+      params.set('scope_user_id', options.scopeUserId);
+    }
+    if (options?.targetDevice) {
+      params.set('target_device', options.targetDevice);
+    }
+    const qs = params.toString();
+    return this.request<ScreenLayout>(
+      `/api/v1/screens/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`,
+      {
+        method: 'DELETE',
+      }
+    );
   }
 
-  public async deleteScreen(id: string): Promise<void> {
-    return this.request<void>(`/api/v1/screens/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
+  public async deleteScreen(
+    id: string,
+    options?: ScreenScopeOptions
+  ): Promise<{ message: string } | void> {
+    const params = new URLSearchParams();
+    if (options?.scopeUserId) {
+      params.set('scope_user_id', options.scopeUserId);
+    }
+    if (options?.targetDevice) {
+      params.set('target_device', options.targetDevice);
+    }
+    const qs = params.toString();
+    return this.request<{ message: string } | void>(
+      `/api/v1/screens/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`,
+      {
+        method: 'DELETE',
+      }
+    );
   }
-
 
   public async getWidgetData(
     widgetId: string,
     page: number = 0,
     limit: number = 20,
     sort?: string,
-    screenId?: string
+    screenId?: string,
+    targetDevice?: TargetDevice
   ): Promise<CardViewModel[]> {
     const offset = page * limit;
     let url = `/api/v1/widgets/${encodeURIComponent(widgetId)}/data?offset=${offset}&limit=${limit}`;
@@ -449,6 +515,9 @@ export class ApiClient {
     }
     if (screenId) {
       url += `&screen_id=${encodeURIComponent(screenId)}`;
+    }
+    if (targetDevice) {
+      url += `&target_device=${encodeURIComponent(targetDevice)}`;
     }
     const res = await this.request<WidgetDataResponse>(url);
     return res.items || [];
@@ -1046,5 +1115,13 @@ export function describeApiError(err: unknown): string {
   }
   return 'Unexpected error';
 }
+
+export type { ScreenRequestOptions, ScreenScopeOptions } from '../types';
+export {
+  detectClientTargetDevice,
+  formatDurationCompact,
+  formatLocalTimeHHMM,
+  isTimeWindowActive,
+} from '../utils/layoutScope';
 
 export const api = new ApiClient();

@@ -307,7 +307,14 @@ describe('BrowseScreen & Declarative Widgets', () => {
     render(<BrowseScreen screenId="movies" onPlayItem={onPlayItem} />);
 
     await waitFor(() => {
-      expect(api.getWidgetData).toHaveBeenCalledWith('unhydrated_carousel', 0, 20, undefined, 'movies');
+      expect(api.getWidgetData).toHaveBeenCalledWith(
+        'unhydrated_carousel',
+        0,
+        20,
+        undefined,
+        'movies',
+        'web'
+      );
       expect(screen.getByText('Oppenheimer')).toBeDefined();
     });
   });
@@ -970,6 +977,55 @@ describe('BrowseScreen & Declarative Widgets', () => {
       expect(container.querySelector('.animate-pulse')).toBeNull();
       expect(screen.getByText('Preempted Favorites Rail')).toBeInTheDocument();
     });
+  });
+
+  it('forwards { targetDevice, localTime } to api.getScreen and renders dense_list widgets via DenseListWidget', async () => {
+    const denseHomeLayout: ScreenLayout = {
+      id: 'home',
+      title: 'Home Cinema',
+      widgets: [
+        {
+          type: 'dense_list',
+          id: 'late_night_dense',
+          title: 'Late Night Cinema',
+          binding: { macro_type: 'top_rated', limit: 10 },
+          time_window: { start: '23:00', end: '04:00' },
+          items: [
+            {
+              id: 301,
+              title: 'Arrival',
+              subtitle: '2016 • Sci-Fi',
+              media_type: 'movie',
+              duration_seconds: 6960,
+              playback_progress: 0.25,
+              is_favorite: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const getScreenSpy = vi.spyOn(api, 'getScreen').mockResolvedValueOnce(denseHomeLayout);
+
+    render(<BrowseScreen screenId="home" onPlayItem={onPlayItem} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Late Night Cinema' })).toBeInTheDocument();
+      expect(screen.getByText('Arrival')).toBeInTheDocument();
+      expect(screen.getByText('1h 56m')).toBeInTheDocument();
+    });
+
+    expect(getScreenSpy).toHaveBeenCalledWith(
+      'home',
+      false,
+      expect.objectContaining({
+        targetDevice: 'web',
+        localTime: expect.stringMatching(/^\d{2}:\d{2}$/),
+      })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play Arrival' }));
+    expect(onPlayItem).toHaveBeenCalledWith(301);
   });
 });
 

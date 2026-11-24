@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type FC } from 'react';
 import { ChevronLeft, ChevronRight, Film, Play } from 'lucide-react';
-import type { CardViewModel } from '../../types';
+import type { CardViewModel, TargetDevice } from '../../types';
 import { api } from '../../api/client';
 import { WatchStateButton } from './WatchStateButton';
 import { FavoriteButton } from '../favorites/FavoriteButton';
@@ -19,6 +19,7 @@ export interface CarouselWidgetProps {
   items?: CardViewModel[];
   widgetId?: string;
   screenId?: string;
+  targetDevice?: TargetDevice;
   onSelectItem: (item: CardViewModel) => void;
   onPlayItem?: (itemId: number) => void;
 }
@@ -139,6 +140,7 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
   items: initialItems,
   widgetId,
   screenId,
+  targetDevice,
   onSelectItem,
 }) => {
   const [items, setItems] = useState<CardViewModel[]>(initialItems || []);
@@ -165,7 +167,14 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
     setLoading(true);
 
     api
-      .getWidgetData(widgetId, 0, 20, undefined, screenId)
+      .getWidgetData(
+        widgetId,
+        0,
+        20,
+        undefined,
+        screenId,
+        ...(targetDevice ? [targetDevice] : [])
+      )
       .then((data) => {
         if (isMounted) {
           const seen = new Set<number>();
@@ -185,7 +194,7 @@ export const CarouselWidget: FC<CarouselWidgetProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [initialItems, widgetId, screenId]);
+  }, [initialItems, widgetId, screenId, targetDevice]);
 
   useEffect(() => {
     return onWatchStateChanged(({ itemIds, watched }) => {
