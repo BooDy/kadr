@@ -8,7 +8,7 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh | sudo bash
 #
 # Environment variables:
-#   KADR_VERSION    Target release tag (e.g. v0.3.0-alpha). Default: latest GitHub release.
+#   KADR_VERSION    Target release tag (e.g. v0.4.0). Default: latest GitHub release.
 #   KADR_DRY_RUN    Set to 1 to test architecture and version resolution without system changes.
 # =============================================================================
 
@@ -87,7 +87,7 @@ if [ -z "${TAG}" ]; then
     fi
     # Fallback to current release if API lookup fails or is rate-limited
     if [ -z "${TAG}" ]; then
-        TAG="v0.3.0-alpha"
+        TAG="v0.4.0"
         echo -e "${YELLOW}Notice: Could not query GitHub API (rate limit or offline). Falling back to ${TAG}.${NC}"
     fi
 fi

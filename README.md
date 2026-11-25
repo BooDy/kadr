@@ -8,7 +8,7 @@
 
   [![CI](https://github.com/BooDy/kadr/actions/workflows/ci.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/ci.yml)
   [![Release](https://github.com/BooDy/kadr/actions/workflows/release.yml/badge.svg)](https://github.com/BooDy/kadr/actions/workflows/release.yml)
-  [![Version](https://img.shields.io/badge/version-v0.3.0--alpha-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-v0.4.0-blue.svg)](CHANGELOG.md)
   [![GitHub Release](https://img.shields.io/github/v/release/BooDy/kadr?include_prereleases&logo=github&color=blue)](https://github.com/BooDy/kadr/releases)
   [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
   [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -124,7 +124,7 @@ The project is organized as a Cargo workspace with four focused crates, a fronte
 
 ## Quick Install for Users (Linux)
 
-Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.3.0-alpha`).
+Pre-compiled, zero-dependency static binaries and packages are automatically built and published for **`x86_64` (amd64)** and **`aarch64` (arm64 / Raspberry Pi 4 & 5)** on every release tag (e.g. `v0.4.0`).
 
 ### Option 1: Automated One-Line Installer (Recommended — All Linux Distributions)
 
@@ -144,9 +144,9 @@ Download the appropriate `.deb` package from the [Kadr Releases Page](https://gi
 
 ```bash
 # Install the Debian package (creates 'kadr' user, registers systemd service, installs web app)
-sudo dpkg -i kadr_0.3.0_amd64.deb    # For 64-bit PC / Server
+sudo dpkg -i kadr_0.4.0_amd64.deb    # For 64-bit PC / Server
 # OR
-sudo dpkg -i kadr_0.3.0_arm64.deb    # For Raspberry Pi 4/5 / ARM64
+sudo dpkg -i kadr_0.4.0_arm64.deb    # For Raspberry Pi 4/5 / ARM64
 
 # Start Kadr and enable automatic start on system boot
 sudo systemctl enable --now kadr
@@ -163,8 +163,8 @@ For offline installation on generic Linux distributions:
 
 ```bash
 # 1. Download and extract the standalone bundle from Releases
-tar -xzf kadr-v0.3.0-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.3.0-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.4.0-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.4.0-x86_64-unknown-linux-musl
 
 # 2. Run the automated installer (installs binary, web assets, and systemd service)
 sudo ./install.sh
@@ -192,7 +192,7 @@ curl -fsSL https://raw.githubusercontent.com/BooDy/kadr/main/scripts/install.sh 
 Download the updated package and reinstall with `dpkg`:
 
 ```bash
-sudo dpkg -i kadr_0.3.0_amd64.deb    # or kadr_0.3.0_arm64.deb
+sudo dpkg -i kadr_0.4.0_amd64.deb    # or kadr_0.4.0_arm64.deb
 sudo systemctl restart kadr
 ```
 
@@ -201,8 +201,8 @@ sudo systemctl restart kadr
 Extract the new archive and execute the bundled installer (it automatically detects the active service and upgrades in-place):
 
 ```bash
-tar -xzf kadr-v0.3.0-alpha-x86_64-unknown-linux-musl.tar.gz
-cd kadr-v0.3.0-alpha-x86_64-unknown-linux-musl
+tar -xzf kadr-v0.4.0-x86_64-unknown-linux-musl.tar.gz
+cd kadr-v0.4.0-x86_64-unknown-linux-musl
 sudo ./install.sh
 ```
 
@@ -245,8 +245,8 @@ sudo ./install.sh
 For maintainers, pushing any semantic version tag triggers the automated build and release pipeline:
 
 ```bash
-git tag -a v0.3.0-alpha -m "Release v0.3.0-alpha"
-git push origin v0.3.0-alpha
+git tag -a v0.4.0 -m "Release v0.4.0"
+git push origin v0.4.0
 ```
 
 The GitHub Actions release pipeline ([`.github/workflows/release.yml`](.github/workflows/release.yml)) will:

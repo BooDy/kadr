@@ -5,6 +5,17 @@ All notable changes to the Kadr media server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0] - 2026-11-25
+
+### Added
+- **Declarative Filter AST, SQL Compiler & Live Studio Rule Builder**: Added recursive `FilterNode` boolean trees (`AND`, `OR`, `NOT` up to depth `6` and `64` conditions) spanning `library_id`, `item_type`, `added_at`/`released_at`/`last_watched_at` epoch & relative sliding windows, `duration_seconds`, technical attributes (`resolution`, `video_codec`, `audio_codec`, `audio_channels`, `container`), rich metadata (`country`, `audio_language`, `director`, `writer`, `studio`, `genres`, `tags`, `rating`, `release_year`), `watch_state` (including dynamic percentage ranges), and `is_favorite`, compiled into parameterized SQLite prepared statements backed by expression indexes (`014_filter_ast_indexes.sql`), alongside `QueryMacro::CustomQuery` (`custom_query`), `GET /api/v1/catalog/facets`, stateless `POST /api/v1/widgets/preview`, and the visual `RuleBuilderEditor` + live widget previews in Layout Studio.
+- **Per-User Favorites / Watchlist & Dedicated `Favorites` View**: Added SQLite migration `015_user_favorites.sql` (`user_favorites` partitioned by `user_id` with cascading deletes), `FavoritesRepository`, `GET`/`PUT`/`DELETE /api/v1/favorites` and `/api/v1/favorites/{item_id}`, zero-extra-roundtrip `CardViewModel.is_favorite` batch hydration, `QueryMacro::Favorites` (`favorites`) with a factory-default `Home` `"My Favorites"` rail, `FilterCondition::IsFavorite`, `favorite:updated` SSE events (`SystemEvent::FavoriteUpdated`), startup symlink-deduplication favorite preservation, optimistic `FavoriteButton` heart toggles across all browse cards, spotlight banners, dense rows, and item details, and a top-bar `FavoritesScreen` with media-type filter pills, sort controls, pagination, and `Play All` / `Shuffle` queue playback.
+- **Per-User & Per-Device Scoped Layouts, `time_window` Shelves & `DenseList` Widget**: Added SQLite migration `016_scoped_layouts.sql` (`layout_overrides` with `ON DELETE CASCADE`) and `LayoutOverrideRepository`, in-memory 4-tier fallback resolution (`(user_id, target_device)` $\to$ `(user_id, all)` $\to$ `(global, target_device)` $\to$ `(global, all)` across `all`, `tv`, `web`, and `mobile` with zero per-request SQLite queries), client-clock `TimeWindow` shelf scheduling (`start`/`end` `"HH:MM"` supporting both same-day and overnight windows via `?local_time=` / `X-Kadr-Local-Time` and skipping SQL hydration on inactive shelves), `WidgetNode::DenseList` (`dense_list`) + `CardViewModel.duration_seconds` + `<DenseListWidget />` compact cinema rows, personal `LayoutStudio` access via top-bar `Studio` for `Standard` profiles (`scope_user_id=me`) alongside multi-profile/global scope authoring and `Simulate Time` previewing for `Admin` profiles, and scoped `layout:changed` SSE metadata.
+- **Multi-Audio Stream Probing, Manual Watch-State API & Web `CinemaPlayer` Parity**: Added SQLite migration `013_audio_tracks.sql` persisting `ffprobe` multi-audio stream metadata across rescans, `GET /api/v1/media/{id}/audio-tracks` (with HLS codec selection keyed to the requested `audio_track`), audio-only HLS transcoding (`VideoAction::None` / `video_codec=none` / `-vn`) for `music` and `audiobook` streams, manual single and batch watch-state endpoints (`PUT /api/v1/playback/items/{id}/watch-state`, `PUT /api/v1/playback/watch-states`), dynamic `hls.js` fallback (`useHlsPlayback`) with seek timeline offsets and WebVTT cue sync, in-player multi-audio track switching and 10×10 storyboard seek-bar hover previews in `CinemaPlayer`, and single / season / series Mark Watched controls across catalog cards and `ItemDetailsModal`.
+
+### Fixed
+- **Canonical Library Screen Scoping, HLS Session Cleanup & Browse Race Hardening**: Unified canonical library screen lookup across `/api/v1/screens/{id}`, `/api/v1/widgets/{id}/data`, and `/api/v1/widgets/preview`, extended library rename/deletion synchronization across `Carousel`, `DenseList`, `HeroBanner`, and scoped overrides, preserved SQLite AST index scans on case-folded filters, preserved resume offsets and Safari session teardown across HLS fallbacks, and prevented `BrowseScreen` from hanging in a loading state when `refreshHome` preempts an initial `fetchScreen`.
+
 ## [v0.3.0-alpha] - 2026-11-17
 
 ### Added
@@ -107,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded Server-Sent Events (SSE) bus for system telemetry and realtime updates.
 - Profile-based PIN authentication and JWT session management.
 
+[v0.4.0]: https://github.com/BooDy/kadr/compare/v0.3.0-alpha...v0.4.0
 [v0.3.0-alpha]: https://github.com/BooDy/kadr/compare/v0.2.1-alpha...v0.3.0-alpha
 [v0.2.1-alpha]: https://github.com/BooDy/kadr/compare/v0.2.0-alpha...v0.2.1-alpha
 [v0.2.0-alpha]: https://github.com/BooDy/kadr/compare/v0.1.3-alpha...v0.2.0-alpha

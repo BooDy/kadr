@@ -98,7 +98,7 @@ Before displaying an IP entry screen, clients should perform local network disco
   "app": "kadr",
   "server_id": "8f3e2b1a-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
   "name": "Living Room Server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "protocol_version": 1,
   "port": 8492,
   "setup_completed": true,
@@ -113,7 +113,7 @@ Before displaying an IP entry screen, clients should perform local network disco
 | `app` | String | Constant identifier: always `"kadr"`. |
 | `server_id` | String | Persistent server UUID; remains stable across server reboots. |
 | `name` | String | Human-readable server friendly name configured by the administrator. |
-| `version` | String | Server Cargo package semver string (e.g. `"0.3.0"`). |
+| `version` | String | Server Cargo package semver string (e.g. `"0.4.0"`). |
 | `protocol_version` | Integer | Protocol integer version (`1`). Incremented for breaking protocol changes. |
 | `port` | Integer | Port number bound by the HTTP server (e.g. `8492`). |
 | `setup_completed` | Boolean | `false` if no administrator account exists yet; `true` once configured. |
